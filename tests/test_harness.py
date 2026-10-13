@@ -82,7 +82,6 @@ def run_named(names, durations):
                         os.environ.pop(key, None)
                     root = Path(isolated)
                     os.environ.update(HOME=str(root), AIW_STATE=str(root / "state"),
-                                      AIW_FINDINGS_SYNC_CMD="/usr/bin/true",
                                       PATH=f"{fake_bins(root)}:{os.environ['PATH']}",
                                       AGENT_USE_HOME=str(fake_agent_use(root)))
                     local = root / "test-seats.json"

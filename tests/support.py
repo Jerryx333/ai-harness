@@ -44,42 +44,7 @@ def fake_bins(d: Path) -> Path:
     (b / "codebuddy").write_text('#!/bin/bash\n[ "$1" = --version ] && { echo "2.157.0-fake"; exit 0; }\necho "workbuddy ok"\n')
     (b / "codex").write_text('#!/bin/bash\n[ "$1" = --version ] && { echo "codex-cli fake"; exit 0; }\n[ -n "$FAKE_CODEX_ARGS" ] && printf "%s\\n" "$@" > "$FAKE_CODEX_ARGS"\ncase "$FAKE_CODEX" in\n tokens) cat "$FAKE_CODEX_STDERR" >&2; echo "codex ok";;\n findings) cat "$FAKE_FINDINGS_OUTPUT";;\n chinese_stderr) python3 -c "import sys; sys.stderr.write(chr(0x4e2d) * 70000)"; echo "codex ok";;\n large_stderr) printf "%210000s" x >&2; echo "codex ok";;\n partial_timeout) echo "before timeout"; echo "timeout stderr" >&2; sleep 30;;\n write) echo changed > tracked; echo new > created; echo "codex ok";;\n write_slow) echo partial > partial; sleep 30; echo "codex ok";;\n commit_write) echo committed > tracked; git add tracked; git -c user.name=t -c user.email=t@t commit -qm changed; echo "codex ok";;\n chmod_dirty) chmod +x dirty; echo "codex ok";;\n stage_dirty) git add dirty; echo "codex ok";;\n restore) git restore tracked; echo "codex ok";;\n auth_sol) if [ ! -e "$FAKE_CODEX_AUTH_MARKER" ]; then touch "$FAKE_CODEX_AUTH_MARKER"; echo "error: authentication_required" >&2; exit 1; fi; echo "codex ok";;\n talky) echo "user: 讨论 quota 和 401 token expired 的判断" >&2; echo "回答：QUOTA_PAT 会匹配 usage limit、额度、401";;\n quota) echo "user: hi" >&2; echo "ERROR: You\'ve hit your usage limit. Try again later." >&2; exit 1;;\n *) echo "codex ok";;\nesac\n')
     (b / "claude").write_text('#!/bin/bash\n[ "$1" = --version ] && { echo "9.9.9 (Claude Code fake)"; exit 0; }\n[ -n "$FAKE_CLAUDE_ARGS" ] && printf "%s\\n" "$@" > "$FAKE_CLAUDE_ARGS"\n[ -n "$FAKE_CLAUDE_NOLOGIN" ] && { echo "Not logged in · Please run /login"; exit 1; }\necho "claude ok nested=$AIW_NESTED"\n')
-    (b / "gh").write_text(r'''#!/usr/bin/env python3
-import json, os, subprocess, sys
-from pathlib import Path
-a = sys.argv[1:]
-if a[:2] == ['repo', 'view']:
-    if os.environ.get('FAKE_GH_VIEW_LOG'):
-        with open(os.environ['FAKE_GH_VIEW_LOG'], 'a') as log: log.write(json.dumps(a) + '\n')
-    if '--json' in a and 'hasIssuesEnabled' in a[a.index('--json')+1]:
-        if os.environ.get('FAKE_GH_PROJECT_VIEW_FAIL'): sys.exit(1)
-        print(json.dumps({'visibility': os.environ.get('FAKE_GH_PROJECT_VISIBILITY', 'PRIVATE'),
-                          'hasIssuesEnabled': os.environ.get('FAKE_GH_PROJECT_ISSUES', '1') == '1',
-                          'nameWithOwner': os.environ.get('FAKE_GH_CANONICAL', a[2])}))
-    else:
-        if os.environ.get('FAKE_GH_HUB_VIEW_FAIL'): sys.exit(1)
-        print(json.dumps({'visibility': os.environ.get('FAKE_GH_VISIBILITY', 'PRIVATE')}))
-elif a[:2] == ['repo', 'clone']:
-    sys.exit(subprocess.call(['git', 'clone', *(a[a.index('--') + 1:] if '--' in a else []), os.environ['FAKE_GH_REMOTE'], a[3]]))
-elif a[:2] in (['issue', 'list'], ['issue', 'create'], ['label', 'create']):
-    p = Path(os.environ['FAKE_GH_ISSUES'])
-    db = json.loads(p.read_text()) if p.exists() else {'issues': [], 'labels': []}
-    def arg(key): return a[a.index(key)+1]
-    if a[:2] == ['issue', 'list']:
-        key = arg('--search').removesuffix(' in:body')
-        print(json.dumps([{'number': i['number'], 'title': i['title'], 'body': i['body']} for i in db['issues'] if key in i['body'] and i.get('repo', arg('--repo')) == arg('--repo')]))
-    elif a[:2] == ['label', 'create']:
-        db['labels'].append(a[2]); p.write_text(json.dumps(db))
-    else:
-        if os.environ.get('FAKE_GH_CREATE_LOG'):
-            with open(os.environ['FAKE_GH_CREATE_LOG'], 'a') as log: log.write(json.dumps(a) + '\n')
-        if os.environ.get('FAKE_GH_ISSUE_FAIL') or arg('--title') == os.environ.get('FAKE_GH_FAIL_TITLE'): sys.exit(1)
-        i = dict(number=len(db['issues'])+1, title=arg('--title'), body=arg('--body'), repo=arg('--repo'),
-                 labels=[a[n+1] for n, value in enumerate(a) if value == '--label'])
-        db['issues'].append(i); p.write_text(json.dumps(db)); print('https://example.test/issues/' + str(i['number']))
-else:
-    sys.exit(1)
-''')
+    (b / "gh").write_text("#!/bin/sh\nexit 1\n")
     (b / "security").write_text('#!/bin/sh\nexit 1\n')
     for f in b.iterdir():
         f.chmod(0o755)
@@ -527,7 +492,7 @@ def errand_fixture(t):
 def errand_route_test(runtime):
     with tempfile.TemporaryDirectory() as td:
         t = Path(td); env = errand_fixture(t)
-        for name in ('route.py', 'ai_worker.py', 'findings.py', 'harness_ids.py', 'gitenv.py', 'env_compat.py', 'repo_aliases.py', 'seats_config.py', 'seats.json'):
+        for name in ('route.py', 'ai_worker.py', 'findings.py', 'harness_ids.py', 'gitenv.py', 'env_compat.py', 'seats_config.py', 'seats.json'):
             shutil.copy(REPO / name, t / name)
         rule = {'id': 'errand-test', 'seat': 'cue', 'patterns': ['跑腿'], 'instruction': '执行任务'}
         for update in ({'seat': 'cue'}, {'seat': 'future-errand'},
@@ -565,7 +530,7 @@ def findings_fixture(root):
     module.HERE.mkdir()
     module.STATE = root / 'state'
     (module.HERE / 'seats.json').write_text(complete_config_json(json.dumps({
-        'findings': {'max_items': 2, 'daily_cap': 2, 'owners': ['OWNER']},
+        'findings': {'max_items': 2, 'daily_cap': 2},
         'seats': {'text': {'kind': 'agent_use', 'provider': 'test'}}})))
     return module
 
@@ -606,21 +571,9 @@ def findings_worker_fixture(root, collect=True):
 
 
 
-def findings_sync_fixture(root):
-    f = findings_fixture(root)
-    (f.HERE / 'seats.json').write_text(complete_config_json(json.dumps({'findings': {
-        'collect': True, 'sync': True, 'hub': 'test/private'}})))
-    remote = root / 'remote.git'
-    git_template(remote, bare=True, empty=True)
-    os.environ['FAKE_GH_REMOTE'] = str(remote)
-    os.environ['FAKE_GH_VISIBILITY'] = 'PRIVATE'
-    folder = f.STATE / 'findings'; folder.mkdir(parents=True)
-    return f, folder, remote
 
 
 
-def findings_sync_row(id, owned=True, month='01', host='host-a', type='observation'):
-    return {'id': id, 'owned': owned, 'host': host, 'ts': f'2026-{month}-02T00:00:00+00:00', 'type': type}
 
 
 
@@ -631,129 +584,21 @@ def findings_append(folder, *rows):
 
 
 
-def findings_remote_rows(remote):
-    paths = sh(['git', '--git-dir', str(remote), 'ls-tree', '-r', '--name-only', 'main'])
-    check(paths.returncode == 0, paths.stderr)
-    rows = []
-    for path in paths.stdout.splitlines():
-        if path.startswith('raw/'):
-            result = sh(['git', '--git-dir', str(remote), 'show', 'main:' + path])
-            check(result.returncode == 0, result.stderr)
-            rows.extend(json.loads(line) for line in result.stdout.splitlines())
-    return rows, paths.stdout
 
 
 
-def triage_fixture(root):
-    import importlib.util
-    f, folder, remote = findings_sync_fixture(root)
-    spec = importlib.util.spec_from_file_location('triage_test', REPO / 'triage.py')
-    t = importlib.util.module_from_spec(spec); spec.loader.exec_module(t)
-    t.f = f
-    os.environ['FAKE_GH_ISSUES'] = str(root / 'issues.json')
-    return t, f, folder, remote
 
 
 
-def triage_seed(t, f, folder):
-    import datetime as dt
-    stamp = dt.datetime.now(dt.timezone.utc).isoformat()
-    def row(id, kind='observation', owned=True, host='host-a', **extra):
-        return dict(id=id, type=kind, owned=owned, host=host, ts=stamp, seat='qoder',
-                    source='worker', repo='github.com/test/project' if owned else None,
-                    repo_rel='src', rules_hash='aaa' if host == 'host-a' else 'bbb',
-                    observation='手动修复超时和不一致', expected='无冲突', evidence='tests:1', **extra)
-    findings_append(folder, row('new'), row('local', owned=False), row('old'), row('done'),
-                    row('a1', 'answers', guess='无', deviation='', abandoned='尝试', fixed='无'),
-                    row('a2', 'answers', host='host-b', guess='猜', deviation='无', abandoned='无', fixed='修复'),
-                    row('change', 'changes', files=['src/a.py']))
-    # This prepares triage input; synchronization itself has separate integration
-    # cases. Build the two seed commits in one real Git import instead of
-    # repeatedly fetching, resetting, committing and pushing during preparation.
-    records = [json.loads(line) for line in (folder / 'records.jsonl').read_text().splitlines()]
-    raw = {}
-    for record in records:
-        if record['owned']:
-            name = 'raw/' + record['host'] + '/' + stamp[:7] + '.jsonl'
-            raw[name] = raw.get(name, '') + json.dumps(record, ensure_ascii=False) + '\n'
-    hub = folder / 'hub'
-    git_template(hub, empty=True)
-    def mutate(hub):
-        t.append(hub / 'state/status.jsonl', [dict(id='old', status='unexplained', ts=stamp),
-                                              dict(id='done', status='explained', ts=stamp)])
-        f._atomic_json(hub / 'state/hypotheses.json', {'H-old': dict(title='旧假设', status='验证中',
-            mechanism='机制', predicts=['预测'], refuted_by=['反例'], probe='true', expect_down=['超时'],
-            expect_flat=['其它'], window_days=1, created=stamp,
-            updated=(dt.datetime.now(dt.timezone.utc)-dt.timedelta(days=3)).isoformat())})
-    mutate(hub)
-    states = {str(p.relative_to(hub)): p.read_text() for p in (hub / 'state').iterdir()}
-    git_history(hub, [('raw seed', raw, stamp), ('seed', states, stamp)], checkout=True)
-    remote = Path(os.environ['FAKE_GH_REMOTE'])
-    # A bare copy has independent refs/objects and can receive genuine pushes.
-    shutil.rmtree(remote)
-    shutil.copytree(hub / '.git', remote)
-    (remote / 'config').write_text('[core]\n repositoryformatversion = 0\n bare = true\n')
-    (remote / 'hooks').mkdir(exist_ok=True)
-    with (hub / '.git/config').open('a') as stream:
-        stream.write(f'[remote "origin"]\n url = {remote}\n fetch = +refs/heads/*:refs/remotes/origin/*\n[branch "main"]\n remote = origin\n merge = refs/heads/main\n')
-    refs = hub / '.git/refs/remotes/origin'; refs.mkdir(parents=True)
-    (refs / 'main').write_text((hub / '.git/refs/heads/main').read_text())
-    # Seed the post-sync local state, retaining local records exactly as a
-    # successful sync's compaction does.
-    retained = [r for r in records if not r['owned']]
-    (folder / 'records.jsonl').write_text(''.join(json.dumps(r) + '\n' for r in retained))
-    offset = sum(len((json.dumps(r) + '\n').encode()) for r in retained)
-    f._atomic_json(folder / 'sync.json', dict(offset=offset, last_attempt=stamp, last_ok=stamp, last_error=None))
-    f.require_private_sync()
-    f.recompute_count_cache(offset)
 
 
 
-def triage_decisions():
-    return {'self_cause_considered': '考虑了派单规则', 'hypotheses': [dict(id='H-new', title='标题',
-        mechanism='机制', explains=['new'], predicts=['预测'], refuted_by=['反例'],
-        status='验证中', layer='机制', probe='true', expect_down=['超时'], expect_flat=[], window_days=7)],
-        'records': [dict(id='new', status='explained', hypothesis='H-new', note='证据'),
-                    dict(id='local', status='unexplained')],
-        'issues': [dict(hypothesis='H-new', key='root-timeout', title='超时原因', body='修复正文', labels=['layer:机制'])]}
 
 
 
-def triage_project_decisions():
-    return {'project_issues': [dict(key='defect', repo='NewOwner/Project', records=['new', 'old'],
-                                  title='项目缺陷', body='复现说明', labels=['bug'])]}
 
 
 
-def triage_project_route(mode):
-    import contextlib, io
-    with tempfile.TemporaryDirectory() as td:
-        t, f, folder, _ = triage_fixture(Path(td))
-        triage_seed(t, f, folder)
-        os.environ['FAKE_GH_CREATE_LOG'] = str(Path(td) / 'create.jsonl')
-        if mode in ('PUBLIC', 'INTERNAL'):
-            os.environ['FAKE_GH_PROJECT_VISIBILITY'] = mode
-        elif mode == 'disabled':
-            os.environ['FAKE_GH_PROJECT_ISSUES'] = '0'
-        elif mode == 'failed':
-            os.environ['FAKE_GH_PROJECT_VIEW_FAIL'] = '1'
-        d = triage_project_decisions()
-        output = io.StringIO()
-        with contextlib.redirect_stdout(output):
-            check(t.issues(d) == 0, 'project issue failed')
-        check('仓库名不一致' not in output.getvalue(), 'batchless issues emitted mismatch hint')
-        target = 'NewOwner/Project' if mode == 'PRIVATE' else 'test/private'
-        issue = json.loads(Path(os.environ['FAKE_GH_ISSUES']).read_text())['issues'][0]
-        calls = [json.loads(line) for line in Path(os.environ['FAKE_GH_CREATE_LOG']).read_text().splitlines()]
-        check(len(calls) == 1 and calls[0][calls[0].index('--repo')+1] == target, 'unsafe target')
-        check(issue['repo'] == target, 'wrong repo')
-        check(issue['body'].endswith('aiw-key: project:newowner/project:defect\naiw-records: new, old'), 'markers')
-        if mode != 'PRIVATE':
-            check(issue['title'] == '[Project] 项目缺陷' and 'project:Project' in issue['labels'], 'fallback metadata')
-            check('改开在集中仓库' in output.getvalue(), 'missing fallback reason')
-        key = target.lower() + '#project:newowner/project:defect'
-        check(t.read(folder / 'issues.json') == {key: 1}, 'mapping')
-        check(t.read(folder / 'project-issues.json') == {key: dict(target=target, number=1, records=['new', 'old'])}, 'project map')
 
 
 

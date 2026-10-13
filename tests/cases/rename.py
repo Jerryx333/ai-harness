@@ -2,79 +2,6 @@
 from support import Path, REPO, check, fake_home, json, os, sh, sys, tempfile
 
 
-def rename_alias():
-    # Real reader normalizes records without modifying stored bytes.
-    sys.path.insert(0, str(REPO))
-    import findings as f
-    import triage as t
-    from repo_aliases import canonical_repo, canonical_key
-    for key in ('jerryx333/ai-harness-tools#bug', 'aiw-key: project:jerryx333/ai-harness-tools:bug'):
-        check(canonical_key(key) == key, 'unrelated repository rewritten: ' + key)
-    check(canonical_key('aiw-key: project:JERRYX333/AI-HARNESS:bug') == 'aiw-key: project:jerryx333/aiw:bug', 'case insensitive identity')
-    old, new = 'github.com/jerryx333/ai-harness', 'github.com/jerryx333/aiw'
-    with tempfile.TemporaryDirectory() as td:
-        p = Path(td) / 'records.jsonl'
-        rows = [{'id': 'old', 'repo': old, 'type': 'observation'}, {'id': 'new', 'repo': new, 'type': 'observation'}]
-        raw = ''.join(json.dumps(r) + '\n' for r in rows); p.write_text(raw)
-        loaded = list(f._rows(p))
-        check(len(t.overview(rows)['repo']) == len(t.grouping(loaded)['repo']) == 1, str(loaded))
-        check(p.read_text() == raw and f._repo('git@github.com:Jerryx333/ai-harness.git') == new, 'identity or storage changed')
-        mapping = {'jerryx333/ai-harness#project:jerryx333/ai-harness:bug': 7}
-        original = f._command
-        def no_command(argv):
-            raise AssertionError('existing mapping must not create/query issue: ' + str(argv))
-        f._command = no_command
-        try:
-            number = t.persist_issue(Path(td) / 'issues.json', mapping,
-                'jerryx333/aiw#project:jerryx333/aiw:bug', 'Jerryx333/aiw', 'title', 'body', [], 'aiw-key: project:jerryx333/aiw:bug')
-            check(number == 7, str(mapping))
-        finally:
-            f._command = original
-        calls = []
-        def legacy_issue(argv):
-            calls.append(argv)
-            check(argv[1:3] == ['issue', 'list'], 'duplicate issue creation: ' + str(argv))
-            return json.dumps([{'number': 7, 'body': 'aiw-key: project:jerryx333/ai-harness:bug'}]) if 'ai-harness' in argv[argv.index('--search') + 1] else '[]'
-        f._command = legacy_issue
-        try:
-            number = t.persist_issue(Path(td) / 'issues.json', {},
-                'jerryx333/aiw#project:jerryx333/aiw:bug', 'Jerryx333/aiw', 'title', 'body', [], 'aiw-key: project:JERRYX333/AI-HARNESS:bug')
-            check(number == 7 and len(calls) == 2, str(calls))
-        finally:
-            f._command = original
-
-        # Replayed decisions may still supply the old key and marker.
-        calls.clear()
-        f._command = legacy_issue
-        try:
-            number = t.persist_issue(Path(td) / 'replay.json', {},
-                'jerryx333/ai-harness#project:jerryx333/ai-harness:bug', 'Jerryx333/ai-harness',
-                'title', 'body\naiw-key: project:jerryx333/ai-harness:bug', [],
-                'aiw-key: project:jerryx333/ai-harness:bug')
-            check(number == 7 and len(calls) == 2, str(calls))
-        finally:
-            f._command = original
-        created = []
-        def create_issue(argv):
-            if argv[1:3] == ['issue', 'list']:
-                return '[]'
-            check(argv[1:3] == ['issue', 'create'], str(argv))
-            created.append(argv)
-            return 'https://github.com/Jerryx333/aiw/issues/8'
-        f._command = create_issue
-        try:
-            marker = 'aiw-key: project:JERRYX333/AI-HARNESS:bug'
-            t.persist_issue(Path(td) / 'created.json', {}, 'jerryx333/ai-harness#project:jerryx333/ai-harness:bug',
-                'Jerryx333/aiw', 'title', 'keep jerryx333/ai-harness-tools\n' + marker, [], marker)
-            check(created[0][created[0].index('--body') + 1] == 'keep jerryx333/ai-harness-tools\naiw-key: project:jerryx333/aiw:bug', str(created))
-            mapping = {'jerryx333/ai-harness-tools#project:jerryx333/ai-harness-tools:bug': 9}
-            f._command = no_command
-            check(t.persist_issue(Path(td) / 'other.json', mapping, next(iter(mapping)), 'jerryx333/ai-harness-tools',
-                'title', 'body', [], 'aiw-key: project:jerryx333/ai-harness-tools:bug') == 9, str(mapping))
-        finally:
-            f._command = original
-
-
 def rename_install_target():
     for kind in ('directory', 'symlink', 'dangling'):
         with tempfile.TemporaryDirectory() as td:
@@ -169,4 +96,4 @@ def rename_launch_failure():
         check(plistlib.loads((directory / 'com.aiw.freecheck.plist').read_bytes())['Label'] == 'com.aiw.freecheck', 'new plist invalid')
 
 
-CASES = {case.__name__: case for case in (rename_alias, rename_install_target, rename_hook_duplicates, rename_empty_python_state, rename_launch_failure)}
+CASES = {case.__name__: case for case in (rename_install_target, rename_hook_duplicates, rename_empty_python_state, rename_launch_failure)}

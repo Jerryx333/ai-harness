@@ -34,7 +34,7 @@ def errand_registry_corrupt_rejected():
         registry.unlink()
         r = sh([sys.executable, '-c', probe], cwd=REPO, env=env)
         check(r.returncode == 0 and json.loads(r.stdout) == [], '缺失 errand 名单不兼容')
-        for name in ('route.py', 'ai_worker.py', 'findings.py', 'harness_ids.py', 'gitenv.py', 'env_compat.py', 'repo_aliases.py', 'seats_config.py', 'seats.json'):
+        for name in ('route.py', 'ai_worker.py', 'findings.py', 'harness_ids.py', 'gitenv.py', 'env_compat.py', 'seats_config.py', 'seats.json'):
             shutil.copy(REPO / name, t / name)
         (t / 'router-rules.json').write_text(json.dumps({'rules': [
             {'id': 'registry-test', 'seat': 'qoder', 'patterns': ['registry'], 'instruction': 'test'}]}))
@@ -444,10 +444,6 @@ def local_config_empty_defaults():
         public = c.load_public()
         with patch.object(w, 'SEATS', public), patch.object(w, 'send_discord', side_effect=AssertionError('通知')), patch.object(w.subprocess, 'Popen', side_effect=AssertionError('同步')):
             w.retry_notifications()
-            w.trigger_findings_sync()
-        with patch.object(f, '_command', side_effect=AssertionError('远端调用')):
-            check(f.sync() == 0, '空 hub 未跳过')
-            check(f.hub_transaction(lambda hub: None, 'unused') == (False, '未配置 findings.hub，triage 需要集中仓库'), '空 hub 上传未跳过')
         with tempfile.TemporaryDirectory() as td:
             prompt = Path(td) / 'prompt'; prompt.write_text('hello')
             result = sh([sys.executable, str(REPO / 'ai_worker.py'), 'codex', td, '10', str(prompt), '--ro', '--no-fallback'])
@@ -482,12 +478,6 @@ def public_config_contract():
             check(r.returncode == (0 if sufficient else 1), repr(r))
             check(summary['required'] == 2 and summary['sufficient'] is sufficient, str(summary))
             check(('可用座位只有 1 家' in r.stderr) == (len(expected) == 1), r.stderr)
-        decisions = t / 'decisions.json'; decisions.write_text('{}')
-        for args in (['start'], ['apply', str(decisions)], ['abort'], ['issues', str(decisions)]):
-            r = sh([str(REPO / 'bin/aiw'), 'triage', *args], env=env)
-            check(r.returncode == 1 and '未配置 findings.hub，triage 需要集中仓库' in r.stderr, repr(r))
-        r = sh([str(REPO / 'bin/aiw'), 'findings', 'sync'], env=env)
-        check(r.returncode == 0 and not r.stdout and not r.stderr, repr(r))
         local = t / 'seats.json'
         local.write_text(json.dumps({'seats': {'codex': {'disabled_by_user': 'test', 'ro_only': True}},
                                      'errand': {'home': '~/errands'}, 'panel_free': ['codex-sol']}))

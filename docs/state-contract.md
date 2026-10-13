@@ -143,34 +143,25 @@ worker 在首次写 JSON 前创建或打开同名 `<pid>.lock` 并持有 `fcntl.
 
 ## findings/
 
-改进缓冲区的本机状态位于 `$STATE/findings/`。**aiw-board 不读取这些文件**。记录写入只追加，同步成功后压缩本机缓冲区；处理状态单独记录。`aiw gc` 不删除此目录下的任何文件或子目录。
+改进缓冲区的本机状态位于 `$STATE/findings/`。记录只追加，处理状态单独存储；aiw-board 不读取这些文件，aiw gc 保留整个目录。
 
 | 文件 | 写入方 | 内容 |
 | --- | --- | --- |
-| `records.jsonl` | worker、`aiw note`、sync | 原始观察与回答、改动记录，追加及同步后压缩均受 flock 保护 |
-| `quarantine.jsonl` | worker | 命中密钥特征的记录，永不上传 |
-| `daily-<YYYY-MM-DD>.count` | worker | 当日已收观察条数，超 daily_cap 只计数 |
-| `sync.json` | `aiw findings sync` | 上传字节偏移、上次成功时间 last_ok、最近错误 last_error；compaction 为原子替换的恢复标记 |
-| `archive/<YYYY-MM>.jsonl.gz` | sync | 已处理的非自有观察及往月回答/改动，gzip 多成员追加，仅存本机、永不上传 |
-| `visibility.json` | sync / triage 上传门禁 | `{ "repo": ..., "date": ..., "visibility": "PRIVATE" }`，按仓库和日期缓存，原子替换；不改写 sync.json |
-| `count-cache.json` | sync / triage | 待处理数 open、最早待处理时间 oldest_open、上次评审时间 last_triage，钩子只读 |
-| `hub/` | sync | 集中仓库的本地 clone |
-| `local-status.jsonl` | triage apply | 非自有仓库记录的本机处理状态 |
-| `project-issues.json` | triage apply / triage issues | 项目 issue 映射键 → `{target, number, records}`，供未解释池显示转交去向 |
-| `signals.json` | `aiw findings extract` | 可重算的机械信号快照 |
-| `triage/<id>/` | triage | 批次材料 batch.md / batch.json |
-| `hint.json` | 钩子 | 上次提示时间，用于节流 |
+| `records.jsonl` | worker、`aiw note` | answers / observation / changes；flock 保护，只追加 |
+| `quarantine.jsonl` | worker、note | 命中密钥特征的记录 |
+| `records.lock` | record、triage | 记录追加与评审状态修改的 flock 互斥 |
+| `daily-<YYYY-MM-DD>.count` | record | 当日非隔离观察计数，超 daily_cap 只计数 |
+| `status.jsonl` | triage apply | 每行 {id, status, hypothesis, note, triage_id, ts} |
+| `hypotheses.json` | triage apply | {id: 假设对象}，含 created / updated |
+| `hypotheses-log.jsonl` | triage apply | 每行 {ts, triage_id, id, before, after} |
+| `triages.jsonl` | triage apply | 每行 {ts, triage_id, host, records, hypotheses} |
+| `count-cache.json` | record、triage apply | {open, last_triage, oldest_open} |
+| `triage.lock` | triage start / apply / abort | {host, pid, triage_id, started, expires}，两小时租约 |
+| `signals.json` | findings extract | 机械信号与 coverage 快照 |
+| `triage/<id>/` | triage start | batch.md / batch.json / lock.json |
+| `hint.json` | 钩子 | 上次提示时间，四小时节流 |
 
-`signals.json` 持久化 `coverage`，结构为 `{ "sources": [...], "level": "无数据|部分|完整", "reasons": [...] }`。`sources` 为数组，每项含 `name`（来源名称）、`exists`（布尔）、`rows`（窗口内有效输入数）、`bad`（解析失败数）。来源包括 Git 历史、本机 records、hub，以及读取的 hub records 和 runs；Git 的 rows 计入受监测文件的窗口内提交数，runs 的 rows 计入窗口内 task.txt 数，records 的 rows 在信号过滤与 ID 去重前计数，坏行不保证属于窗口内。`level` 仅取「无数据」「部分」「完整」：有效输入合计为 0 时为「无数据」，否则有缺失、解析失败或跳过原因时为「部分」，其余为「完整」。`reasons` 为字符串数组，记录来源不存在、解析失败、hub 或规则振荡被跳过、窗口内无有效行等原因；coverage 只说明读取覆盖，不代表信号可信度。`test_state_contract` 同样校验此持久化字段结构。
-
-周报对 records 与 quarantine 按天数窗口统计，其余显示当前快照；观察率以 answers 数为分母。完整协议见 [改进缓冲区设计](findings.md)。
-
-### 本机评审补充状态
-
-- `findings/local-hypotheses.json`：结构同 hub 的 `hypotheses.json`；解释任一非自有记录的假设只留本机。`local-hypotheses-log.jsonl` 追加 before/after 日志，重跑以最后一条更新为准；迁回 hub 成功后追加 `deleted: true` 删除标记并移除本机快照，重放时删除该 id。
-- `findings/issues.json`：issue 映射键 → 编号的本机持久映射；根因 issue 键为 `<hub>#<key>`，项目 issue 键为 `<小写目标仓库>#project:<小写规范仓库名>:<key>`。项目规范仓库名取查询返回的 `nameWithOwner`，查询失败时用小写输入仓库名；目标仓库为实际创建 issue 的项目仓库或回退的集中仓库。创建成功立即写入。旧裸 key 仅在 sync.json 的旧 visibility_hub 明确等于当前 hub 时兼容。`issues.lock` 保护整个查找、创建和映射更新过程。
-- `findings/project-issues.json`：键与 `issues.json` 中的项目 issue 映射键相同；值为 `{target, number, records}`，其中 `target` 是实际目标仓库（项目仓库使用查询返回的规范名，回退时使用配置的集中仓库名），`number` 是 issue 编号，`records` 是引用的观察记录 id 列表。原子写入，与 `issues.json` 共用 `issues.lock` 保护，供未解释池显示 `→ <target>#<number>`。
-
+open 为无状态或 unexplained 的 observation 条数，record 增量更新，apply 全量重算；钩子不扫描日志。signals.json 的 coverage 包含 sources（name/exists/rows/bad）、level（无数据/部分/完整）、reasons；来源只有本机 records、规则 Git 历史和 runs。周报读取本机记录、status.jsonl 与 hypotheses.json。详细字段校验见 [findings.md](findings.md)。
 
 ### 本地配置与配置指纹
 

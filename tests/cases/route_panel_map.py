@@ -551,7 +551,7 @@ def panel_free():
         check(not (out / "codex-sol.md").exists(), "免费会诊不应调用 codex-sol")
         r = sh(cmd + ["qoder"], env=env)
         check(r.returncode == 64 and "二选一" in r.stderr, f"免费与显式座位应互斥: {r.stderr}")
-        for name in ("route.py", "ai_worker.py", "findings.py", "harness_ids.py", "gitenv.py", "env_compat.py", "repo_aliases.py", "seats_config.py", "router-rules.json", "seats.json"):
+        for name in ("route.py", "ai_worker.py", "findings.py", "harness_ids.py", "gitenv.py", "env_compat.py", "seats_config.py", "router-rules.json", "seats.json"):
             shutil.copy(REPO / name, t / name)
         config = json.loads((t / "seats.json").read_text())
         for seat, reason in (("codex-sol", "agent_use"), ("missing-seat", "引用悬空"), ("doubao", "panel_default")):
@@ -580,7 +580,7 @@ raise SystemExit(panel.main())
 def route_seat_check():
     with tempfile.TemporaryDirectory() as td:
         t = Path(td)
-        for name in ('route.py', 'ai_worker.py', 'findings.py', 'harness_ids.py', 'gitenv.py', 'env_compat.py', 'repo_aliases.py', 'seats_config.py', 'router-rules.json', 'seats.json'):
+        for name in ('route.py', 'ai_worker.py', 'findings.py', 'harness_ids.py', 'gitenv.py', 'env_compat.py', 'seats_config.py', 'router-rules.json', 'seats.json'):
             shutil.copy(REPO / name, t / name)
         cmd = [sys.executable, str(t / 'route.py'), '--check']
         check(sh(cmd, cwd=t).returncode == 0, '当前规则不通过')

@@ -277,8 +277,6 @@ def git_locator_env():
             common = (b / '.git').resolve()
             check(len(roots) == 2 and all(Path(root).is_relative_to(common) for root in roots)
                   and not any(Path(root).is_relative_to(a.resolve()) for root in roots), str(roots))
-            check(findings._command(['git', 'rev-parse', '--show-toplevel'], cwd=str(b)) == str(b.resolve()),
-                  '_command 定位错误')
             with patch.dict(os.environ, {'GIT_SSH_COMMAND': 'ssh test', 'GIT_CONFIG_COUNT': '0',
                                          'GIT_CONFIG_GLOBAL': str(t / 'config')}):
                 filtered = ai_worker.repository_git_env()

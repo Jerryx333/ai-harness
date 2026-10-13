@@ -213,6 +213,24 @@ MUTATIONS.extend([
 ])
 
 
+MUTATIONS.extend([
+    {'id': 'triage-evidence', 'expect': 'evidence gate bypass',
+     'invariant': '支持及试修验证必须有非线索证据', 'file': 'triage.py',
+     'old': "valid_evidence(h.get('evidence'), nonclue=needs_evidence)",
+     'new': "valid_evidence(h.get('evidence'), nonclue=False)",
+     'tests': ['triage_validate_core'], 'location': 'validate'},
+    {'id': 'triage-baseline', 'expect': 'no improvement accepted',
+     'invariant': '已验证必须有可比且改进的基线复验', 'file': 'triage.py',
+     'old': "comparison['value'] < baseline['value']",
+     'new': "comparison['value'] <= baseline['value']",
+     'tests': ['triage_baseline_verified'], 'location': 'validate'},
+    {'id': 'findings-open', 'expect': 'status count semantics',
+     'invariant': 'unexplained 观察仍计入 open', 'file': 'findings.py',
+     'old': 'in (None, "unexplained")', 'new': 'in (None,)',
+     'tests': ['findings_local_cache_hint'], 'location': 'recompute_count_cache'},
+])
+
+
 def run_tests(repo, cases):
     return subprocess.run([sys.executable, "tests/test_harness.py", *cases],
                           cwd=repo, capture_output=True, text=True)

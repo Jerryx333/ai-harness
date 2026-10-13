@@ -1590,25 +1590,6 @@ def acquire_liveness_lock(path: Path):
     return None
 
 
-def trigger_findings_sync():
-    """Fire and forget; AIW_FINDINGS_SYNC_CMD overrides argv for tests only."""
-    try:
-        cfg = findings.config()
-        if os.environ.get("AIW_NESTED") == "1" or not cfg["sync"] or not cfg.get("hub"):
-            return
-        path = STATE / "findings/sync.json"
-        state = json.loads(path.read_text()) if path.exists() else {}
-        last = findings._timestamp(state.get("last_attempt"))
-        if last is not None and (dt.datetime.now(dt.timezone.utc) - last).total_seconds() <= cfg["sync_interval"]:
-            return
-        override = os.environ.get("AIW_FINDINGS_SYNC_CMD")
-        argv = shlex.split(override) if override else [sys.executable, str(HERE / "findings.py"), "sync", "--quiet"]
-        subprocess.Popen(argv, start_new_session=True, stdin=subprocess.DEVNULL,
-                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, close_fds=True)
-    except Exception as error:
-        print(f"[ai-worker] 警告：启动 findings sync 失败：{error}", file=sys.stderr)
-
-
 def main() -> int:
     if sys.argv[1:2] == ["doctor"]:
         return dispatch(None, {})
@@ -1643,8 +1624,6 @@ def main() -> int:
             print(f"[ai-worker] {label}：{path}", file=sys.stderr)
         if liveness_lock is not None:
             liveness_lock.close()
-        if attempt.get("attempted"):
-            trigger_findings_sync()
 
 
 def call_via() -> str:

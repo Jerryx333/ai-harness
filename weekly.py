@@ -65,20 +65,7 @@ def findings_section(since: dt.datetime, sources=None, reasons=None):
     """Windowed raw counts and current local snapshots; never sync or mutate state."""
     folder = STATE / "findings"
     print("\n## 改进缓冲区")
-    import findings
     records = rows("findings/records.jsonl", since, sources)
-    seen = {r.get("id") for r in records if r.get("id")}
-    with findings.hub_read() as hub:
-        if sources is not None:
-            sources.append(dict(name='findings/hub', exists=(folder / 'hub').exists(), rows=0, bad=0))
-        if hub is None and reasons is not None:
-            reasons.append('hub 被跳过')
-        for path in sorted(hub.glob("raw/*/*.jsonl")) if hub is not None else []:
-            for row in rows(str(path.relative_to(STATE)), since, sources):
-                if row.get("id") not in seen:
-                    records.append(row)
-                    if row.get("id"):
-                        seen.add(row["id"])
     print("### 记录类型（窗口内）")
     if records or (folder / "records.jsonl").exists():
         counts = Counter(r.get("type", "未知") for r in records)
@@ -127,19 +114,15 @@ def findings_section(since: dt.datetime, sources=None, reasons=None):
             source['bad'] = 1
             return {}
 
-    sync = snapshot("sync.json")
     cache = snapshot("count-cache.json")
-    print(f"- sync 上次成功: {sync.get('last_ok') or '无数据'}")
-    print(f"- sync 最近错误: {sync.get('last_error') or ('无' if sync else '无数据')}")
-    pending = cache.get("open")
-    print(f"- count-cache 待处理数: {pending if pending is not None else '无数据'}")
+    print(f"- count-cache 待处理数: {cache.get('open', '无数据')}")
     print(f"- count-cache 上次评审: {cache.get('last_triage') or '无数据'}")
+    processed = rows("findings/status.jsonl", since, sources)
+    print("### 记录处理状态（窗口内）")
+    for status, count in sorted(Counter(r.get("status") or "未记录" for r in processed).items()):
+        print(f"- {status}: {count}")
     print("### 假设状态（当前）")
-    import findings
-    with findings.hub_read() as hub:
-        if hub is None and reasons is not None:
-            reasons.append('hub 被跳过')
-        hypotheses = snapshot("hub/state/hypotheses.json") if hub is not None and hub.is_dir() else {}
+    hypotheses = snapshot("hypotheses.json")
     statuses = Counter(h.get("status") or "未记录" for h in hypotheses.values() if isinstance(h, dict))
     for status, count in sorted(statuses.items()):
         print(f"- {status}: {count}")

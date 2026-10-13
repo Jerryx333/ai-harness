@@ -50,41 +50,30 @@ Orca CLI 按 `AIW_ORCA_BIN`、PATH 中的 `orca`、`/Applications/Orca.app/Conte
 
 worker 会追加必答问题，会诊、map 和无附件文本单除外；严格格式的单加 `--no-findings`。验收时核查 stderr 的「范围内修改」。收到「[缓冲区]」提示，单开新会话运行 `aiw triage start`；设计、评审方法和记录去向见 [docs/findings.md](findings.md)。Codex 主会话评审时，关键记录用 `aiw claude` 只读核对。
 
-执行方看到的问题多是小视角的症状，顺手修掉会抹掉线索、根因换个地方再冒出来。缓冲区把执行方和主会话的零散观察保存下来，结合离线机械信号，由主会话分批评审、提出可证伪的根因假设，修在规则、模板、工具上并验证症状成片消失，也减少多台机器之间的重复修改和冲突。记录写入只追加；非自有仓库记录留在本机，命中密钥特征的记录隔离且永不上传。已上传的记录本机不保留，非自有记录处理完后压缩归档，集中仓库超过 12 个月的记录移入 `archive/`，本机 clone 不检出归档。
+观察记录只追加到本机，主会话手动评审与基线复验，命中密钥特征的记录隔离。
 
 ```bash
 aiw note <workdir> <现象> [--expected 文本] [--evidence 文本] [--location 文本]
 aiw findings extract [--days N]
 aiw findings status
-aiw findings sync [--quiet]
 aiw triage start [--days N]
 aiw triage apply <decisions.json>
-aiw triage issues <decisions.json>
 aiw triage abort
-aiw <seat> <workdir> <timeout_s> <prompt_file> --no-findings
 ```
 
-triage 的 `project_issues` 可将自有项目缺陷转交到 PRIVATE 且 issues 开启的项目仓库，其余情况回落集中仓库，详见 [评审流程](findings.md#评审-aiw-triage)。
-
-`--no-findings` 跳过本单观察收集。`seats.json` 的 `findings` 段配置如下（缺少整个段时全关）：
+`--no-findings` 跳过本单收集。配置如下，collect / hint 缺省 false，残留的已删除键静默忽略：
 
 | 键 | 示例值 | 含义 |
 | --- | --- | --- |
-| collect | true | 追加必答问题并解析记录块；关闭时原样交付产出 |
-| sync | true | 上传自有仓库记录；关闭时仍可本机收集 |
+| collect | true | 追加并解析记录块 |
 | hint | true | 钩子提示待评审记录 |
-| hub | 空字符串 | 集中私有仓库 |
-| owners | [] | 自有仓库 owner 名单，决定是否可上传 |
-| max_items | 5 | 每单最多观察条数 |
+| max_items | 5 | 每单观察上限 |
 | daily_cap | 300 | 每日观察上限，超出只计数 |
-| field_max | 300 | 每个自由文本字段的字符上限 |
-| trigger_count | 100 | 待处理数达到此值时提示 |
-| trigger_days | 3 | 有待处理记录且距上次评审达到此天数时提示 |
-| sync_interval | 3600 | 后台同步尝试间隔，单位秒 |
+| field_max | 300 | 文本字符上限 |
+| trigger_count | 100 | 提示数量门槛 |
+| trigger_days | 3 | 提示天数门槛 |
 
-`aiw findings extract` 的 stdout 汇总后展示「数据覆盖：」，`signals.json` 同时保存 `coverage`。来源包括本机 records、hub 原始记录、规则 git 历史及 runs 指令；行数按窗口内有效记录、各规则文件的提交数和 task 文件数计数，去重和信号阈值不会降低输入计数。hub 被跳过或规则历史跳过会写入 reasons，不能把空信号解释为没有发生。
-
-collect、sync、hint 三个开关独立；未配置的开关默认 false，owners 默认空列表，hub 需显式配置；数值项默认值如表所示。`aiw weekly [days]` 的文本模式展示窗口内观察、回答比例以及同步和评审状态；`aiw gc` 保留整个 findings 目录。记录协议、状态文件和评审方法见 [docs/findings.md](findings.md)。
+extract 从本机 records、规则 Git 历史与 runs 抽取 overlap / rule_churn / repeated_instruction，保存 coverage。覆盖只说明读到多少，不代表结论可信度。weekly 展示本机窗口记录与当前评审快照。状态文件、decisions.json 结构及 evidence/baseline/comparison 校验见 [findings.md](findings.md)。
 
 ## 跑腿专线
 
@@ -414,7 +403,7 @@ python3 tests/mutation_check.py credentials locked  # 只运行指定变异
 
 ## 变更记录
 
-- 2026-10-10 首次公开：公开默认只含 codex / codex-sol / claude；文本座位、路由覆盖、通知、findings 集中仓库、跑腿均由本地配置提供。
+- 2026-10-10 首次公开：公开默认只含 codex / codex-sol / claude；文本座位、路由覆盖、通知、findings 设置、跑腿均由本地配置提供。
 
 ## 本地配置
 
@@ -430,7 +419,7 @@ Claude 在 aiw 引入行后引入 `CLAUDE.personal.md`；文件不存在时不�
 
 防泄漏检查只跳过与 remote 地址路径段（如仓库所属账号、仓库名）完全相同的私人值；地址中的用户名、密码等凭据部分不豁免。远端读取失败时仍按原规则检查。
 
-公开默认的 findings hub、owners 和 Discord 频道为空：未配置 hub 时跳过同步和上传；未配置频道且没有 `AIW_DISCORD_CHANNEL` 时跳过通知。个人停用决定与登录提示也应放在本地文件中。`rules_hash` 仍标识公开规则文件，`effective_hash` 标识合并后的行为配置；通知、findings 设置和座位说明不影响后者。
+公开默认的 Discord 频道为空：未配置频道且没有 `AIW_DISCORD_CHANNEL` 时跳过通知。个人停用决定与登录提示也应放在本地文件中。`rules_hash` 仍标识公开规则文件，`effective_hash` 标识合并后的行为配置；通知、findings 设置和座位说明不影响后者。
 
 
 公开默认仅有 `codex`、`codex-sol`、`claude` 三个 CLI 座位，三条顶替链均为空。`panel_default` 为 `["codex-sol", "claude"]`，按 `self_seats` 排除主会话；`panel_free` 为空。`agent_use` 座位通过本地配置接入，并依赖本机安装的适配器，公开 agent-use 不附带这些适配器或跑腿服务。
@@ -441,7 +430,7 @@ CLI 座位可选 `adapter`：缺省或 `null` 为普通 CLI；目前字符串仅
 
 路由本机覆盖用非空 `AIW_ROUTER_RULES` 指定，否则读取 `~/.config/aiw/router-rules.local.json`（支持软链）；示例见 [router-rules.local.example.json](../router-rules.local.example.json)。优先级为项目 > 本机 > 全局：同 `id` 替换，新增规则前置，`disable` 删除低层同 id 规则，`escape` 前置合并。显式文件缺失或断链也算损坏；钩子警告后忽略该层，`route --check` 返回 1，并校验合并后的规则和座位。
 
-跑腿根目录按 `AGENT_USE_ERRAND_HOME` > 本地 `errand.home` 解析，支持 `~`；未配置时无跑腿供应商，`aiw errand` 明确报错。配置目录下 `config/errands.json` 缺失视为空，`scripts/errand_use.py` 缺失则入口报错。`findings.hub` 为空时 sync 静默跳过，triage 需要集中仓库并报错。
+跑腿根目录按 `AGENT_USE_ERRAND_HOME` > 本地 `errand.home` 解析，支持 `~`；未配置时无跑腿供应商，`aiw errand` 明确报错。配置目录下 `config/errands.json` 缺失视为空，`scripts/errand_use.py` 缺失则入口报错。改进缓冲区只使用本机状态。
 
 ### agent-use 契约与漂移诊断
 
@@ -468,4 +457,4 @@ agent-use 的 `status.json` 必须声明整数 `protocol_version: 1`。缺失或
 
 三个报告的 coverage 均含 `sources`、`level` 和 `reasons`：所有来源不存在或窗口内有效行合计为 0 时为「无数据」；否则有预期来源缺失、解析失败或被跳过时为「部分」，其余为「完整」。例外：tokens 的转录根目录不存在时，无论账本是否有有效行，均为「无数据」。reasons 记录缺失、坏行、跳过或窗口无有效行的原因。文本打印「数据覆盖：」及固定说明「覆盖只说明读到多少，不代表结论可信度」，无数据时也会打印；没有读到与没有发生须分别理解。
 
-`aiw weekly` 的「token（codex 类座位）」小节按账本 token 元数据展示派单的 rollout 合计及覆盖率，同时区分 stderr 兜底、tokens=null 和旧记录；始终展示 codex、codex-sol（无尝试时显示「无数据」），再按名字排序追加窗口内账本行中出现过 tokens 键的 actual（含别名座位及 tokens=null / stderr 记录），没有 tokens 键的普通座位不展示。尝试数及用量仍只计 rc 非 null 的记录。展示及汇总不依赖当前座位配置，配置改动不会改变历史报告；Claude 主会话用量通过 `aiw tokens` 测量。「按仓库」小节按 repo、workdir、未记录分组展示成功率、超时和中位数；`--json` 输出派单统计 JSON，token 和改进缓冲区小节仅在文本模式输出。JSON 顶层新增 `coverage`，统计 seat-ledger.jsonl 和 router-log.jsonl 的窗口内有效行与坏行，原有字段保留；文本 coverage 还覆盖读取的 findings 本机记录、quarantine、hub 和当前状态快照（快照没有窗口内行数，rows 为 0），hub 未读时 reasons 会说明跳过。
+`aiw weekly` 的「token（codex 类座位）」小节按账本 token 元数据展示派单的 rollout 合计及覆盖率，同时区分 stderr 兜底、tokens=null 和旧记录；始终展示 codex、codex-sol（无尝试时显示「无数据」），再按名字排序追加窗口内账本行中出现过 tokens 键的 actual（含别名座位及 tokens=null / stderr 记录），没有 tokens 键的普通座位不展示。尝试数及用量仍只计 rc 非 null 的记录。展示及汇总不依赖当前座位配置，配置改动不会改变历史报告；Claude 主会话用量通过 `aiw tokens` 测量。「按仓库」小节按 repo、workdir、未记录分组展示成功率、超时和中位数；`--json` 输出派单统计 JSON，token 和改进缓冲区小节仅在文本模式输出。JSON 顶层新增 `coverage`，统计 seat-ledger.jsonl 和 router-log.jsonl 的窗口内有效行与坏行，原有字段保留；文本 coverage 还覆盖读取的 findings 本机记录、quarantine、status 和当前假设快照（快照 rows 为 0）。

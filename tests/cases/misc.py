@@ -124,7 +124,7 @@ def corrupt_state_rules():
         cmd, env, _ = worker_call(t, AIW_STATE=str(state))
         r = sh(cmd, env=env)
         check(r.returncode == 1 and '状态文件损坏' in r.stderr and breaker.read_text() == '{bad', '损坏状态被覆盖')
-        for name in ('route.py', 'ai_worker.py', 'findings.py', 'harness_ids.py', 'gitenv.py', 'env_compat.py', 'repo_aliases.py', 'seats_config.py', 'seats.json'): shutil.copy(REPO / name, t / name)
+        for name in ('route.py', 'ai_worker.py', 'findings.py', 'harness_ids.py', 'gitenv.py', 'env_compat.py', 'seats_config.py', 'seats.json'): shutil.copy(REPO / name, t / name)
         (t / 'router-rules.json').write_text('{bad')
         r = sh([sys.executable, str(t / 'route.py'), '--check'], cwd=t)
         check(r.returncode == 1, '损坏全局规则未报错')
@@ -291,7 +291,7 @@ def test_state_contract():
 
         extract_root = t / 'extract'; extract_root.mkdir()
         f = findings_fixture(extract_root)
-        f.extract(harness=f.HERE, include_hub=False)
+        f.extract(harness=f.HERE)
         signals = json.loads((f.STATE / 'findings/signals.json').read_text())
         check('coverage' in signals, 'signals coverage 缺失')
         coverage = signals['coverage']

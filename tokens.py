@@ -116,7 +116,7 @@ def report(days, top):
                     seat = row.get('actual') or 'unknown'
                     usage = row.get('tokens')
                     measured = isinstance(usage, dict) and usage.get('source') == 'rollout'
-                    values = {f: usage.get(f, 0) for f in ('input', 'cached', 'output')} if measured else {}
+                    values = {f: usage.get(f) for f in ('input', 'cached', 'output')} if measured else {}
                     if any(not isinstance(v, int) or isinstance(v, bool) or v < 0 for v in values.values()):
                         raise ValueError('invalid ledger usage')
                     ledger_source['rows'] += 1

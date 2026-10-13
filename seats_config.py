@@ -122,11 +122,11 @@ def validate(merged) -> list[str]:
                 templates(seat.get(key), f'{path}.{key}', ('bin', 'prompt', 'workdir'), nonempty=True)
                 if adapter == 'codex':
                     argv = seat.get(key)
-                    if (not isinstance(argv, list) or argv[1:2] != ['exec']
+                    if (not isinstance(argv, list) or argv[:1] != ['{bin}'] or argv[1:2] != ['exec']
                             or argv.count('--sandbox') != 1
                             or argv[argv.index('--sandbox') + 1:argv.index('--sandbox') + 2]
                             not in (['read-only'], ['workspace-write'])):
-                        errors.append(f'{path}.{key} 必须是 Codex exec 命令（argv[1] 为 exec，'
+                        errors.append(f'{path}.{key} 必须是 Codex exec 命令（argv[0] 为 {{bin}}，argv[1] 为 exec，'
                                       '恰好一个 --sandbox，其后为 read-only 或 workspace-write）；'
                                       '若该座位不再使用 Codex CLI，在本地配置中写 "adapter": null')
         if 'model' in seat and not isinstance(seat['model'], str):

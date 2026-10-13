@@ -168,6 +168,20 @@ def tokens_report():
         bool_data = json.loads(bool_result.stdout)
         check(bool_data['malformed_lines'] == 1 and bool_data['dispatch']['count'] == 1
               and bool_data['dispatch']['rollout']['codex']['input'] == 1000, str(bool_data))
+        missing_state = t / 'missing-state'; missing_state.mkdir()
+        missing_ledger = [dict(base, tokens=dict(source='rollout'))]
+        missing_ledger += [dict(base, tokens={k: v for k, v in base['tokens'].items() if k != field})
+                           for field in ('input', 'cached', 'output')]
+        (missing_state / 'seat-ledger.jsonl').write_text(
+            '\n'.join(json.dumps(r) for r in [*missing_ledger, base]))
+        missing_result = sh(cmd + ['--json'], env=dict(env, AIW_STATE=str(missing_state)))
+        check(missing_result.returncode == 0, missing_result.stderr)
+        missing_data = json.loads(missing_result.stdout)
+        check(missing_data['dispatch']['rollout']['codex'] == dict(input=1000, cached=700, output=20)
+              and missing_data['dispatch']['count'] == 1, str(missing_data))
+        check(missing_data['coverage']['sources'][1] ==
+              dict(name='seat-ledger.jsonl', exists=True, rows=1, bad=4)
+              and missing_data['malformed_lines'] == 5, str(missing_data))
         text = sh(cmd, env=env)
         for expected in ('主会话 3 轮', 'ctx 中位 200000', '轮次 33.33%', '固定 50.00%', '增长 50.00%',
                          '600020 1 3 2000', 'codex rollout: input 1000 · cached 700 · output 20'):

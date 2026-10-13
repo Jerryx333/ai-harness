@@ -155,7 +155,8 @@ def codex_adapter_validation():
     merged = config.merge(public, {'seats': {'text': {'kind': 'agent_use', 'provider': 'test', 'adapter': 'codex'}}})
     check(any('seats.text.adapter' in e for e in config.validate(merged)), 'agent_use adapter 未拒绝')
     for key in ('argv_rw', 'argv_ro'):
-        for argv in (['{bin}', 'other', '--sandbox', 'read-only'], ['{bin}', 'exec'],
+        for argv in (['echo', 'exec', '--sandbox', 'workspace-write', '{prompt}'],
+                     ['{bin}', 'other', '--sandbox', 'read-only'], ['{bin}', 'exec'],
                      ['{bin}', 'exec', '--sandbox'], ['{bin}', 'exec', '--sandbox', 'bad'],
                      ['{bin}', 'exec', '--sandbox', 'read-only', '--sandbox', 'workspace-write']):
             merged = config.merge(public, {'seats': {'codex': {key: argv}}})

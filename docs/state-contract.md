@@ -133,7 +133,9 @@ worker 在首次写 JSON 前创建或打开同名 `<pid>.lock` 并持有 `fcntl.
 
 ## panels/<YYYYmmdd-HHMMSS>-<pid>/
 
-`aiw panel` 按 `format_panel_id` 生成会诊目录名，保存各家共用的 `prompt.md` 快照、有 `--prior` 时归档且不发给座位的 `prior.md`、供主会话逐条填写裁决的 `adjudication.md`、各座位的 `<座位>.md`（worker 的 stdout）、有错误输出时的 `<座位>.stderr.txt` 和成功 worker 写出的 `<座位>.provider`（实际执行方）。会诊外层超时时不写该座位的 `.md` 和 `.stderr.txt`。`summary.json` 含 `dir`（会诊目录路径）、按座位顺序排列的 `seats`（每家结果含 `seat`、`rc`、`chars`、`err`；chars 为 stdout 字符数，err 为 stderr 最后一个非空行的列表，无错误输出时为空列表，外层超时时为超时提示列表且 rc=124、chars=0）、`answered`（成功家名单，成功为 rc==0 且 chars>0）、`required`（固定为 2）、`sufficient`（answered 数量 ≥ required；false 时 panel 返回 1）。子进程通过 `AIW_PANEL_DIR` 标记账本 via=panel。`aiw gc` 与 runs、maps 一样按子目录修改时间清理过期 panels，默认保留 30 天，可指定非负整数天数；跳过软链，`--dry-run` 只预览。
+`aiw panel` 按 `format_panel_id` 生成会诊目录名，保存各家共用的 `prompt.md` 快照（含预检读取一次后渲染的附件全文，所有座位含 CLI 均使用此快照）、有 `--prior` 时归档且不发给座位的 `prior.md`、供主会话逐条填写裁决的 `adjudication.md`、各座位的 `<座位>.md`（worker 的 stdout）、有错误输出时的 `<座位>.stderr.txt` 和成功 worker 写出的 `<座位>.provider`（实际执行方）。会诊外层超时时不写该座位的 `.md` 和 `.stderr.txt`。`summary.json` 含 `dir`（会诊目录路径）、按座位顺序排列的 `seats`（每家结果含 `seat`、`rc`、`chars`、`err`；chars 为 stdout 字符数，err 为 stderr 最后一个非空行的列表，无错误输出时为空列表，外层超时时为超时提示列表且 rc=124、chars=0）、`answered`（成功家名单，成功为 rc==0 且 chars>0）、`required`（固定为 2）、`sufficient`（answered 数量 ≥ required；false 时 panel 返回 1）。子进程通过 `AIW_PANEL_DIR` 标记账本 via=panel。`aiw gc` 与 runs、maps 一样按子目录修改时间清理过期 panels，默认保留 30 天，可指定非负整数天数；跳过软链，`--dry-run` 只预览。
+
+有附件时写 `attachments.json`，按输入顺序列出 `{"path": 相对工作目录的路径, "bytes": 字节数, "sha256": 完整十六进制}`；字节数与 SHA256 均由实际渲染进 `prompt.md` 的原始附件字节计算，不重新读取源文件。无附件时不写 `attachments.json`。附件预检失败返回 64，不启动任何 worker。
 
 ## maps/<YYYYmmdd-HHMMSS>-<pid>/
 

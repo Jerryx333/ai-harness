@@ -264,7 +264,7 @@ def map_batch():
 
 
 def panel_compact_context():
-    from ai_worker import PANEL_FORMAT
+    from ai_worker import PANEL_FORMAT, render_attachments
     with tempfile.TemporaryDirectory() as td:
         t = Path(td)
         (t / 'code.txt').write_text('ATTACH_PANEL_MARKER')
@@ -289,7 +289,8 @@ def panel_compact_context():
                     check(task.index('code.txt') < task.index(PANEL_FORMAT), task)
             d = Path(next(line.removeprefix('会诊目录：') for line in r.stdout.splitlines()
                           if line.startswith('会诊目录：')))
-            check((d / 'prompt.md').read_text() == '只列两条', 'prompt 快照被修改')
+            check((d / 'prompt.md').read_text() == '只列两条' +
+                  render_attachments([('code.txt', b'ATTACH_PANEL_MARKER')]), 'prompt 快照缺少附件全文')
             check((d / 'qoder.md').read_text() == answer, '归档回答被截断')
             if full:
                 check('### qoder' not in r.stdout and '有效意见' not in r.stdout, r.stdout)
@@ -306,6 +307,127 @@ def panel_compact_context():
         check(all(warning not in p.read_text() for p in d.glob('*.stderr.txt')), '子进程重复警告')
 
 
+def panel_attachment_snapshot():
+    import hashlib
+    from ai_worker import render_attachments
+    # Observe real worker launches, while retaining real provider subprocesses.
+    code = """import json, os, sys
+from pathlib import Path
+import ai_worker, panel
+read = ai_worker.read_attachments
+def preflight(*args):
+    files = read(*args)
+    with open(os.environ['READ_LOG'], 'a') as log:
+        log.write('read\\n')
+    return files
+ai_worker.read_attachments = preflight
+popen = panel.subprocess.Popen
+def launch(argv, *args, **kwargs):
+    if len(argv) > 1 and argv[1] == str(panel.HERE / 'ai_worker.py'):
+        with open(os.environ['WORKER_LOG'], 'a') as log:
+            log.write(json.dumps(argv) + '\\n')
+    return popen(argv, *args, **kwargs)
+panel.subprocess.Popen = launch
+sys.argv = ['panel', *sys.argv[1:]]
+raise SystemExit(panel.main())
+"""
+    for mutation in ('rewrite', 'delete'):
+        with tempfile.TemporaryDirectory() as td:
+            t = Path(td)
+            wd = t / 'work'; wd.mkdir()
+            files = [('z.txt', '原始附件\n```代码```\n末尾无换行'.encode()),
+                     ('a.txt', b'second attachment\n')]
+            for name, data in files:
+                (wd / name).write_bytes(data)
+            au = fake_agent_use(t)
+            script = au / 'scripts/run_agent.py'
+            script.write_text(
+                'import os\nfrom pathlib import Path\n'
+                'source = Path(os.environ["SOURCE"])\n'
+                'if os.environ["MUTATION"] == "delete": source.unlink()\n'
+                'else: source.write_text("CHANGED_AFTER_PREFLIGHT")\n'
+                'Path(os.environ["MUTATED"]).touch()\n' + FAKE_AGENT_USE)
+            bins = fake_bins(t)
+            cli = bins / 'codex'
+            cli.write_text('#!' + sys.executable + '\n'
+                           'import os, sys, time\nfrom pathlib import Path\n'
+                           'if "--version" in sys.argv: print("codex-cli fake"); sys.exit(0)\n'
+                           'deadline = time.monotonic() + 10\n'
+                           'while not Path(os.environ["MUTATED"]).exists():\n'
+                           '    if time.monotonic() > deadline: sys.exit(2)\n'
+                           '    time.sleep(0.02)\n'
+                           'prompt = next(a for a in sys.argv if "snapshot request" in a)\n'
+                           'Path(os.environ["CLI_PROMPT"]).write_text(prompt)\n'
+                           'print("codex ok")\n')
+            env = dict(os.environ, AIW_STATE=str(t / 'state'), AGENT_USE_HOME=str(au),
+                       PATH=f"{bins}:{os.environ['PATH']}", SOURCE=str(wd / 'z.txt'),
+                       MUTATION=mutation, MUTATED=str(t / 'mutated'),
+                       CLI_PROMPT=str(t / 'cli-prompt'), READ_LOG=str(t / 'reads'),
+                       WORKER_LOG=str(t / 'workers'))
+            r = subprocess.run([sys.executable, '-c', code, str(wd), '15', 'snapshot request',
+                    'qoder', 'codex-sol', '--attach', './z.txt', '--attach', 'a.txt'], env=env, capture_output=True, text=True, timeout=120)
+            check(r.returncode == 0, r.stdout + r.stderr)
+            out, = (t / 'state/panels').iterdir()
+            snapshot = (out / 'prompt.md').read_bytes()
+            check(snapshot == ('snapshot request' + render_attachments(files)).encode(),
+                  '快照不等于预检原文')
+            check((t / 'reads').read_text() == 'read\n', 'panel 重复读取附件')
+            argv = [json.loads(line) for line in (t / 'workers').read_text().splitlines()]
+            check(len(argv) == 2 and all('--attach' not in a for a in argv), str(argv))
+            agent_task, = [p.read_bytes() for p in (t / 'state/runs').glob('*/task.txt')
+                           if 'qoder' in p.parent.name]
+            prompts = [agent_task, (t / 'cli-prompt').read_bytes()]
+            check(all(snapshot in prompt and b'CHANGED_AFTER_PREFLIGHT' not in prompt
+                      for prompt in prompts), '座位未收到相同的原始附件全文')
+            manifest = json.loads((out / 'attachments.json').read_text())
+            check([item['path'] for item in manifest] == [name for name, _ in files], str(manifest))
+            for item, (name, data) in zip(manifest, files):
+                # Extract actual payload bytes from the rendered fence, independently of the manifest.
+                section = snapshot.split(('### ' + name + '\n').encode(), 1)[1]
+                fence, payload = section.split(b'\n', 1)
+                actual = payload.split(b'\n' + fence, 1)[0]
+                check(actual == data and item == dict(path=name, bytes=len(actual),
+                      sha256=hashlib.sha256(actual).hexdigest()), str(item))
+
+    # All-CLI panels now warn too; workers must not repeat the warning.
+    with tempfile.TemporaryDirectory() as td:
+        t = Path(td)
+        (t / 'large.txt').write_text('x' * 30_001)
+        env = dict(os.environ, AIW_STATE=str(t / 'state'),
+                   PATH=f"{fake_bins(t)}:{os.environ['PATH']}")
+        r = subprocess.run([sys.executable, str(REPO / 'panel.py'), str(t), '10', 'review',
+                'codex-sol', 'claude', '--attach', 'large.txt'], env=env, capture_output=True, text=True, timeout=120)
+        warning = '超过文本座位建议的 30KB'
+        check(r.returncode == 0 and r.stderr.count(warning) == 1, r.stdout + r.stderr)
+        check(all(warning not in p.read_text() for p in (t / 'state/panels').glob('*/*.stderr.txt')),
+              'CLI 子进程重复警告')
+
+
+def panel_attachment_preflight_failure():
+    with tempfile.TemporaryDirectory() as td:
+        t = Path(td)
+        wd = t / 'work'; wd.mkdir()
+        (t / 'outside.txt').write_text('outside')
+        (wd / 'binary.txt').write_bytes(b'text\0binary')
+        log = t / 'providers'
+        env = dict(os.environ, AIW_STATE=str(t / 'state'), FAKE_AU_LOG=str(log),
+                   AGENT_USE_HOME=str(fake_agent_use(t)))
+        code = """import panel, sys
+def forbidden(*args, **kwargs):
+    raise AssertionError('worker started before attachment validation')
+panel.subprocess.Popen = forbidden
+sys.argv = ['panel', *sys.argv[1:]]
+raise SystemExit(panel.main())
+"""
+        for bad in ('../outside.txt', 'binary.txt'):
+            r = subprocess.run([sys.executable, '-c', code, str(wd), '10', 'review',
+                    'qoder', 'workbuddy', '--attach', bad], env=env, capture_output=True, text=True, timeout=120)
+            check(r.returncode == 64, r.stdout + r.stderr)
+            check(not log.exists() and not list((t / 'state/panels').glob('*/*.provider'))
+                  and not list((t / 'state/panels').glob('*/*.md'))
+                  and not list((t / 'state/runs').glob('*')), '坏附件启动 worker 或供应商')
+
+
 def panel_prior():
     with tempfile.TemporaryDirectory() as td:
         t = Path(td)
@@ -318,6 +440,7 @@ def panel_prior():
         d = next((t / 'state/panels').iterdir())
         check((d / 'prior.md').read_text() == prior.read_text(), '先验判断未归档')
         check((d / 'prompt.md').read_text() == '独立评审任务', 'prior 混进 prompt 快照')
+        check(not (d / 'attachments.json').exists(), '无附件不应写清单')
         tasks = [p.read_text() for p in (t / 'state/runs').glob('*/task.txt')]
         check(len(tasks) == 2 and all('PRIOR_PRIVATE_MARKER' not in x and x.count('今天是 ') == 1 for x in tasks), str(tasks))
         template = (d / 'adjudication.md').read_text()
@@ -711,6 +834,8 @@ CASES = {case.__name__: case for case in (
     map_interrupt,
     map_batch,
     panel_compact_context,
+    panel_attachment_snapshot,
+    panel_attachment_preflight_failure,
     panel_prior,
     panel,
     panel_opinion_threshold,

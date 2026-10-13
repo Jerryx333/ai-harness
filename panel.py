@@ -3,7 +3,7 @@
 
     aiw panel <workdir> <timeout_s> <prompt_file|prompt文本> [seat ...] [--attach 文件 ...] [--prior 文件] [--free] [--full]
     --free 使用 panel_free 免费座位，同样去掉主会话自己；不能同时显式指定座位。
-    --attach 同 aiw：CLI 座位收文件清单，其它座位收全文；文本附件超过 30KB 提醒。
+    --attach 预检读取一次，渲染进共用 prompt 快照，各家（含 CLI 座位）收到同一份全文；合计超过 30KB 提醒。
     默认要求最多 4 条、1500 字的证据清单，并在 stdout 内联回答（每家最多显示 3000 字）。
     --full 不追加格式要求，stdout 不内联各家回答（全文在会诊目录的 <座位>.md）。
     --prior 主会话事先写好的判断，只归档并展示给主会话，不发给座位。
@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import concurrent.futures as cf
 import datetime as dt
+import hashlib
 import json
 import os
 from env_compat import getenv
@@ -48,11 +49,10 @@ except ConfigError as error:
     raise SystemExit(1)
 
 
-def ask(seat: str, workdir: str, timeout: str, prompt_file: str, out: Path, attach: list[str], full: bool = False) -> dict:
+def ask(seat: str, workdir: str, timeout: str, prompt_file: str, out: Path, full: bool = False) -> dict:
     env = dict(os.environ, AIW_PANEL_DIR=str(out), AIW_PROVIDER_FILE=str(out / f"{seat}.provider"))
     env.update(AIW_PANEL_FORMAT="0" if full else "1", AIW_ATTACH_WARNING_SUPPRESS="1")
-    extra = [x for a in attach for x in ("--attach", a)]
-    argv = [sys.executable, str(HERE / "ai_worker.py"), seat, workdir, timeout, prompt_file, "--ro", "--no-fallback", *extra]
+    argv = [sys.executable, str(HERE / "ai_worker.py"), seat, workdir, timeout, prompt_file, "--ro", "--no-fallback"]
     limit = int(timeout) + float(os.environ.get("AIW_PANEL_GRACE", "90"))
     p = subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env)
     try:
@@ -73,7 +73,7 @@ def ask(seat: str, workdir: str, timeout: str, prompt_file: str, out: Path, atta
 
 def main() -> int:
     sys.path.insert(0, str(HERE))
-    from ai_worker import split_argv, read_attachments, warn_large_attachments, AttachError, main_agent, disabled_seat, print_disabled, errand_names, StateError
+    from ai_worker import split_argv, read_attachments, render_attachments, warn_large_attachments, AttachError, main_agent, disabled_seat, print_disabled, errand_names, StateError
     try:
         values = {}
         args, flags, attach = split_argv(sys.argv[1:], {"--attach", "--free", "--prior", "--full"}, values=values)
@@ -140,21 +140,26 @@ def main() -> int:
     except AttachError as e:
         print(e, file=sys.stderr)
         return 64
-    if any(SEATS["seats"][s].get("kind") != "cli" for s in seats):
+    if attachment_files:
         warn_large_attachments(attachment_files)
     if not Path(prompt_file).is_file():
         # 第三个参数不是文件就当 prompt 文本，落盘后再分发
         text, prompt_file = prompt_file, None
     out = STATE / "panels" / format_panel_id(dt.datetime.now(), os.getpid())
     out.mkdir(parents=True, exist_ok=True)
-    (out / "prompt.md").write_text(Path(prompt_file).read_text(encoding="utf-8") if prompt_file else text, encoding="utf-8")
+    prompt = Path(prompt_file).read_text(encoding="utf-8") if prompt_file else text
+    (out / "prompt.md").write_text(prompt + render_attachments(attachment_files), encoding="utf-8")
+    if attachment_files:
+        manifest = [{"path": rel, "bytes": len(data), "sha256": hashlib.sha256(data).hexdigest()}
+                    for rel, data in attachment_files]
+        (out / "attachments.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
     prompt_file = str(out / "prompt.md")  # 各家共用这一份快照
     if prior is not None:
         (out / "prior.md").write_text(prior, encoding="utf-8")
         print("## 主会话先验判断\n" + prior, flush=True)
     (out / "adjudication.md").write_text(ADJUDICATION, encoding="utf-8")
     with cf.ThreadPoolExecutor(max_workers=len(seats)) as ex:
-        results = list(ex.map(lambda s: ask(s, workdir, timeout, prompt_file, out, attach, "--full" in flags), seats))
+        results = list(ex.map(lambda s: ask(s, workdir, timeout, prompt_file, out, "--full" in flags), seats))
     ok = [r for r in results if r["rc"] == 0 and r["chars"] > 0]
     sufficient = len(ok) >= required_opinions
     summary = {"dir": str(out), "seats": results, "answered": [r["seat"] for r in ok],

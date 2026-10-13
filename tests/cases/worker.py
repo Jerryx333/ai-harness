@@ -967,12 +967,12 @@ def attach():
             check(len(list((t / "state" / "runs").iterdir())) == n, f"{bad} 被拒时不应发出任何请求")
         p = sh(["bash", aiw, "qoder", str(wd), "30", str(pf), "--attach"], env=env)
         check(p.returncode == 64, "--attach 缺参数应 rc=64")
-        # panel：文本座位收到全文，CLI 收清单；坏附件一家都不发
+        # panel：所有座位（含 CLI）收到同一份全文；坏附件一家都不发
         before = set((t / "state" / "runs").iterdir())
         p = sh(["bash", aiw, "panel", str(wd), "30", str(pf), "--attach", "src/a.py"], env=env)
         check(p.returncode == 0, f"panel 带附件应成功: {p.stdout}{p.stderr}")
         recent = set((t / "state" / "runs").iterdir()) - before  # 目录名按秒+座位排序不等于创建顺序，取本次新建的
-        check(len(recent) == 6 and all(("MARKER_A" in (r / "task.txt").read_text()) == ("sha256" not in (r / "task.txt").read_text()) for r in recent), "panel 每家都应收到附件")
+        check(len(recent) == 6 and all("MARKER_A" in (r / "task.txt").read_text() and "请在工作目录内自行读取以下文件" not in (r / "task.txt").read_text() for r in recent), "panel 每家都应收到附件")
         n = len(list((t / "state" / "runs").iterdir()))
         p = sh(["bash", aiw, "panel", str(wd), "30", str(pf), "--attach", ".env"], env=env)
         check(p.returncode == 64 and len(list((t / "state" / "runs").iterdir())) == n, "panel 坏附件应整体拒绝且不发请求")

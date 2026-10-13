@@ -4,6 +4,11 @@
 
 给用 Claude Code 或 Codex 当主力、常被额度卡住或上下文撑爆的人。主模型专心规划和把关，读代码、跑命令、起草摘要这类体力活派出去。派给谁由你配：同一家更省的模型、你已有的其他订阅、免费模型都行。装好有默认配置，只装一家也能用。不用起服务，除 Python 3 外不装依赖。
 
+<p align="center"><img src="assets/hero.webp" alt="aiw：主会话定方案，模型分工，主会话验收" width="760"></p>
+<p align="center"><img src="assets/demo.gif" alt="aiw 第一单：判断该派给哪个角色、查看角色解析、派一单只读评审" width="760"><br><sub>真实运行录屏，等待执行方的约 1 分钟已剪掉；用 <code>vhs assets/demo.tape</code> 可重新生成。</sub></p>
+
+**座位**是一个可派单的模型或 CLI；**角色**是 write（改文件）、review（只读评审）、draft（起草和摘要），按配置顺序解析到第一个可用座位。Codex 主会话的 write 候选为空，改文件自己做。
+
 ## 解决什么问题
 
 - 主模型额度不够用：订阅有时间窗口和周限额，活干到一半就停；读大文件、翻日志、跑测试这类活很耗额度。
@@ -28,6 +33,19 @@
 - **别的模型交回来的东西靠不靠谱？** 每次都留存原文和过程记录，结果一律当待审稿，由主会话核对后才算数。
 
 只想接 Codex、Claude Code、OpenCode 这几家常见 CLI？[agent-use-adapters](https://github.com/Jerryx333/agent-use-adapters) 已经写好适配器。安装 aiw 时加一个参数就能一起装好，还会补上 OpenCode 免费模型座位：`~/.claude/aiw/install.sh --with-agent-use`。手工接入步骤见[使用指南](docs/guide.zh-CN.md#接入更多模型可选)。
+
+```mermaid
+flowchart LR
+    main["主会话：方案与验收"] --> aiw["aiw：座位 / 角色 / 顶替"]
+    aiw --> cli["内置 CLI 座位：Codex / Claude Code"]
+    aiw --> au["agent-use：provider 调度"]
+    au --> adapters["agent-use-adapters：现成适配器"]
+    au --> custom["自定义 CLI 适配器"]
+    adapters --> tools["Codex / Claude Code / OpenCode CLI"]
+    custom --> other["你的 CLI"]
+```
+
+aiw 负责把任务交给座位；agent-use 负责调用注册的 provider；agent-use-adapters 提供现成的 provider 适配器。只用内置 CLI 座位不需要后两个仓库。
 
 ## 你可能会担心的
 
@@ -85,7 +103,15 @@
    aiw review "$HOME/.claude/aiw" 900 /tmp/aiw-review.txt --ro
    ```
 
+   **跑完你会看到什么：** 结果直接打印在终端。最后两行里，`[ai-worker] 实际执行方：…` 是真正干活的座位（某家不可用被顶替时会和你点的不同），`[ai-worker] 全文：…` 是完整结果的存档。每单的任务原文（`task.txt`）、完整结果（`output.md`）和错误输出（`stderr.txt`）都存在 aiw 仓库的 `state/runs/<时间>-<座位>-…/` 里。失败时最后一行改为「排查」目录，先看其中的 `stderr.txt`。
+
 4. 之后照常用 Claude Code 或 Codex。遇到适合派出去的活，它会提示该交给谁，主会话决定方案并验收。
+
+   例如你在主会话里输入「列出边界情况」，主会话会同时收到这样一条提示（公开默认配置下的实际输出）：
+
+   ```text
+   [派单] 本条判定为【小段文本草稿】：只出文本草稿，交给 `aiw draft <workdir> 600 <prompt文件> --ro [--attach 文件]`，公开默认不顶替；产物待主会话核对。
+   ```
 
 
 ## 常用命令
@@ -103,14 +129,22 @@
 | `aiw sync` | `aiw sync` 用 `git pull --ff-only` 更新 aiw 仓库，不能合并分叉历史；已安装的 agent-use 和 agent-use-adapters 也一并更新；更新已安装规则/钩子需重跑安装。 |
 | `aiw gc` | 删除旧的派单、会诊、批处理归档，默认保留 30 天；先预览：`aiw gc 30 --dry-run`。 |
 
+## 用好它
+
+- 先定方案，再派能写清验收条件的小块；又小又急的活自己做。
+- 每单写清目标、上下文、范围、约束和验收命令；文本座位需要用 `--attach` 带上材料。
+- 产出当待审稿：看改动、核对出处、跑测试，并看「实际执行方」。
+- 会诊先写自己的判断，用 `--prior` 归档；逐条接受、驳回或暂缓，大任务用 `aiw goal` 清单。
+- 用 `aiw tokens` 看本机 Claude Code 用量，用 `aiw weekly` 看派单成功率和 token 汇总。
+
+任务单模板、推荐配置和一天的用法见[最佳实践](docs/best-practices.zh-CN.md)。
+
 ## 更多文档
 
 - [使用指南](docs/guide.zh-CN.md)：安装细节、工作原理和定制。
+- [最佳实践](docs/best-practices.zh-CN.md)：派单模板、推荐配置和验收方法。
 - [中文参考手册](docs/reference.zh-CN.md)：全部命令与细则。
-- [改进缓冲区](docs/findings.md)
-- [状态约定](docs/state-contract.md)
-- [红线与回归检查](docs/invariants.md)
 
 ## 参与贡献
 
-运行 `python3 tests/test_harness.py` 和 `python3 tests/mutation_check.py`（并发等选项见[参考手册](docs/reference.zh-CN.md#自测)），改动走 PR。用例位于 `tests/cases/`，公共辅助位于 `tests/support.py`。许可证：[Apache-2.0](LICENSE)。
+欢迎补文档、复现问题或完善离线测试，切入点和开发方式见[贡献指南](CONTRIBUTING.md)。运行 `python3 tests/test_harness.py` 和 `python3 tests/mutation_check.py`（并发等选项见[参考手册](docs/reference.zh-CN.md#自测)），改动走 PR。许可证：[Apache-2.0](LICENSE)。

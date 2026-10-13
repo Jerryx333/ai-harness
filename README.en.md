@@ -4,6 +4,11 @@
 
 For people who use Claude Code or Codex as their main tool and often hit usage limits or fill their context. Keep the main model focused on planning and checking results; hand off reading code, running commands and drafting summaries. You configure who gets the work: a cheaper model in the same family, other subscriptions you already have, or free models. Defaults are included, and one installed CLI is enough. No service to run and no dependencies beyond Python 3.
 
+<p align="center"><img src="assets/hero.en.webp" alt="aiw: the main session plans, models share the work, the main session verifies" width="760"></p>
+<p align="center"><img src="assets/demo.gif" alt="First aiw assignment: see which role a request routes to, check role resolution, run a read-only review" width="760"><br><sub>A real run (terminal output is in Chinese); about one minute of waiting was cut. Regenerate with <code>vhs assets/demo.tape</code>.</sub></p>
+
+A **seat** is a model or CLI that can take an assignment. A **role** is write (edits), review (read-only review), or draft (drafts and summaries); it resolves to the first available seat in its configured order. The Codex main session has no write candidates and edits files itself.
+
 ## What problems does it solve?
 
 - Your main model's allowance runs out: subscriptions have usage windows and weekly limits, so work can stop halfway through. Reading large files, digging through logs and running tests use up that allowance.
@@ -13,7 +18,7 @@ For people who use Claude Code or Codex as their main tool and often hit usage l
 ## What changes after installation?
 
 - **Configure it around what you have.** Use any CLI for the main session. In one local file, order candidates for edits, reviews and drafts; if the first is unavailable, use the next. Any model or CLI that runs in a terminal can connect through agent-use without code changes. See [customization](docs/guide.md#customize) and [roles](docs/guide.md#roles-and-single-cli-installations).
-- Use a strong model in the main session and a cheaper one for routine work: for example, GPT-6 Astra with GPT-6.1 Sol in Codex, or Fable with Opus 5.5 in Claude ([Codex pricing](https://developers.openai.com/codex/pricing): credits per million tokens, GPT-6 Astra input 250 / output 1,250; GPT-6.1 Sol input 50 / output 250). These are examples; you can change the default configuration. All models on the same account share the allowance; assignments do not create extra allowance. Claude Pro/Max also have five-hour and weekly limits shared by claude.ai and Claude Code.
+- Use a strong model in the main session and a cheaper one for routine work: for example, GPT-6 Astra with GPT-6.1 Sol in Codex, or Fable with Opus 5.5 in Claude ([Codex pricing](https://developers.openai.com/codex/pricing): credits per million tokens, GPT-6 Astra input 250 / output 1,250; GPT-6.1 Sol input 50 / output 250). These are examples; you can change the defaults. All models on the same account share the allowance; assignments do not create extra allowance. Claude Pro/Max also have five-hour and weekly limits shared by claude.ai and Claude Code.
 - Less clutter in the main conversation: assigned work reads files and runs commands elsewhere. Those file contents and command output stay out of the main conversation; it receives only the results.
 - You get another review: different models can write and review code; `aiw panel` collects independent opinions from several models.
 - Keep your usual workflow: use Claude Code or Codex as usual. When work is suitable to hand off, it suggests who should take it; the main conversation decides whether to assign it.
@@ -28,6 +33,19 @@ If you have other subscriptions, local models or free models and want them to sh
 - **Can you trust what another model returns?** Original responses and execution records are saved every time. All results are drafts for the main conversation to check before accepting them.
 
 Just want common CLIs such as Codex, Claude Code and OpenCode? [agent-use-adapters](https://github.com/Jerryx333/agent-use-adapters) has ready-made adapters. Add one flag when installing aiw to set them up too, including a seat for OpenCode's free models: `~/.claude/aiw/install.sh --with-agent-use`. Manual steps are in the [guide](docs/guide.md#add-more-models-optional).
+
+```mermaid
+flowchart LR
+    main["Main session: plan and verify"] --> aiw["aiw: seats / roles / fallback"]
+    aiw --> cli["Built-in CLI seats: Codex / Claude Code"]
+    aiw --> au["agent-use: provider dispatch"]
+    au --> adapters["agent-use-adapters: ready-made adapters"]
+    au --> custom["Custom CLI adapter"]
+    adapters --> tools["Codex / Claude Code / OpenCode CLI"]
+    custom --> other["Your CLI"]
+```
+
+aiw assigns work to seats; agent-use calls registered providers; agent-use-adapters supplies ready-made provider adapters. Built-in CLI seats work without the other two repositories.
 
 ## Questions you may have
 
@@ -85,7 +103,15 @@ You need macOS (the only tested OS), Python 3, and logged-in Claude Code or Code
    aiw review "$HOME/.claude/aiw" 900 /tmp/aiw-review.txt --ro
    ```
 
+   **What you will see:** The result prints straight to your terminal. Of the last two lines, `[ai-worker] 实际执行方：…` ("actual seat") names the seat that really did the work (it differs from the one you asked for when a fallback kicked in), and `[ai-worker] 全文：…` ("full text") points to the saved result. Every assignment keeps its task (`task.txt`), full result (`output.md`) and error output (`stderr.txt`) under `state/runs/<time>-<seat>-…/` in the aiw checkout. On failure the last line says 排查 ("troubleshoot") instead and points to the run directory; start with its `stderr.txt`.
+
 4. Use Claude Code or Codex as usual. When work is suitable to hand off, it suggests who should take it; the main conversation plans and verifies.
+
+   For example, when you type "list the edge cases" (列出边界情况) in the main session, it also receives a hint like this (actual output with the public defaults; hints are currently in Chinese):
+
+   ```text
+   [派单] 本条判定为【小段文本草稿】：只出文本草稿，交给 `aiw draft <workdir> 600 <prompt文件> --ro [--attach 文件]`，公开默认不顶替；产物待主会话核对。
+   ```
 
 
 ## Common commands
@@ -103,16 +129,22 @@ You need macOS (the only tested OS), Python 3, and logged-in Claude Code or Code
 | `aiw sync` | Update this aiw checkout using `git pull --ff-only`: `aiw sync`; cannot merge divergent history. Installed agent-use and agent-use-adapters checkouts are updated too. Rerun the installer to refresh installed rules/hooks. |
 | `aiw gc` | Delete old run/panel/map archives (30 days by default); preview first: `aiw gc 30 --dry-run`. |
 
+## Getting the most out of it
+
+- Plan first, then assign small pieces with clear checks. Do tiny, urgent tasks yourself.
+- Include the goal, context, scope, constraints and verification commands; supply text seats with material via `--attach`.
+- Treat results as drafts: inspect changes, check sources, run tests and read the actual-seat line.
+- Before a panel, write your judgment and archive it with `--prior`; accept, reject or defer each opinion. Use `aiw goal` for large task lists.
+- Use `aiw tokens` for local Claude Code usage and `aiw weekly` for assignment success rates and token totals.
+
+See [best practices](docs/best-practices.md) for task templates, a recommended configuration and a daily workflow.
+
 ## More documentation
 
 - [Usage guide](docs/guide.md): installation details, how it works and customization.
-- [Reference manual](docs/reference.zh-CN.md) (Chinese): all commands and detailed rules.
-- [Improvement buffer](docs/findings.md)
-- [State contract](docs/state-contract.md)
-- [Invariants and regression checks](docs/invariants.md)
+- [Best practices](docs/best-practices.md): task templates, recommended configuration and verification.
+- [Reference manual](docs/reference.zh-CN.md) (Chinese): all commands and rules.
 
 ## Contributing
 
-Run `python3 tests/test_harness.py` and `python3 tests/mutation_check.py` (concurrency and other options: [reference manual](docs/reference.zh-CN.md#自测), Chinese), then open a PR. Cases live in `tests/cases/`, with shared helpers in `tests/support.py`. License: [Apache-2.0](LICENSE).
-
-License: [Apache-2.0](LICENSE).
+Documentation, reproductions and offline tests are welcome; see the [contribution guide](CONTRIBUTING.en.md) for development setup and starting points. Run `python3 tests/test_harness.py` and `python3 tests/mutation_check.py` ([test options](docs/reference.zh-CN.md#自测), Chinese), and submit changes through a PR. License: [Apache-2.0](LICENSE).

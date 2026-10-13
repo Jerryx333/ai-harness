@@ -147,16 +147,26 @@ worker 每次派单结束，若距上次同步超过 `sync_interval`，后台起
     "explains": ["记录id"], "predicts": ["若成立还应看到"], "refuted_by": ["看到什么说明它错了"],
     "competing": ["竞争解释"], "status": "待补证|支持|反驳|试修|验证中|已验证|已放弃",
     "layer": "机制|项目规则|代码", "fix": {"commit": null, "issue": null},
+    "evidence": {"kind": "已见后果", "refs": ["记录id", "path:line"]},
+    "baseline": {"metric": "每 100 单 timeout 观察数", "direction": "down", "window": "2026-10-01..2026-10-07", "value": 10, "evidence": ["before.json"]},
+    "comparison": {"window": "2026-10-08..2026-10-14", "value": 5, "task_mix": "可比", "evidence": ["after.json"]},
     "probe": "回归探针：一条能复现旧症状的命令或 prompt 文件", "expect_down": [], "expect_flat": [],
     "window_days": 7
   }],
   "records": [{"id": "记录id", "status": "explained|unexplained|stale|wontfix|unverifiable", "hypothesis": "H-…", "note": ""}],
   "issues": [{"key": "根因键", "hypothesis": "H-…（须存放在集中仓库）", "title": "", "body": "", "labels": ["repo:…", "layer:…", "prio:…"]}],
-  "project_issues": [{"key": "项目缺陷唯一键", "repo": "owner/name", "records": ["记录id"], "title": "", "body": "", "labels": []}]
+  "project_issues": [{"key": "项目缺陷唯一键", "repo": "owner/name", "records": ["记录id"], "evidence": {"kind": "确定缺陷", "refs": ["path:line"]}, "title": "", "body": "", "labels": []}]
 }
 ```
 
-校验：`self_cause_considered` 非空；每个假设 `explains`、`predicts`、`refuted_by` 非空；状态为 `试修/验证中` 的必须有 `probe`、`expect_down`、`window_days`；`records[].id` 必须存在于本批。`project_issues` 的 `key`、`repo`、`title`、`body` 非空，key 不得换行，repo 匹配 `^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$`；labels 为字符串列表，records 为非空字符串列表。key、title、body、labels 均扫描密钥，命中拒绝。apply 时引用记录须在本批 pending 或 pool 中且 `owned=true`；若本次 records 中有该记录的决定，status 必须为 `unexplained`；记录 repo 的仓库名段与目标 repo 的 name 段按大小写不敏感比较，owner 可以不同（账号改名）；仓库名不一致不拒绝，apply 在 stdout 为每条不一致的引用打印记录 id、记录仓库与目标仓库提示，允许将其它项目中发现的工具缺陷转交工具仓库。独立的 `aiw triage issues <decisions.json>` 无 batch，除格式与密钥校验外，还从集中仓库 raw 和本机 records.jsonl 读取记录，要求每个引用 id 存在且 `owned=true`。项目 issue 与根因 issue 共用本机 `issues.lock`：项目仓库现查返回的 `nameWithOwner` 为规范名：marker 中项目身份及映射键中仓库身份统一小写，实际目标使用返回的规范名（查询失败用小写输入名作为项目身份）；先查规范化的本机映射，再在实际目标仓库以 `--state all` 搜索正文中的完整 `aiw-key:` 行；单条失败继续其它条，最终返回 1 并提示用 issues 重试。
+校验：`self_cause_considered` 非空；每个假设 `explains`、`predicts`、`refuted_by` 非空；状态为 `试修/验证中` 的必须有 `baseline`、`probe`、`expect_down`、`window_days`；证据门槛与「已验证」的可比复验要求见下方补充校验；`records[].id` 必须存在于本批。`project_issues` 的 `key`、`repo`、`title`、`body` 非空，key 不得换行，repo 匹配 `^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$`；labels 为字符串列表，records 为非空字符串列表。key、title、body、labels、evidence 均扫描密钥，命中拒绝。apply 时引用记录须在本批 pending 或 pool 中且 `owned=true`；若本次 records 中有该记录的决定，status 必须为 `unexplained`；记录 repo 的仓库名段与目标 repo 的 name 段按大小写不敏感比较，owner 可以不同（账号改名）；仓库名不一致不拒绝，apply 在 stdout 为每条不一致的引用打印记录 id、记录仓库与目标仓库提示，允许将其它项目中发现的工具缺陷转交工具仓库。独立的 `aiw triage issues <decisions.json>` 无 batch，除格式与密钥校验外，还从集中仓库 raw 和本机 records.jsonl 读取记录，要求每个引用 id 存在且 `owned=true`。项目 issue 与根因 issue 共用本机 `issues.lock`：项目仓库现查返回的 `nameWithOwner` 为规范名：marker 中项目身份及映射键中仓库身份统一小写，实际目标使用返回的规范名（查询失败用小写输入名作为项目身份）；先查规范化的本机映射，再在实际目标仓库以 `--state all` 搜索正文中的完整 `aiw-key:` 行；单条失败继续其它条，最终返回 1 并提示用 issues 重试。
+
+补充校验：以上为待填写的骨架，状态和层级需从列出的选项中选择一个，替换占位符并删除不需要的条目。`comparison` 示例可选，但「已验证」时必填。
+
+- `evidence.kind` 只能为「已见后果」（记录/日志中已发生的错误结果）、「明文要求」（违反成文规则或验收条件，引用 `path:line`）、「确定缺陷」（现存且可确定复现的缺陷，如配置格式坏、密钥明文）或「线索」（次数、篇幅、搜不到、相似度、理论风险、证据不可得等，只能继续查，不能当结论）。证据类型只说明证据性质，与严重度、假设状态是独立字段。
+- `evidence.refs` 为非空字符串组成的列表，引用记录 id、`path:line` 或输出文件路径，仅「线索」允许空列表。假设状态为「支持/试修/验证中/已验证」时必须提供非线索证据；「待补证/反驳/已放弃」可省略，提供则必须格式合法。根因 issue 引用的假设必须有非线索证据，优先查本批同 id 假设，否则查 hub 已有假设；旧假设缺少证据必须重新提交并补 `evidence`。`project_issues[].evidence` 在 apply 与独立 issues 模式均必填且须为非线索证据。假设的证据和基线字段随其它上传字段扫描密钥（`explains` 除外）；项目 issue 的 key、title、body、labels、evidence 均扫描密钥，命中拒绝。
+- 「试修/验证中」必须有合法 `baseline`，原有 `probe`、`expect_down`、正整数 `window_days` 要求保留。`baseline.metric/window` 为非空字符串，`direction` 为 `down` 或 `up`，`value` 为有限 int/float，不能为 bool、NaN 或 inf，`evidence` 为非空字符串列表。「试修/验证中」的 `comparison` 可省略；其它状态的 `baseline/comparison` 均可省略，提供则必须合法。
+- `comparison.window` 为非空字符串，`value` 同样须为有限数字，`task_mix` 为「可比/未核实/不可比」之一，`evidence` 为非空字符串列表。「已验证」必须同时有合法 `baseline/comparison`，且 `task_mix=可比`，down 时复验值严格小于基线值，up 时严格大于；不满足则应保持「验证中」或改「已放弃」。覆盖可比才算已验证；趋势不证明因果。到期假设在 batch.md 显示基线 metric/direction/window/value，缺失时显示「无基线」。
 
 ## 主会话的评审方法
 
@@ -165,7 +175,7 @@ worker 每次派单结束，若距上次同步超过 `sync_interval`，后台起
 - 每批至少认真考虑一次「是我的规则或派单模板导致的」。
 - 看比例，不看条数：分母是各分组的 answers 数。
 - 只对支撑结论的关键记录派 codex-sol 只读核对，不逐条核对。
-- 修完填 `probe`、`expect_down`、`expect_flat`、`window_days`；窗口至少是原来发生间隔的 2–3 倍，未到窗口保持「验证中」。到期时跑探针，并按 rules_hash 确认两台都已同步了修复。
+- 试修时填 `evidence`、`baseline`、`probe`、`expect_down`、`expect_flat`、`window_days`；窗口至少是原来发生间隔的 2–3 倍，未到窗口保持「验证中」。到期时跑探针，并按 rules_hash 确认两台都已同步了修复，记录可比窗口的 `comparison` 后再判断是否「已验证」。
 - 允许本批结论是「证据不足，先补证」，不必每批都改东西。
 
 ## 已知限制

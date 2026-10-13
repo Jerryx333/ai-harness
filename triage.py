@@ -6,6 +6,7 @@ import collections
 import datetime as dt
 import fcntl
 import json
+import math
 import os
 from repo_aliases import canonical_repo, canonical_key, legacy_key, normalize_record
 import re
@@ -17,6 +18,7 @@ import findings as f
 
 STATUSES = {'explained', 'unexplained', 'stale', 'wontfix', 'unverifiable'}
 HYP_STATUSES = {'待补证', '支持', '反驳', '试修', '验证中', '已验证', '已放弃'}
+EVIDENCE_KINDS = {'已见后果', '明文要求', '确定缺陷', '线索'}
 LAYERS = {'机制', '项目规则', '代码'}
 KEYWORDS = '找不到 不一致 被覆盖 冲突 超时 格式 猜 手动 重复 过期 权限 绕过'.split()
 TEMPLATE = {
@@ -25,10 +27,16 @@ TEMPLATE = {
                     'explains': ['记录id'], 'predicts': ['若成立还应看到'],
                     'refuted_by': ['看到什么说明它错了'], 'competing': [],
                     'status': '待补证', 'layer': '机制', 'fix': {'commit': None, 'issue': None},
+                    'evidence': {'kind': '线索', 'refs': ['记录id']},
+                    'baseline': {'metric': '每 100 单 timeout 观察数', 'direction': 'down',
+                                 'window': '2026-10-01..2026-10-07', 'value': 10, 'evidence': ['基线输出文件路径']},
+                    'comparison': {'window': '2026-10-08..2026-10-14', 'value': 5,
+                                   'task_mix': '可比', 'evidence': ['复验输出文件路径']},
                     'probe': '', 'expect_down': [], 'expect_flat': [], 'window_days': 7}],
     'records': [{'id': '记录id', 'status': 'unexplained', 'hypothesis': '', 'note': ''}],
     'issues': [{'hypothesis': '', 'key': '', 'title': '', 'body': '', 'labels': []}],
     'project_issues': [{'key': '项目缺陷键', 'repo': 'owner/name', 'records': ['记录id'],
+                        'evidence': {'kind': '确定缺陷', 'refs': ['path:line']},
                         'title': '', 'body': '', 'labels': []}],
 }
 
@@ -187,6 +195,10 @@ def render(batch):
         lines.extend(['```json', dump(h), '```'])
         if h['due']:
             lines.append('⏰ 到期：跑探针并核对两台 rules_hash')
+            baseline = h.get('baseline')
+            lines.append('基线：' + ' / '.join(f'{key}={cell(str(baseline.get(key)))}'
+                         for key in ('metric', 'direction', 'window', 'value'))
+                         if isinstance(baseline, dict) else '无基线')
     lines.append('## 3. 机械信号')
     for signal in batch['signals'].get('overlap', []):
         hosts = '、'.join(sorted({str(r.get('host') or '') for r in signal['records']}))
@@ -212,7 +224,8 @@ def render(batch):
                          ' ／ '.join(cell(r.get(k)) for k in ('observation', 'expected', 'evidence', 'location')) +
                          (' ' + ' '.join(cell(x) for x in transfers[r['id']])
                           if key == 'pool' and transfers[r['id']] else ''))
-    lines.extend(['## decisions.json 模板', '```json', dump(TEMPLATE), '```',
+    lines.extend(['## decisions.json 模板', '待填写的骨架：替换占位符、选择状态，删除不需要的条目；comparison 可选，已验证时必填。',
+                  '```json', dump(TEMPLATE), '```',
                   '写好后运行 aiw triage apply <decisions.json>'])
     return '\n'.join(lines) + '\n'
 
@@ -276,6 +289,29 @@ def nonempty(value):
     return isinstance(value, str) and bool(value.strip())
 
 
+def string_refs(value, allow_empty=False):
+    return isinstance(value, list) and (allow_empty or bool(value)) and all(nonempty(x) for x in value)
+
+
+def valid_evidence(value, nonclue=False):
+    return (isinstance(value, dict) and isinstance(value.get('kind'), str)
+            and value['kind'] in EVIDENCE_KINDS
+            and (not nonclue or value['kind'] != '线索')
+            and string_refs(value.get('refs'), allow_empty=value['kind'] == '线索'))
+
+
+def valid_measurement(value, baseline=False):
+    if not isinstance(value, dict):
+        return False
+    number = value.get('value')
+    if (type(number) not in (int, float) or (type(number) is float and not math.isfinite(number))
+            or not nonempty(value.get('window')) or not string_refs(value.get('evidence'))):
+        return False
+    if baseline:
+        return nonempty(value.get('metric')) and value.get('direction') in ('down', 'up')
+    return value.get('task_mix') in ('可比', '未核实', '不可比')
+
+
 def secret_paths(value, path, context):
     if isinstance(value, str):
         return [path] if f.has_secret(value, context) else []
@@ -332,6 +368,24 @@ def validate(data, batch=None, existing=None, local_existing=None, available_rec
                 errors.append('假设 status 不合法')
             if not isinstance(h.get('layer'), str) or h['layer'] not in LAYERS:
                 errors.append('假设 layer 不合法')
+            needs_evidence = h.get('status') in ('支持', '试修', '验证中', '已验证')
+            if needs_evidence or 'evidence' in h:
+                if not valid_evidence(h.get('evidence'), nonclue=needs_evidence):
+                    errors.append('假设 evidence 必须含合法 kind 和非空字符串 refs 列表；支持/试修/验证中/已验证不得为线索，仅线索允许空 refs')
+            needs_baseline = h.get('status') in ('试修', '验证中', '已验证')
+            baseline_ok = valid_measurement(h.get('baseline'), baseline=True)
+            comparison_ok = valid_measurement(h.get('comparison'))
+            if (needs_baseline or 'baseline' in h) and not baseline_ok:
+                errors.append('假设 baseline 必须含非空 metric/window/evidence、down/up direction 和有限数字 value（不能为 bool）'
+                              + ('；应保持「验证中」或改「已放弃」' if h.get('status') == '已验证' else ''))
+            if (h.get('status') == '已验证' or 'comparison' in h) and not comparison_ok:
+                errors.append('假设 comparison 必须含非空 window/evidence、合法 task_mix 和有限数字 value（不能为 bool）；应保持「验证中」或改「已放弃」')
+            if h.get('status') == '已验证' and baseline_ok and comparison_ok:
+                baseline, comparison = h['baseline'], h['comparison']
+                improved = (comparison['value'] < baseline['value'] if baseline['direction'] == 'down'
+                            else comparison['value'] > baseline['value'])
+                if comparison['task_mix'] != '可比' or not improved:
+                    errors.append('已验证必须 task_mix=可比且按 direction 有改进；应保持「验证中」或改「已放弃」')
             if h.get('status') in ('试修', '验证中'):
                 if not nonempty(h.get('probe')):
                     errors.append('试修/验证中必须有非空 probe')
@@ -365,9 +419,14 @@ def validate(data, batch=None, existing=None, local_existing=None, available_rec
         if records.get(r.get('id') if isinstance(r.get('id'), str) else '', {}).get('owned'):
             for key in ('note', 'hypothesis'):
                 errors.extend('密钥特征：' + hit for hit in secret_paths(r.get(key, ''), f'records[{i}].{key}', context))
+    submitted = {h['id']: h for h in groups.get('hypotheses', []) if nonempty(h.get('id'))}
     for issue in groups['issues']:
         if not isinstance(issue.get('hypothesis'), str) or issue['hypothesis'] not in hub_ids:
             errors.append('issue hypothesis 必须引用 hub 假设')
+        else:
+            hypothesis = submitted.get(issue['hypothesis'], (existing or {}).get(issue['hypothesis'], {}))
+            if not valid_evidence(hypothesis.get('evidence'), nonclue=True):
+                errors.append('issue 引用的假设缺少非线索证据；需要重新提交该假设并补 evidence')
         for key in ('key', 'title', 'body'):
             if not nonempty(issue.get(key)):
                 errors.append(f'issue {key} 必须非空')
@@ -384,6 +443,8 @@ def validate(data, batch=None, existing=None, local_existing=None, available_rec
                 available_records = project_records(hub)
         eligible = {r['id']: r for r in available_records}
     for i, issue in enumerate(groups['project_issues']):
+        if not valid_evidence(issue.get('evidence'), nonclue=True):
+            errors.append('project_issue evidence 必须含非线索 kind 和非空字符串 refs 列表')
         for key in ('key', 'repo', 'title', 'body'):
             if not nonempty(issue.get(key)):
                 errors.append(f'project_issue {key} 必须非空')
@@ -409,7 +470,7 @@ def validate(data, batch=None, existing=None, local_existing=None, available_rec
                     errors.append('project_issue 记录必须 owned=true')
                 if batch is not None and any(r.get('id') == rid and r.get('status') != 'unexplained' for r in groups['records']):
                     errors.append('project_issue 记录 status 必须为 unexplained')
-        for key in ('key', 'title', 'body', 'labels'):
+        for key in ('key', 'title', 'body', 'labels', 'evidence'):
             errors.extend('密钥特征：' + hit for hit in secret_paths(issue.get(key), f'project_issues[{i}].{key}', context))
     return errors
 

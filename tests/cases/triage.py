@@ -11,12 +11,38 @@ from support import (
     os,
     sh,
     tempfile,
-    triage_decisions,
+    triage_decisions as legacy_triage_decisions,
     triage_fixture,
-    triage_project_decisions,
-    triage_project_route,
+    triage_project_decisions as legacy_triage_project_decisions,
+    triage_project_route as legacy_triage_project_route,
     triage_seed,
 )
+
+
+def triage_decisions():
+    data = legacy_triage_decisions()
+    data['hypotheses'][0].update(
+        evidence={'kind': '已见后果', 'refs': ['tests:1']},
+        baseline={'metric': '每 100 单 timeout 观察数', 'direction': 'down',
+                  'window': '2026-10-01..2026-10-07', 'value': 10, 'evidence': ['before.json']})
+    return data
+
+
+def comparison(value=5, task_mix='可比'):
+    return {'window': '2026-10-08..2026-10-14', 'value': value,
+            'task_mix': task_mix, 'evidence': ['after.json']}
+
+
+def triage_project_decisions():
+    data = legacy_triage_project_decisions()
+    data['project_issues'][0]['evidence'] = {'kind': '确定缺陷', 'refs': ['tests:1']}
+    return data
+
+
+def triage_project_route(mode):
+    from unittest.mock import patch
+    with patch('support.triage_project_decisions', triage_project_decisions):
+        legacy_triage_project_route(mode)
 
 
 def triage_start_lock():
@@ -120,7 +146,7 @@ def triage_apply():
         batch = json.loads(t.latest()[0].with_name('batch.json').read_text())
         check('new' in {r['id'] for r in batch['records']}, 'explained record missing')
         check('new' not in {r['id'] for r in batch['pending'] + batch['pool']}, 'explained record still pending')
-        h2 = dict(decisions['hypotheses'][0], status='已验证', title='更新')
+        h2 = dict(decisions['hypotheses'][0], status='已验证', title='更新', comparison=comparison())
         check(t.apply(dict(self_cause_considered='检查', hypotheses=[dict(h2, explains=['missing'])])) == 2,
               'unknown explains accepted')
         check(t.apply(dict(self_cause_considered='检查', records=[dict(id='new', status='unexplained')])) == 2,
@@ -175,6 +201,11 @@ def triage_issue_persistence_behavior():
                 t, f, folder, _ = triage_fixture(Path(td))
                 triage_seed(t, f, folder)
                 if kind == 'root':
+                    # This test exercises persistence, so upgrade the legacy hub evidence first.
+                    path = folder / 'hub/state/hypotheses.json'
+                    hypotheses = t.read(path)
+                    hypotheses['H-old']['evidence'] = {'kind': '已见后果', 'refs': ['tests:1']}
+                    f._atomic_json(path, hypotheses)
                     issue = dict(triage_decisions()['issues'][0], hypothesis='H-old')
                     group, target, key = 'issues', 'test/private', issue['key']
                 else:
@@ -765,7 +796,123 @@ def triage_status_hypothesis_missing():
 
 
 
+def triage_evidence_gate():
+    import copy
+    with tempfile.TemporaryDirectory() as td:
+        t, f, _, _ = triage_fixture(Path(td))
+        rows = [dict(id='new', owned=True), dict(id='old', owned=True), dict(id='local', owned=False)]
+        batch = dict(records=rows, pending=rows, pool=[])
+        base = triage_decisions()
+        base['hypotheses'][0]['status'] = '支持'
+        check(t.validate(base, batch) == [], 'valid evidence rejected')
+        for evidence in (None, {'kind': '线索', 'refs': ['tests:1']},
+                         {'kind': '确定缺陷', 'refs': []}, {'kind': '未知', 'refs': ['tests:1']},
+                         {'kind': [], 'refs': ['tests:1']}, {'kind': '明文要求', 'refs': [' ']},
+                         {'kind': '已见后果', 'refs': [1]}):
+            d = copy.deepcopy(base)
+            if evidence is None:
+                del d['hypotheses'][0]['evidence']
+            else:
+                d['hypotheses'][0]['evidence'] = evidence
+            check(any('假设 evidence' in e for e in t.validate(d, batch)), 'invalid evidence accepted')
+        for status in ('待补证', '反驳', '已放弃'):
+            d = copy.deepcopy(base); d['issues'] = []; h = d['hypotheses'][0]; h['status'] = status
+            del h['evidence']
+            check(t.validate(d, batch) == [], 'optional evidence required')
+            h['evidence'] = {'kind': '线索', 'refs': []}
+            check(t.validate(d, batch) == [], 'empty clue refs rejected')
+            h['evidence'] = {'kind': '确定缺陷', 'refs': []}
+            check(any('假设 evidence' in e for e in t.validate(d, batch)), 'optional invalid evidence accepted')
+        old = {'H-new': dict(status='支持')}
+        d = copy.deepcopy(base); d['hypotheses'] = []
+        check(any('issue 引用的假设缺少非线索证据' in e for e in t.validate(d, batch, existing=old)),
+              'legacy hub evidence bypassed')
+        check(t.validate(base, batch, existing=old) == [], 'submitted evidence did not override legacy hub')
+        check(any('issue 引用的假设缺少非线索证据' in e for e in t.validate(d, existing=old)),
+              'standalone legacy evidence bypassed')
+        good_hub = {'H-new': base['hypotheses'][0]}
+        check(t.validate(d, existing=good_hub) == [], 'valid hub evidence rejected')
+        bad = copy.deepcopy(base); bad['hypotheses'][0]['evidence'] = {'kind': '线索', 'refs': []}
+        check(any('issue 引用的假设缺少非线索证据' in e for e in t.validate(bad, batch, existing=good_hub)),
+              'submitted clue fell back to old evidence')
+        project = dict(triage_project_decisions(), self_cause_considered='已考虑')
+        for current in (batch, None):
+            check(t.validate(project, current, available_records=rows) == [], 'valid project evidence rejected')
+            for evidence in (None, {'kind': '线索', 'refs': ['tests:1']}):
+                d = copy.deepcopy(project)
+                if evidence is None:
+                    del d['project_issues'][0]['evidence']
+                else:
+                    d['project_issues'][0]['evidence'] = evidence
+                check(any('project_issue evidence' in e for e in t.validate(d, current, available_records=rows)),
+                      'project evidence gate bypassed')
+        secret = 'ghp_' + 'a' * 36
+        for group, original in (('hypotheses', base), ('project_issues', project)):
+            d = copy.deepcopy(original); d[group][0]['evidence']['refs'] = [secret]
+            for current in ((batch,) if group == 'hypotheses' else (batch, None)):
+                errors = t.validate(d, current, available_records=rows)
+                check(any('密钥特征：' + group + '[0].evidence.refs[0]' == e for e in errors),
+                      'evidence secret not scanned')
+                check(all(secret not in e for e in errors), 'secret leaked in diagnostic')
+
+
+def triage_baseline_verified():
+    import copy
+    with tempfile.TemporaryDirectory() as td:
+        t, _, _, _ = triage_fixture(Path(td))
+        rows = [dict(id='new', owned=True), dict(id='local', owned=False)]
+        batch = dict(records=rows, pending=rows, pool=[])
+        base = triage_decisions(); base['hypotheses'][0].update(status='已验证', comparison=comparison())
+        check(t.validate(base, batch) == [], 'valid verified decision rejected')
+        d = copy.deepcopy(base); h = d['hypotheses'][0]; h['status'] = '试修'; del h['baseline']
+        check(any('baseline' in e for e in t.validate(d, batch)), 'trial without baseline accepted')
+        d = copy.deepcopy(base); del d['hypotheses'][0]['comparison']
+        check(any('comparison' in e for e in t.validate(d, batch)), 'verified without comparison accepted')
+        for mix in ('未核实', '不可比'):
+            d = copy.deepcopy(base); d['hypotheses'][0]['comparison']['task_mix'] = mix
+            check(any('应保持「验证中」' in e for e in t.validate(d, batch)), 'uncomparable verification accepted')
+        for value in (10, 11):
+            d = copy.deepcopy(base); d['hypotheses'][0]['comparison']['value'] = value
+            check(any('按 direction 有改进' in e for e in t.validate(d, batch)), 'no improvement accepted')
+        for field in ('baseline', 'comparison'):
+            for value in (True, float('nan'), float('inf'), -float('inf'), '5'):
+                d = copy.deepcopy(base); d['hypotheses'][0][field]['value'] = value
+                check(any(field in e for e in t.validate(d, batch)), 'invalid measurement value accepted')
+            for key, value in (('window', ' '), ('evidence', []), ('evidence', [1])):
+                d = copy.deepcopy(base); d['hypotheses'][0][field][key] = value
+                check(any(field in e for e in t.validate(d, batch)), 'invalid measurement metadata accepted')
+        d = copy.deepcopy(base); d['hypotheses'][0]['baseline'].update(direction='up', value=0)
+        check(t.validate(d, batch) == [], 'up improvement rejected')
+        d['hypotheses'][0]['comparison']['value'] = 0
+        check(any('按 direction 有改进' in e for e in t.validate(d, batch)), 'up equality accepted')
+        for status in ('支持', '待补证', '反驳', '已放弃', '试修', '验证中'):
+            d = copy.deepcopy(base); h = d['hypotheses'][0]; h['status'] = status; del h['comparison']
+            if status not in ('试修', '验证中'):
+                del h['baseline']
+            check(t.validate(d, batch) == [], 'optional measurements required')
+            h['comparison'] = comparison(); h['comparison']['task_mix'] = '错误'
+            check(any('comparison' in e for e in t.validate(d, batch)), 'optional invalid comparison accepted')
+            h['comparison'] = comparison(); h['baseline'] = dict(base['hypotheses'][0]['baseline'], metric='')
+            check(any('baseline' in e for e in t.validate(d, batch)), 'optional invalid baseline accepted')
+        template = copy.deepcopy(t.TEMPLATE)
+        template['hypotheses'][0].update(title='示例', mechanism='机制', explains=['new'])
+        template['records'] = []; template['issues'] = []; template['project_issues'] = []
+        check(t.validate(template, batch) == [], 'template example fields invalid')
+        render_batch = dict(triage_id='test', overview=t.overview([]), pending=[], pool=[],
+                            signals={}, groups={}, hypotheses=[dict(base['hypotheses'][0], due=True)])
+        md = t.render(render_batch)
+        for text in ('metric=每 100 单 timeout 观察数', 'direction=down',
+                     'window=2026-10-01..2026-10-07', 'value=10', '待填写的骨架'):
+            check(text in md, 'baseline display missing: ' + text)
+        render_batch['hypotheses'][0]['baseline']['value'] = 0
+        check('value=0' in t.render(render_batch), 'zero baseline hidden')
+        del render_batch['hypotheses'][0]['baseline']
+        check('无基线' in t.render(render_batch), 'legacy missing baseline hidden')
+
+
 CASES = {case.__name__: case for case in (
+    triage_evidence_gate,
+    triage_baseline_verified,
     triage_start_lock,
     triage_batch,
     triage_apply,

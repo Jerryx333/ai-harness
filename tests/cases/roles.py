@@ -31,6 +31,29 @@ def role_resolve_matrix():
         check('disabled' in w.seat_unavailable('codex'), 'disabled accepted')
 
 
+def role_write_skips_readonly():
+    with tempfile.TemporaryDirectory() as td:
+        t = Path(td); local = t / 'local.json'
+        cmd, env, _ = worker_call(t, AIW_CONFIG=str(local), AIW_MAIN='claude')
+        cmd[2] = 'write'; cmd.remove('--ro')
+        reason = '只读或文本座位，不能写'
+        for seat in ('codex-sol', 'text'):
+            config = {'seats': {'text': {'kind': 'agent_use', 'provider': 'qoder'}},
+                      'roles': {'claude': {'write': [seat, 'codex']}}}
+            local.write_text(json.dumps(config))
+            r = sh(cmd + ['--no-findings'], env=env)
+            check(r.returncode == 0 and '角色 write → 座位 codex' in r.stderr,
+                  r.stdout + r.stderr)
+            check(f'角色 write 跳过 {seat}: {reason}' in r.stderr, r.stderr)
+            r = sh([sys.executable, str(REPO / 'ai_worker.py'), 'doctor'], env=env)
+            check('角色 write → 座位 codex' in r.stdout
+                  and f'{seat}: {reason}' in r.stdout, r.stdout + r.stderr)
+            config['roles']['claude']['write'] = [seat]
+            local.write_text(json.dumps(config))
+            r = sh(cmd + ['--no-findings'], env=env)
+            check(r.returncode == 2 and reason in r.stderr, r.stdout + r.stderr)
+
+
 def role_name_conflict():
     import seats_config as c
     for name in ('write', 'review', 'draft'):
@@ -282,7 +305,7 @@ def role_preselect_readonly():
             check(snapshot.call_count == 1, snapshot.call_count)
 
 
-CASES = {f.__name__: f for f in (role_resolve_matrix, role_name_conflict, role_review_forces_ro,
+CASES = {f.__name__: f for f in (role_resolve_matrix, role_write_skips_readonly, role_name_conflict, role_review_forces_ro,
     role_write_codex_main_refused, role_doctor_mapping, claude_write_argv, claude_model_opus,
     route_role_seats, panel_skips_unavailable, panel_single_family_hint, map_default_role, role_text_seat_write_hint, role_ro_argv_enforced, seat_disabled_everywhere,
     legacy_local_config_roles, panel_explicit_unavailable, role_preselect_readonly)}

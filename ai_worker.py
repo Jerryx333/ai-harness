@@ -96,6 +96,8 @@ def selection_snapshot():
 
 def role_candidate_reason(role, seat):
     cfg = SEATS["seats"].get(seat, {})
+    if role == "write" and (cfg.get("ro_only") or cfg.get("kind") == "agent_use"):
+        return "只读或文本座位，不能写"
     if role in ("review", "draft") and cfg.get("kind") != "agent_use" and not cfg.get("ro_only"):
         return "非只读座位"
     return None

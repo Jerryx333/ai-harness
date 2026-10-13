@@ -16,7 +16,7 @@
 
 claude 与 claude-write 均固定 `--model opus`，不跟随用户默认模型。claude-write 需要 Claude Code ≥ 2.1.259，写单使用 `--restricted --strict-mcp-config --tools Read,Grep,Glob,Edit,Write,Bash --permission-mode acceptEdits --permission-prompts none`，并传单个 settings JSON：`{"sandbox":{"enabled":true,"allowUnsandboxedCommands":false,"failIfUnavailable":true}}`。受限模式加沙箱，只改项目工作区文件，不能 git add/commit；沙箱不可用时失败。其只读 argv 沿用 claude 的 Read/Grep/Glob 白名单。
 
-panel 默认名单去掉主会话自身后过滤不可用座位，stderr 列原因；不足两家时不派单、rc=1，提示「会诊需要至少两家可用座位；单家安装可接入 agent-use 文本座位」。显式座位名单保留原行为。map_default 默认为 draft，也可配置角色；`--seat` 仍可点名座位。
+panel 默认名单去掉主会话自身后过滤不可用座位，stderr 列原因；不足两家时不派单、rc=1，提示「会诊需要至少两家可用座位；单家安装可接入 agent-use 文本座位」。显式座位名单同样过滤不可用座位并在 stderr 列原因；显式只给一家可用座位时照旧执行并展示结果、rc=1，全部不可用时不派单、rc=1。map_default 默认为 draft，也可配置角色；`--seat` 仍可点名座位。
 
 
 运行 `python3 tests/mutation_check.py` 检查全部红线，或追加表内变异 id 只检查指定项；仅使用临时副本，先验证基线再逐条变异。修改红线相关代码之前和之后都必须运行，并运行 `python3 tests/test_harness.py` 完整回归。出现“补丁失效”时，核对实现后更新 `MUTATIONS` 的精确 old/new（old 必须唯一），保持只破坏对应红线，并同步本表及守护测试，不能把语法错误当作杀死。变异必须由预期的那条断言杀死才算数；无关失败不算通过。

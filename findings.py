@@ -10,7 +10,7 @@ import itertools
 import json
 import math
 import os
-from env_compat import getenv
+from env_compat import getenv, session_id
 import re
 import socket
 import subprocess
@@ -307,7 +307,7 @@ def common_fields(workdir: str, **dispatch) -> dict:
     kind = dispatch.get("kind", _settings().get("seats", {}).get(seat, {}).get("kind"))
     return {"id": new_id(),
             "ts": stamp.isoformat(timespec="seconds"), "host": host,
-            "session": dispatch.get("session", os.environ.get("CLAUDE_CODE_SESSION_ID") or None),
+            "session": dispatch.get("session", session_id()),
             "source": dispatch.get("source", "worker"), "type": dispatch.get("type", "answers"),
             **{key: dispatch.get(key) for key in ("seat", "actual", "via", "ro", "prompt_id", "run_dir")},
             "workdir": str(Path(workdir).resolve()) if repo is None else None,

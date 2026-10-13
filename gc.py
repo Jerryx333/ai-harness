@@ -28,6 +28,11 @@ def main() -> int:
     state = Path(getenv("AIW_STATE", Path(__file__).resolve().parent / "state"))
     count = size = 0
     candidates = []
+    tui = state / "tui"
+    if not tui.is_symlink() and tui.is_dir():
+        for path in sorted(tui.iterdir()):
+            if not path.is_symlink() and path.is_file() and path.stat().st_mtime < cutoff:
+                candidates.append(path)
     for name in ("runs", "panels", "maps"):
         parent = state / name
         if parent.is_symlink() or not parent.exists():
@@ -59,13 +64,17 @@ def main() -> int:
                     if date < cutoff_date:
                         candidates.append(day)
     for path in candidates:
-        amount = directory_size(path)
+        amount = directory_size(path) if path.is_dir() else path.stat().st_size
         print(f"{'将删除' if dry else '删除'} {path} ({amount} 字节)")
         if not dry:
-            shutil.rmtree(path)
+            if path.is_dir():
+                shutil.rmtree(path)
+            else:
+                path.unlink()
         count += 1
         size += amount
-    print(f"{'预计删除' if dry else '已删除'} {count} 个目录，{'预计释放' if dry else '释放'} {size} 字节")
+    label = '个目录/文件' if any(path.parent == tui for path in candidates) else '个目录'
+    print(f"{'预计删除' if dry else '已删除'} {count} {label}，{'预计释放' if dry else '释放'} {size} 字节")
     return 0
 
 

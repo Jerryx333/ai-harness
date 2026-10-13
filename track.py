@@ -9,7 +9,7 @@ import fcntl
 import json
 import math
 import os
-from env_compat import getenv
+from env_compat import getenv, session_id
 from pathlib import Path
 import re
 import signal
@@ -175,7 +175,7 @@ def main(argv=None):
         if lock is not None or not lock_path.exists():
             started = now()
             progress = Progress(path, dict(pid=os.getpid(), host=socket.gethostname(),
-                target=args.host, session=os.environ.get("CLAUDE_CODE_SESSION_ID") or None,
+                target=args.host, session=session_id(),
                 label=args.label, timeout=args.timeout, started=started, progress="", updated=started), interval)
             progress.start()
         else:

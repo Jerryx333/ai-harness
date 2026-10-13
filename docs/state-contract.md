@@ -32,7 +32,7 @@ worker 在首次写 JSON 前创建或打开同名 `<pid>.lock` 并持有 `fcntl.
 | --- | --- |
 | pid | 整数，worker 进程 PID，也是文件名 |
 | host | 字符串，本机 hostname，用于主机过滤 |
-| session | 字符串或 null，`CLAUDE_CODE_SESSION_ID`，用于会话过滤 |
+| session | 字符串或 null，`CLAUDE_CODE_SESSION_ID`，没有时取 `CODEX_THREAD_ID`，用于会话过滤 |
 | claude_pid | 字符串或 null，环境变量 `CLAUDE_PID` 原值 |
 | seat | 字符串，最初请求的座位 |
 | actual | 字符串，本次实际尝试的座位，顶替时可能不同于 seat |
@@ -55,7 +55,7 @@ worker 在首次写 JSON 前创建或打开同名 `<pid>.lock` 并持有 `fcntl.
 | pid | 整数，track 包装进程 PID，也是文件名 |
 | host | 字符串，本机完整 hostname，与 inflight 相同，用于主机过滤 |
 | target | 字符串，实际任务机器的展示名；`--host` 值，默认本机 hostname 短名 |
-| session | 字符串或 null，`CLAUDE_CODE_SESSION_ID`，用于会话过滤 |
+| session | 字符串或 null，`CLAUDE_CODE_SESSION_ID`，没有时取 `CODEX_THREAD_ID`，用于会话过滤 |
 | label | 字符串，用户提供的任务标签 |
 | timeout | 数值或 null，`--timeout` 秒数，仅展示，不终止命令 |
 | started | 字符串，带时区 ISO 8601 开始时间 |
@@ -78,7 +78,7 @@ worker 在首次写 JSON 前创建或打开同名 `<pid>.lock` 并持有 `fcntl.
 | --- | --- |
 | ts | 带时区的 ISO 8601 记录时间，用于流水、今日与最近完成统计 |
 | host | hostname，用于本机过滤 |
-| session | 会话 ID 或 null，用于会话过滤；旧记录可能缺失，仅在全部会话视图出现 |
+| session | 会话 ID 或 null，`CLAUDE_CODE_SESSION_ID`，没有时取 `CODEX_THREAD_ID`，用于会话过滤；旧记录可能缺失，仅在全部会话视图出现 |
 | seat / actual | 请求座位和实际座位，用于展示顶替关系 |
 | kind | 结果类别；判断成功只看 `kind == "ok"`，失败类型也以 kind 为准，如 `timeout`、`format`、`auth`、`transient`（供应商单次失败，顶替但不熔断）、`interrupted`、`skipped_breaker` |
 | rc | 该次尝试的子进程退出码，不是 aiw 的最终退出码；跳过记录可为 null，不作为已完成尝试统计 |
@@ -172,3 +172,7 @@ snapshot 同样新增 `effective_hash` 和布尔 `local_config`（是否使用�
 `snapshot.fingerprint` 与 doctor 的单行指纹共享结构：`harness`、`agent_use` 为短 HEAD（dirty 加 `*`）；`registry` 含 `source`（env/user/repo）、`sha256`、`git`；`local` 含 seats/route/claude/agents 四个 SHA256 前 12 位；`local_git` 为按仓库根去重后排序的 HEAD 列表；`effective_hash` 为行为配置哈希。缺失分量为 `-`（无本地 Git 仓库时 `local_git=["-"]`），不存路径。
 
 agent-use 协议不兼容的账本 `kind=incompatible` 对应 breaker 的 `not_installed` 类型。未知 reason、缺少预期 credits 的诊断复用现有 `source=worker,type=observation` 记录，不新增 findings 字段，写入失败静默跳过。
+
+## tui/<AIW_TUI_ID>
+
+纯文本一行，保存 Codex 主会话的线程 ID。`aiw tui` 生成随机标识并通过环境传给 codex，标识只接受 `[A-Za-z0-9_-]+`。ai_worker 在派单发布在途记录时，若会话来自 `CODEX_THREAD_ID` 且 `AIW_NESTED` 不为 `1`，先写同目录临时文件再原子 replace；写失败仅警告，不阻断派单。`aiw tui-status` 读取此文件，将 `{"session_id": "<id>"}` 送给可选组件 `aiw-board statusline`。首单前没有映射，显示空闲；`aiw gc` 按文件 mtime 和指定天数清理，支持 `--dry-run`。

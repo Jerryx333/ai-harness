@@ -28,7 +28,7 @@ import fcntl
 import hashlib
 import json
 import os
-from env_compat import getenv
+from env_compat import getenv, session_id, write_tui_session
 import re
 import shutil
 import shlex
@@ -457,7 +457,7 @@ def codex_tokens(stderr: str) -> dict:
 
 def ledger(row: dict) -> None:
     STATE.mkdir(parents=True, exist_ok=True)
-    row = {"ts": now(), "host": socket.gethostname(), "session": os.environ.get("CLAUDE_CODE_SESSION_ID") or None, **row}
+    row = {"ts": now(), "host": socket.gethostname(), "session": session_id(), **row}
     with LEDGER.open("a", encoding="utf-8") as f:
         f.write(json.dumps(row, ensure_ascii=False) + "\n")
 
@@ -1871,12 +1871,13 @@ def dispatch(inflight: Path | None, attempt: dict) -> int:
                     success = False
                     try:
                         try:
+                            write_tui_session(STATE)
                             if inflight is not None:
                                 inflight.parent.mkdir(parents=True, exist_ok=True)
                                 save_json(inflight, {
                                     **effort_fields,
                                     "pid": os.getpid(), "host": socket.gethostname(),
-                                    "session": os.environ.get("CLAUDE_CODE_SESSION_ID") or None,
+                                    "session": session_id(),
                                     "claude_pid": os.environ.get("CLAUDE_PID") or None,
                                     "seat": seat, "actual": s,
                                     "model": SEATS["seats"][s].get("model") or "default",

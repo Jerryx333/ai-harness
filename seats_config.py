@@ -69,6 +69,9 @@ def validate(merged) -> list[str]:
         if nonempty and not value:
             error(path, '非空字符串列表')
         for index, template in enumerate(value):
+            if nonempty and not template:
+                error(f'{path}[{index}]', '非空字符串')
+                continue
             try:
                 plain = []
                 for literal, field, spec, conversion in string.Formatter().parse(template):

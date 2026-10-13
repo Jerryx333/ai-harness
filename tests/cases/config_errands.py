@@ -335,6 +335,8 @@ def seat_execution_contract():
     invalids = []
     for key in ('argv_rw', 'argv_ro'):
         invalids.append(({key: []}, f'seats.codex.{key}'))
+        invalids.append(({key: ['']}, f'seats.codex.{key}[0]'))
+        invalids.append(({key: ['{bin}', '']}, f'seats.codex.{key}[1]'))
         for template in ('{unknown}', '{model}', '{effort}', '{', '}', '{0}', '{}',
                          '{bin.x}', '{bin[0]}', '{bin!r}', '{bin:}', '{bin:>10}', '{bin:{prompt}}'):
             invalids.append(({key: [template]}, f'seats.codex.{key}[0]'))
@@ -345,6 +347,7 @@ def seat_execution_contract():
         invalids.append(({'model': value}, 'seats.codex.model'))
     for value in (None, '', {}, [1], []):
         invalids.append(({'model_args': value}, 'seats.codex.model_args'))
+    invalids.append(({'model_args': ['-m', '']}, 'seats.codex.model_args[1]'))
     for template in ('{unknown}', '{bin}', '{prompt}', '{workdir}', '{', '}', '{0}', '{}',
                      '{model.x}', '{model[0]}', '{model!r}', '{model:}', '{model:>10}', '{model:{effort}}'):
         invalids.append(({'model_args': [template]}, 'seats.codex.model_args[0]'))

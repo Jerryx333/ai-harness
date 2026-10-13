@@ -26,7 +26,9 @@
 | worker 持锁表明在途且锁不被子进程继承 | `ai_worker.py:acquire_liveness_lock` | `inflight_liveness_lock` | `inflight-lock` |
 | 拿锁失败不留下假锁文件 | `ai_worker.py:acquire_liveness_lock` | `inflight_liveness_lock` | `inflight-lock-cleanup` |
 | 子进程创建登记完成后才交付中断 | `ai_worker.py:run_group` | `signal_startup_window` | `startup-deferred` |
-| 延迟信号不遮蔽关键区真实异常；切换恢复嵌套深度与屏蔽字，首次信号决定退出码 | `ai_worker.py:deferred_signals` / `interruptible_signals` / `interrupted` | `signal_windows` | `deferred-exception` |
+| aiw 强杀后看门狗清理独立执行方进程组 | `ai_worker.py:WATCHDOG_CODE` / `run_group` | `executor_watchdog` | `executor-watchdog` |
+| 延迟信号不遮蔽关键区或 finally 清理区正在传播的真实异常，保留待处理信号；切换恢复嵌套深度与屏蔽字，首次信号决定退出码 | `ai_worker.py:deferred_signals` / `run_group` / `interruptible_signals` / `interrupted` | `signal_windows` | `deferred-exception` |
+| finally 清理区不交付正在传播真实异常时的待处理信号 | `ai_worker.py:run_group` | `signal_windows` | `cleanup-deferred-exception` |
 | 停用座位不能派单 | `ai_worker.py:dispatch` | `free_guard` | `disabled-dispatch` |
 | agent-use transient 失败顶替且不熔断；未知 reason 不自动改派 | `ai_worker.py:dispatch` / `AGENT_USE_REASON` | `agent_use_transient` | `transient-fallback` |
 | 已存在的 errand 名单必须严格校验 | `ai_worker.py:errand_names` | `errand_registry_corrupt_rejected` | `errand-registry` |

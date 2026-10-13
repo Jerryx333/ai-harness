@@ -352,6 +352,8 @@ def output_ready(p):
     assert ready.exists(), '假 CLI 输出未就绪'
 def popen(*a, **kw):
     p = original_popen(*a, **kw)
+    if a[0][:2] == [sys.executable, '-c'] and a[0][2] == w.WATCHDOG_CODE:
+        return p
     pidfile.write_text(str(p.pid))
     if mode != 'startup':
         original_communicate = p.communicate

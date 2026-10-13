@@ -1351,6 +1351,21 @@ if mode == 'exception':
     else:
         raise AssertionError('正常退出未交付待处理信号')
     assert w.PENDING_SIGNAL is None and w.DEFERRED_DEPTH == 0
+elif mode == 'popen-exception':
+    from unittest.mock import patch
+    error = OSError('真实 Popen 错误')
+    def fail_popen(*args, **kwargs):
+        w.interrupted(signal.SIGTERM, None)
+        raise error
+    with patch.object(w.subprocess, 'Popen', side_effect=fail_popen):
+        try:
+            w.run_group(['mock-executor'], 120)
+        except BaseException as exc:
+            assert exc is error, '清理区延迟信号遮蔽 Popen 真实异常'
+        else:
+            raise AssertionError('Popen 真实异常未交付')
+    assert w.PENDING_SIGNAL == 124, '清理区丢失待处理信号'
+    assert w.DEFERRED_DEPTH == 0 and w.ACTIVE_PROCESS is None
 elif mode in ('deferred-first', 'immediate-first'):
     if mode == 'deferred-first':
         try:
@@ -1405,7 +1420,7 @@ else:
     assert deliveries == ([] if mode == 'raise' else [signal.SIGTERM]), '切换期间信号未恰好交付一次'
 assert original_mask(signal.SIG_BLOCK, set()) == initial_mask, '退出后屏蔽字未恢复'
 '''
-    for mode in ('exception', 'deferred-first', 'immediate-first', 'raise', 'enter', 'restore'):
+    for mode in ('exception', 'popen-exception', 'deferred-first', 'immediate-first', 'raise', 'enter', 'restore'):
         result = subprocess.run([sys.executable, '-c', script, mode], cwd=REPO,
                                 capture_output=True, text=True, timeout=120)
         check(result.returncode == 0, f'{mode}: {result.stdout} {result.stderr}'.replace('\n', ' | '))

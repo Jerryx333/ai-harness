@@ -19,7 +19,200 @@ from support import (
     sys,
     tempfile,
     worker_call,
+    wait_until,
 )
+
+
+def executor_watchdog():
+    """Real aiw death and all orderly exits leave no executor/watchdog behind."""
+    import signal
+    from concurrent.futures import ThreadPoolExecutor
+
+    def exited(pid):
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return True
+        return False
+
+    with tempfile.TemporaryDirectory() as td:
+        t = Path(td)
+        cli = t / 'fake-cli'
+        cli.write_text(
+            '#!' + sys.executable + '\n'
+            "import os, signal, time\nfrom pathlib import Path\n"
+            "Path(os.environ['EXECUTOR_PID']).write_text(str(os.getpid()))\n"
+            "if os.environ['WATCHDOG_MODE'] == 'stubborn':\n"
+            "    signal.signal(signal.SIGTERM, signal.SIG_IGN)\n"
+            "    Path(os.environ['EXECUTOR_READY']).touch()\n"
+            "while not Path(os.environ['EXECUTOR_RELEASE']).exists(): time.sleep(.02)\n"
+            + "print('executor ok')\n")
+        cli.chmod(0o755)
+        wrapper = t / 'wrapper.py'
+        wrapper.write_text('''import os, sys, time
+from pathlib import Path
+sys.path.insert(0, sys.argv.pop(1))
+import ai_worker as w
+w.WATCHDOG_GRACE = 0.3
+original_popen = w.subprocess.Popen
+watchdogs = []
+def popen(argv, **kw):
+    is_watchdog = argv[:2] == [sys.executable, '-c'] and argv[2] == w.WATCHDOG_CODE
+    if is_watchdog and os.environ['WATCHDOG_MODE'] == 'failed':
+        raise OSError('simulated watchdog spawn failure')
+    is_executor = argv[0] == os.environ['CODEX_BIN']
+    p = original_popen(argv, **kw)
+    if is_executor and os.environ['WATCHDOG_MODE'] == 'timeout':
+        original_communicate = p.communicate
+        first_wait = True
+        def communicate(*args, **kwargs):
+            nonlocal first_wait
+            if first_wait:
+                first_wait = False
+                deadline = time.monotonic() + 30
+                while not Path(os.environ['TIMEOUT_TRIGGER']).exists():
+                    if time.monotonic() >= deadline:
+                        raise AssertionError('超时握手未到达')
+                    time.sleep(.02)
+                kwargs['timeout'] = .01
+            return original_communicate(*args, **kwargs)
+        p.communicate = communicate
+    if is_watchdog:
+        assert w.DEFERRED_DEPTH > 0, '看门狗启动未延迟信号'
+        assert not os.get_inheritable(kw['stdin']), '管道读端可被继承'
+        watchdogs.append(p)
+        Path(os.environ['WATCHDOG_PID']).write_text(str(p.pid))
+    return p
+w.subprocess.Popen = popen
+try:
+    sys.exit(w.main())
+finally:
+    for p in watchdogs:
+        assert p.returncode is not None, '看门狗未 wait 回收'
+        try:
+            os.waitpid(p.pid, os.WNOHANG)
+        except ChildProcessError:
+            pass
+        else:
+            raise AssertionError('看门狗仍是未回收子进程')
+    Path(os.environ['WATCHDOG_REAPED']).touch()
+''')
+        def run_mode(mode):
+            case = t / mode
+            case.mkdir()
+            executor_pid, watchdog_pid = case / 'executor.pid', case / 'watchdog.pid'
+            release, reaped = case / 'release', case / 'reaped'
+            cmd, env, _ = worker_call(
+                case, CODEX_BIN=str(cli), AIW_STATE=str(case / 'state'),
+                WATCHDOG_MODE=mode,
+                TIMEOUT_TRIGGER=str(case / 'timeout-trigger'),
+                EXECUTOR_PID=str(executor_pid), WATCHDOG_PID=str(watchdog_pid),
+                EXECUTOR_RELEASE=str(release), WATCHDOG_REAPED=str(reaped))
+            cmd[2] = 'codex'
+            cmd[4] = '120'
+            cmd += ['--no-fallback', '--no-findings']
+            with (case / 'log').open('w+') as log:
+                proc = subprocess.Popen(
+                    [sys.executable, str(wrapper), str(REPO), *cmd[2:]],
+                    env=env, stdout=log, stderr=log)
+                try:
+                    wait_until(lambda: executor_pid.exists() and executor_pid.read_text(),
+                               '执行方未就绪', timeout=30)
+                    if mode != 'failed':
+                        wait_until(lambda: watchdog_pid.exists() and watchdog_pid.read_text(),
+                                   '看门狗未就绪', timeout=30)
+                    if mode == 'killed':
+                        proc.kill()
+                        wait_until(lambda: exited(int(executor_pid.read_text())),
+                                   'aiw SIGKILL 后执行方仍存活', timeout=30)
+                    elif mode == 'timeout':
+                        (case / 'timeout-trigger').touch()
+                    elif mode == 'interrupted':
+                        proc.send_signal(signal.SIGTERM)
+                    elif mode in ('normal', 'failed'):
+                        release.touch()
+                    wait_until(lambda: proc.poll() is not None,
+                               f'{mode} aiw 未退出', timeout=30)
+                    log.seek(0)
+                    output = log.read()
+                    expected = -signal.SIGKILL if mode == 'killed' else 124 if mode in ('timeout', 'interrupted') else 0
+                    check(proc.returncode == expected, f'{mode} 退出码错误: {proc.returncode} {output}')
+                    if mode != 'failed':
+                        wait_until(lambda: exited(int(watchdog_pid.read_text())),
+                                   f'{mode} 看门狗仍存活', timeout=30)
+                    if mode != 'killed':
+                        check(reaped.exists(), f'{mode} 看门狗未回收: {output}')
+                    if mode == 'failed':
+                        check(output.count('警告：执行方看门狗启动失败') == 1,
+                              '看门狗启动失败未警告一次: ' + output)
+                finally:
+                    if proc.poll() is None:
+                        proc.kill()
+                    wait_until(lambda: proc.poll() is not None,
+                               '测试清理 aiw 未退出', timeout=30)
+                    # PID publication is the executor's first action after imports.
+                    wait_until(lambda: executor_pid.exists() and executor_pid.read_text(),
+                               '测试清理执行方未发布 PID', timeout=30)
+                    for pidfile in (executor_pid, watchdog_pid):
+                        if pidfile.exists() and pidfile.read_text():
+                            pid = int(pidfile.read_text())
+                            try:
+                                os.killpg(pid, signal.SIGKILL)
+                            except (ProcessLookupError, PermissionError):
+                                pass
+                            wait_until(lambda: exited(pid), '测试清理残留进程', timeout=30)
+
+        def stubborn_executor():
+            """Own the executor so its wait status proves SIGKILL escalation."""
+            import ai_worker as w
+            from unittest.mock import patch
+
+            case = t / 'stubborn'
+            case.mkdir()
+            pidfile = case / 'executor.pid'
+            env = dict(os.environ, WATCHDOG_MODE='stubborn',
+                       EXECUTOR_PID=str(pidfile), EXECUTOR_RELEASE=str(case / 'release'),
+                       EXECUTOR_READY=str(case / 'ready'))
+            executor = subprocess.Popen([str(cli)], env=env, start_new_session=True,
+                                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            reader = writer = watchdog = None
+            try:
+                wait_until(lambda: pidfile.exists() and pidfile.read_text() and (case / 'ready').exists(),
+                           '忽略 SIGTERM 的执行方未就绪', timeout=30)
+                reader, writer = os.pipe()
+                with patch.object(w, 'WATCHDOG_GRACE', 0.3):
+                    watchdog = subprocess.Popen(
+                        [sys.executable, '-c', w.WATCHDOG_CODE,
+                         str(executor.pid), str(w.WATCHDOG_GRACE)],
+                        stdin=reader, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                os.close(reader)
+                reader = None
+                os.close(writer)  # Simulate aiw dying without acknowledgement.
+                writer = None
+                wait_until(lambda: executor.poll() is not None,
+                           '忽略 SIGTERM 的执行方未被 SIGKILL', timeout=30)
+                check(executor.returncode == -signal.SIGKILL,
+                      f'忽略 SIGTERM 的执行方退出码错误: {executor.returncode}')
+                wait_until(lambda: watchdog.poll() is not None,
+                           'SIGKILL 后看门狗未退出', timeout=30)
+                check(watchdog.returncode == 0, 'SIGKILL 看门狗退出码错误')
+            finally:
+                for fd in (reader, writer):
+                    if fd is not None:
+                        os.close(fd)
+                for proc in (executor, watchdog):
+                    if proc is not None:
+                        if proc.poll() is None:
+                            proc.kill()
+                        wait_until(lambda: proc.poll() is not None,
+                                   'SIGKILL 子用例清理失败', timeout=30)
+
+        with ThreadPoolExecutor(max_workers=3) as pool:
+            futures = [pool.submit(run_mode, mode) for mode in
+                       ('killed', 'normal', 'timeout', 'interrupted', 'failed')]
+            futures.append(pool.submit(stubborn_executor))
+            for future in futures:
+                future.result()
 
 
 def inflight_liveness_lock():
@@ -74,7 +267,6 @@ def inflight_liveness_lock():
                         break
                     time.sleep(.02)
                 check(path.exists() and lock.exists() and pidfile.exists(), '在途文件或座位进程缺失')
-                child = int(pidfile.read_text())
                 with lock.open('r') as fd:
                     try:
                         fcntl.flock(fd, fcntl.LOCK_SH | fcntl.LOCK_NB)
@@ -85,7 +277,7 @@ def inflight_liveness_lock():
                 if killed:
                     p.kill()
                     p.wait(timeout=5)
-                    os.kill(child, 0)  # 座位仍活着，锁必须已随 worker 释放。
+                    # 看门狗可能已清理座位；锁必须随 worker 释放。
                     check(path.exists() and lock.exists(), 'SIGKILL 未留下状态文件')
                     with lock.open('r') as fd:
                         fcntl.flock(fd, fcntl.LOCK_SH | fcntl.LOCK_NB)
@@ -102,7 +294,7 @@ def inflight_liveness_lock():
                 if pidfile.exists() and pidfile.read_text():
                     try:
                         os.killpg(int(pidfile.read_text()), signal.SIGKILL)
-                    except ProcessLookupError:
+                    except (ProcessLookupError, PermissionError):
                         pass
                 p.communicate(timeout=5)
                 path.unlink(missing_ok=True)
@@ -294,6 +486,7 @@ def repository_identity_contract():
 
 
 CASES = {case.__name__: case for case in (
+    executor_watchdog,
     inflight_liveness_lock,
     test_inflight_lifecycle,
     test_inflight_removed_on_failure,

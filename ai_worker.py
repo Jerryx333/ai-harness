@@ -202,6 +202,31 @@ def load_json(p: Path, default, strict: bool = True):
 
 
 ACTIVE_PROCESS = None
+WATCHDOG_GRACE = 5  # Tests may shorten the grace by patching this constant.
+WATCHDOG_CODE = """
+import os
+import signal
+import sys
+import time
+
+# Only aiw owns the pipe writer; EOF without acknowledgement means it died.
+if sys.stdin.buffer.read(1) == b"x":
+    sys.exit(0)
+pgid = int(sys.argv[1])
+def send(sig):
+    try:
+        os.killpg(pgid, sig)
+    except (ProcessLookupError, PermissionError):
+        return False
+    return True
+if send(signal.SIGTERM):
+    deadline = time.monotonic() + float(sys.argv[2])
+    while time.monotonic() < deadline:
+        if not send(0):
+            sys.exit(0)
+        time.sleep(0.05)
+    send(signal.SIGKILL)
+"""
 DEFERRED_DEPTH = 0
 PENDING_SIGNAL = None
 SIGNAL_HANDLED = False
@@ -233,8 +258,8 @@ def stop_group(p):
 
 
 @contextlib.contextmanager
-def deferred_signals():
-    """关键区可嵌套；只在最外层完成后交付第一次信号。"""
+def deferred_signals(*, deliver=True):
+    """关键区可嵌套；最外层完成才交付信号，清理已有异常时可仅保留。"""
     global DEFERRED_DEPTH, PENDING_SIGNAL
     DEFERRED_DEPTH += 1
     completed = False
@@ -243,7 +268,7 @@ def deferred_signals():
         completed = True
     finally:
         DEFERRED_DEPTH -= 1
-        if completed and DEFERRED_DEPTH == 0 and PENDING_SIGNAL is not None:
+        if completed and deliver and DEFERRED_DEPTH == 0 and PENDING_SIGNAL is not None:
             code, PENDING_SIGNAL = PENDING_SIGNAL, None
             raise RunInterrupted(code)
 
@@ -289,12 +314,28 @@ def run_group(argv, timeout: float, **kw) -> subprocess.CompletedProcess:
     """子进程独立成组；登记完成才允许中断，清理期间不重入 communicate。"""
     global ACTIVE_PROCESS
     p = None
+    watchdog = None
+    writer = reader = None
     out = err = ""
     try:
         try:
             with deferred_signals():
                 p = subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, start_new_session=True, **kw)
                 ACTIVE_PROCESS = p
+                try:
+                    # os.pipe descriptors are non-inheritable; only the read end
+                    # is explicitly duplicated to the watchdog's stdin.
+                    reader, writer = os.pipe()
+                    watchdog = subprocess.Popen(
+                        [sys.executable, "-c", WATCHDOG_CODE, str(p.pid), str(WATCHDOG_GRACE)],
+                        stdin=reader, stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL, start_new_session=True,
+                        close_fds=True)
+                except Exception as error:
+                    print(f"警告：执行方看门狗启动失败（{type(error).__name__}）", file=sys.stderr)
+                finally:
+                    if reader is not None:
+                        os.close(reader)
             with interruptible_signals():
                 out, err = p.communicate(timeout=timeout)
         except RunInterrupted as e:
@@ -313,7 +354,27 @@ def run_group(argv, timeout: float, **kw) -> subprocess.CompletedProcess:
             raise subprocess.TimeoutExpired(argv, timeout, output=out, stderr=err)
         return subprocess.CompletedProcess(argv, p.returncode, out, err)
     finally:
-        ACTIVE_PROCESS = None
+        try:
+            # A successful cleanup must not replace an exception already unwinding.
+            with deferred_signals(deliver=sys.exc_info()[0] is None):
+                if writer is not None:
+                    try:
+                        os.write(writer, b"x")
+                    except OSError:
+                        pass
+                    finally:
+                        os.close(writer)
+                if watchdog is not None:
+                    try:
+                        watchdog.wait(timeout=1)
+                    except subprocess.TimeoutExpired:
+                        watchdog.kill()
+                        watchdog.wait()
+        except RunInterrupted as e:
+            e.result.update(out=out, err=err)
+            raise
+        finally:
+            ACTIVE_PROCESS = None
 
 
 class state_lock:

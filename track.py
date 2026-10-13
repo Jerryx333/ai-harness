@@ -9,6 +9,7 @@ import fcntl
 import json
 import math
 import os
+from env_compat import getenv
 from pathlib import Path
 import re
 import signal
@@ -153,7 +154,7 @@ def main(argv=None):
         interval = seconds(os.environ.get("AIW_TRACK_FLUSH_SECS", "5"))
     except ValueError:
         parser.error("AIW_TRACK_FLUSH_SECS 必须是有限非负秒数")
-    state = Path(os.environ.get("AI_HARNESS_STATE", Path(__file__).resolve().parent / "state"))
+    state = Path(getenv("AIW_STATE", Path(__file__).resolve().parent / "state"))
     path = state / "tracks" / f"{os.getpid()}.json"
     lock_path = path.with_suffix(".lock")
     lock = progress = child = None

@@ -52,7 +52,7 @@ class goal_lock:
     """整个 读—验收—写 周期独占；锁用独立文件，原子替换清单不影响它。"""
 
     def __init__(self, p: Path):
-        # 锁放 harness 的 state 里，不在项目目录留 .lock 文件
+        # 锁放 aiw 的 state 里，不在项目目录留 .lock 文件
         STATE.mkdir(parents=True, exist_ok=True)
         self.path = STATE / ("goal-" + hashlib.sha1(str(p.resolve()).encode()).hexdigest()[:12] + ".lock")
 

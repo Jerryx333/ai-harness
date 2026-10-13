@@ -1,6 +1,6 @@
 # 状态文件约定
 
-ai-harness 负责写状态，可选的独立组件 aiw-board 只读展示，不修改状态、清理残留或操作派单锁。通常共享目录为 `~/.claude/ai-harness/state`；worker 默认写自身仓库的 `state`，aiw-board 默认读上述安装目录，双方可通过 `AI_HARNESS_STATE` 指向同一目录。使用独立 worktree 时需注意两者路径一致。
+aiw 负责写状态，可选的独立组件 aiw-board 只读展示，不修改状态、清理残留或操作派单锁。通常共享目录为 `~/.claude/aiw/state`；worker 默认写自身仓库的 `state`，aiw-board 默认读上述安装目录，双方可通过 `AIW_STATE` 指向同一目录。使用独立 worktree 时需注意两者路径一致。
 
 ## context-hints/<session_id>
 
@@ -48,7 +48,7 @@ worker 在首次写 JSON 前创建或打开同名 `<pid>.lock` 并持有 `fcntl.
 
 ## tracks/<pid>.json
 
-`aiw track [--host 名称] [--timeout 秒] <标签> -- <命令> [参数...]` 登记主会话启动的本机盯梢命令，实际任务可在远端机器。STATE 同 worker：优先 `AI_HARNESS_STATE`，否则使用本仓库 `state`。
+`aiw track [--host 名称] [--timeout 秒] <标签> -- <命令> [参数...]` 登记主会话启动的本机盯梢命令，实际任务可在远端机器。STATE 同 worker：优先 `AIW_STATE`，否则使用本仓库 `state`。
 
 | 字段 | 类型和含义 |
 | --- | --- |

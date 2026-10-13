@@ -13,6 +13,8 @@ import itertools
 import json
 import math
 import os
+from repo_aliases import canonical_repo, normalize_record
+from env_compat import getenv
 import re
 import socket
 import subprocess
@@ -28,7 +30,7 @@ from harness_ids import compile_id_pattern, format_record_id
 from gitenv import repository_git_env
 
 HERE = Path(__file__).resolve().parent
-STATE = Path(os.environ.get("AI_HARNESS_STATE", HERE / "state"))
+STATE = Path(getenv("AIW_STATE", HERE / "state"))
 HUB_LOCK_SECONDS = 60
 RECORDS_LOCK_SECONDS = 10
 _SEQUENCE = itertools.count(1)
@@ -272,7 +274,7 @@ def _repo(remote: str | None) -> str | None:
     path = path.strip("/")
     if path.endswith(".git"):
         path = path[:-4]
-    return f"{host}/{path}".lower() if host and len(path.split("/")) >= 2 else None
+    return canonical_repo(f"{host}/{path}".lower()) if host and len(path.split("/")) >= 2 else None
 
 
 def repository_identity(workdir: str) -> tuple[str | None, str | None]:
@@ -377,7 +379,7 @@ def _rows(path: Path):
             except ValueError:
                 continue  # An interrupted append must not hide earlier records.
             if isinstance(row, dict):
-                yield row
+                yield normalize_record(row)
 
 
 def _timestamp(value):
@@ -424,7 +426,7 @@ def _overlap(start, end, include_hub=True):
 
 def _rule_churn(start, end, harness):
     if not _git(str(harness), "rev-parse", "--show-toplevel"):
-        return [], "规则振荡：跳过（harness 目录不是 git 仓库）"
+        return [], "规则振荡：跳过（aiw 目录不是 git 仓库）"
     signals = []
     for file in ("CLAUDE.md", "AGENTS.harness.md", "router-rules.json", "seats.json"):
         commits = _git(str(harness), "log", "--since=" + start.isoformat(),
@@ -666,7 +668,7 @@ def _complete_records(path, offset=0):
                 row = json.loads(line)
                 if not isinstance(row, dict):
                     raise ValueError("non-object")
-                rows.append(row)
+                rows.append(normalize_record(row))
             except (ValueError, UnicodeError):
                 bad += 1
             offset = stream.tell()

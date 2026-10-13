@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# aiw — ai-harness 统一入口。任意项目、任意机器同一个命令。
+# aiw — aiw 统一入口。任意项目、任意机器同一个命令。
 #   aiw <seat> <workdir> <timeout_s> <prompt_file> [--ro] [--no-fallback] [--no-findings] [--attach 文件 ...]   外包一单
 #   aiw note <workdir> <现象> [--expected 文本] [--evidence 文本] [--location 文本]
 #   aiw findings extract [--days N] | status | sync [--quiet]  抽取信号 / 查看状态 / 同步观察
@@ -31,7 +31,8 @@ while [ -L "$src" ]; do
   case "$src" in /*) ;; *) src="${dir}/${src}" ;; esac
 done
 H="$(cd -P "$(dirname "$src")/.." && pwd)"
-PY="${AI_HARNESS_PYTHON:-python3}"
+source "${H}/env_compat.sh"
+PY="${AIW_PYTHON-python3}"
 
 cmd="${1:-help}"
 case "$cmd" in

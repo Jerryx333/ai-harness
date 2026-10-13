@@ -7,6 +7,7 @@ import datetime as dt
 import fcntl
 import json
 import os
+from repo_aliases import canonical_repo, canonical_key, normalize_record
 import re
 import socket
 import sys
@@ -119,7 +120,7 @@ def overview(rows):
     for dimension in ('seat', 'repo'):
         groups = {}
         for r in rows:
-            key = r.get(dimension) or '(本机)'
+            key = (canonical_repo(r.get(dimension)) if dimension == 'repo' else r.get(dimension)) or '(本机)'
             counts = groups.setdefault(key, {'answers': 0, 'observation': 0})
             if r.get('type') in counts:
                 counts[r['type']] += 1
@@ -150,7 +151,7 @@ def project_records(hub):
 def grouping(rows):
     data = {}
     for key in ('repo', 'repo_rel', 'seat', 'host', 'rules_hash'):
-        data[key] = collections.Counter(r.get(key) or '(空)' for r in rows).most_common(15)
+        data[key] = collections.Counter((canonical_repo(r.get(key)) if key == 'repo' else r.get(key)) or '(空)' for r in rows).most_common(15)
     data['keywords'] = {}
     for word in KEYWORDS:
         ids = [r['id'] for r in rows if word in ' '.join(str(r.get(k) or '') for k in ('observation', 'expected', 'evidence'))]
@@ -415,11 +416,27 @@ def validate(data, batch=None, existing=None, local_existing=None, available_rec
 
 def persist_issue(mapping_path, mapping, mapping_key, repo, title, body, labels, marker):
     """查映射、按完整 aiw-key 行搜索、必要时创建，并立即落盘编号；调用方须持有 issues.lock。"""
+    repo = canonical_repo(repo)
+    mapping_key = canonical_key(mapping_key)
+    normalized = {canonical_key(k): v for k, v in mapping.items()}
+    mapping.clear()
+    mapping.update(normalized)
     if mapping_key in mapping:
         return mapping[mapping_key]
     found = json.loads(f._command(['gh', 'issue', 'list', '--repo', repo, '--state', 'all',
                                   '--search', marker + ' in:body', '--json', 'number,title,body']))
-    match = next((row for row in found if marker in (row.get('body') or '').splitlines()), None)
+    match = next((row for row in found if marker in [canonical_key(line) for line in (row.get('body') or '').splitlines()]), None)
+    if match is None:
+        from repo_aliases import ALIASES
+        for old, new in ALIASES.items():
+            legacy_marker = marker.replace(new.lower(), old.lower())
+            if legacy_marker == marker:
+                continue
+            legacy = json.loads(f._command(['gh', 'issue', 'list', '--repo', repo, '--state', 'all',
+                                           '--search', legacy_marker + ' in:body', '--json', 'number,title,body']))
+            match = next((row for row in legacy if marker in [canonical_key(line) for line in (row.get('body') or '').splitlines()]), None)
+            if match is not None:
+                break
     if match:
         mapping[mapping_key] = match['number']
     else:
@@ -453,11 +470,11 @@ def issues(data):
             return 2
         mapping_path = folder() / 'issues.json'
         mapping = read(mapping_path, {})
-        repo = f.config()['hub']
+        repo = canonical_repo(f.config()['hub'])
         # Bare legacy keys have no repository identity. Only migrate with provenance.
         legacy_hub = read(folder() / 'sync.json', {}).get('visibility_hub')
-        mapping = {(f'{repo}#{key}' if '#' not in key else key): value
-                   for key, value in mapping.items() if '#' in key or legacy_hub == repo}
+        mapping = {(f'{repo}#{key}' if '#' not in key else canonical_key(key)): value
+                   for key, value in mapping.items() if '#' in key or canonical_repo(legacy_hub) == repo}
         if mapping != read(mapping_path, {}):
             f._atomic_json(mapping_path, mapping)
         failed = False
@@ -481,14 +498,14 @@ def issues(data):
         hub_error = None
         for issue in data.get('project_issues', []):
             try:
-                project = issue['repo'].lower()
-                name = issue['repo'].split('/')[1]
+                project = canonical_repo(issue['repo']).lower()
+                name = canonical_repo(issue['repo']).split('/')[1]
                 target = repo
                 reason = ''
                 try:
                     info = json.loads(f._command(['gh', 'repo', 'view', issue['repo'], '--json',
                                                   'visibility,hasIssuesEnabled,nameWithOwner']))
-                    canonical = info['nameWithOwner']
+                    canonical = canonical_repo(info['nameWithOwner'])
                     if not isinstance(canonical, str) or not re.fullmatch(r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+', canonical):
                         raise ValueError('仓库规范名无效')
                     project = canonical.lower()
@@ -503,7 +520,7 @@ def issues(data):
                     reason = '目标仓库查询失败'
                 if reason:
                     print(f"project_issue {issue['key']}：{reason}，改开在集中仓库 {repo}")
-                if reason or issue['repo'].lower() == repo.lower() or target.lower() == repo.lower():
+                if reason or canonical_repo(issue['repo']).lower() == repo.lower() or target.lower() == repo.lower():
                     if not hub_checked:
                         hub_checked = True
                         try:
@@ -573,9 +590,9 @@ def apply(data):
     records = {r['id']: r for r in batch['pending'] + batch['pool']}
     for issue in data.get('project_issues', []):
         for rid in issue['records']:
-            record_repo = records[rid].get('repo')
+            record_repo = canonical_repo(records[rid].get('repo'))
             if (not isinstance(record_repo, str) or
-                    record_repo.rsplit('/', 1)[-1].lower() != issue['repo'].split('/')[1].lower()):
+                    record_repo.rsplit('/', 1)[-1].lower() != canonical_repo(issue['repo']).split('/')[1].lower()):
                 print(f"提示：project_issue 记录 {rid} 的记录仓库 {record_repo} 与目标仓库 {issue['repo']} 仓库名不一致")
     statuses = [dict(id=r['id'], status=r['status'], hypothesis=r.get('hypothesis'), note=r.get('note', ''),
                      triage_id=lock['triage_id'], ts=stamp) for r in data.get('records', [])]

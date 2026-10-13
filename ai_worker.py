@@ -28,6 +28,7 @@ import fcntl
 import hashlib
 import json
 import os
+from env_compat import getenv
 import re
 import shutil
 import shlex
@@ -52,7 +53,7 @@ PANEL_FORMAT = """
 """
 
 HERE = Path(__file__).resolve().parent
-STATE = Path(os.environ.get("AI_HARNESS_STATE", HERE / "state"))
+STATE = Path(getenv("AIW_STATE", HERE / "state"))
 LEDGER = STATE / "seat-ledger.jsonl"
 BREAKER = STATE / "breaker.json"
 DAILY = STATE / "daily-count.json"
@@ -575,6 +576,7 @@ def discord_channel():
 
 def keychain_token():
     try:
+        # 外部 Keychain 凭据身份保留旧账户名，避免已有安装丢失凭据。
         p = subprocess.run(["security", "find-generic-password", "-s", "discord-use-bot", "-a", "ai-harness", "-w"],
                            capture_output=True, text=True, timeout=20)
         return p.stdout.strip() if p.returncode == 0 else ""
@@ -652,7 +654,7 @@ def retry_notifications():
         if entry.get("notified") is not False:
             continue
         label = "模型" if ":" in seat else "座位"
-        message = f"[ai-harness] {label} {seat} 已自动停用：疑似开始收费。证据：{entry['evidence']}。主机 {entry['host']}，{entry['since']}。确认仍免费后运行 aiw enable {seat} 恢复。"
+        message = f"[aiw] {label} {seat} 已自动停用：疑似开始收费。证据：{entry['evidence']}。主机 {entry['host']}，{entry['since']}。确认仍免费后运行 aiw enable {seat} 恢复。"
         failure = send_discord(message)
         if failure:
             print(f"[notify] 补发失败：{failure}", file=sys.stderr)
@@ -693,7 +695,7 @@ def notify_missing_models(models):
         groups = load_json(path, [])
         if models in groups:
             return
-        queue_notification(f"[ai-harness] opencode 部分 Zen 免费模型下架：{', '.join(models)}。仍有免费模型，座位未停用。主机 {socket.gethostname()}，{now()}。")
+        queue_notification(f"[aiw] opencode 部分 Zen 免费模型下架：{', '.join(models)}。仍有免费模型，座位未停用。主机 {socket.gethostname()}，{now()}。")
         groups.append(models)
         save_json(path, groups)
     retry_notifications()
@@ -1137,7 +1139,7 @@ def run_agent_use_files(cfg, script, task, out_dir, run_dir, workdir, timeout) -
     if not outer_timeout and (type(version) is not int or version != 1):
         return {**version_fields, "rc": 1, "out": "", "kind": "incompatible", "secs": secs,
                 "run_dir": str(run_dir) if run_dir is not None else None,
-                "err": f"agent-use 结果 protocol_version={version} 不兼容（期望 1），请对齐 agent-use 与 ai-harness 版本"}
+                "err": f"agent-use 结果 protocol_version={version} 不兼容（期望 1），请对齐 agent-use 与 aiw 版本"}
     base = {**version_fields, "stderr": p.stderr, "credits": att.get("credits"), "model": agent_use_response_model(att), "rc": p.returncode, "err": p.stderr, "secs": secs, "output_saved": output_saved, "run_dir": str(run_dir) if run_dir is not None else None}
     base.update({key: att.get(key) for key in ("selected_model", "actual_model", "requested_model")})
     for model_attempt in att.get("model_attempts") or []:
@@ -1351,7 +1353,7 @@ def _doctor() -> int:
     local_failures = local_config(HERE)
     print(f"Discord 频道：{discord_channel() or '未配置'}；钥匙串{'有' if keychain_token() else '无'}；待发通知：{pending_count(readonly=True)}")
     print("待发通知由 aiw freecheck 或下一次通知补发。")
-    print(f"host: {socket.gethostname()}   harness: {HERE}   state: {STATE}")
+    print(f"host: {socket.gethostname()}   aiw: {HERE}   state: {STATE}")
     print(f"顶替上限（每日，仅成功顶替计数）：{substitute_limits()}")
     if os.environ.get("AIW_CODEX_SHARED_HOME") == "1":
         print(f"  Codex 执行方 home: {STATE / 'codex-home'}（已关闭，AIW_CODEX_SHARED_HOME=1）")

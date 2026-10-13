@@ -65,7 +65,7 @@ def inflight_liveness_lock():
             pidfile.unlink(missing_ok=True)
             release.unlink(missing_ok=True)
             p = subprocess.Popen(cmd, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-            path = Path(env['AI_HARNESS_STATE']) / 'inflight' / f'{p.pid}.json'
+            path = Path(env['AIW_STATE']) / 'inflight' / f'{p.pid}.json'
             lock = path.with_suffix('.lock')
             try:
                 deadline = time.monotonic() + 8
@@ -108,7 +108,7 @@ def inflight_liveness_lock():
                 path.unlink(missing_ok=True)
                 lock.unlink(missing_ok=True)
 
-        inflight = Path(env['AI_HARNESS_STATE']) / 'inflight'
+        inflight = Path(env['AIW_STATE']) / 'inflight'
         inflight.chmod(0o500)
         try:
             release.touch()
@@ -129,7 +129,7 @@ def test_inflight_lifecycle():
         t = Path(td)
         cmd, env, wd = worker_call(t, FAKE_AU_QODER='brief', CLAUDE_CODE_SESSION_ID='board-session')
         p = subprocess.Popen(cmd, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        path = Path(env['AI_HARNESS_STATE']) / 'inflight' / f'{p.pid}.json'
+        path = Path(env['AIW_STATE']) / 'inflight' / f'{p.pid}.json'
         try:
             deadline = time.monotonic() + 8
             while not path.exists() and p.poll() is None and time.monotonic() < deadline:
@@ -158,8 +158,8 @@ def test_inflight_removed_on_failure():
         cmd, env, wd = worker_call(Path(td), FAKE_AU_QODER='auth')
         r = sh(cmd + ['--no-fallback'], env=env)
         check(r.returncode == 1, r.stderr)
-        check(not list((Path(env['AI_HARNESS_STATE']) / 'inflight').glob('*.json')), '失败后 inflight 残留')
-        inflight = Path(env['AI_HARNESS_STATE']) / 'inflight'
+        check(not list((Path(env['AIW_STATE']) / 'inflight').glob('*.json')), '失败后 inflight 残留')
+        inflight = Path(env['AIW_STATE']) / 'inflight'
         inflight.rmdir(); inflight.write_text('not a directory')
         cmd[2] = 'workbuddy'
         r = sh(cmd + ['--no-fallback'], env=env)
@@ -171,7 +171,7 @@ def write_fallback_text_seat():
     with tempfile.TemporaryDirectory() as td:
         t = Path(td)
         home, env = fake_home(t)
-        repo = home / '.claude/ai-harness'
+        repo = home / '.claude/aiw'
         config = repo / 'seats.json'
         data = json.loads(config.read_text())
         data['fallback']['codex'] = ['qoder']
@@ -217,7 +217,7 @@ def repository_identity_contract():
     with tempfile.TemporaryDirectory() as td:
         t = Path(td)
         home, env = fake_home(t)
-        harness = home / '.claude/ai-harness'
+        harness = home / '.claude/aiw'
         settings = json.loads((harness / 'seats.json').read_text())
         settings['findings'] = {'collect': True}
         (harness / 'seats.json').write_text(json.dumps(settings))

@@ -1,4 +1,4 @@
-# ai-harness usage guide
+# aiw usage guide
 
 Start with the [README](../README.md) to see what problems it solves; this guide covers installation details, how it works and customization.
 
@@ -6,18 +6,18 @@ Start with the [README](../README.md) to see what problems it solves; this guide
 
 The installer makes these changes:
 
-- `~/.claude/CLAUDE.md`: adds the harness import, then existing personal rules; keeps other text.
+- `~/.claude/CLAUDE.md`: adds the aiw import, then existing personal rules; keeps other text.
 - `~/.claude/settings.json`: adds/refreshes the `UserPromptSubmit` hook; keeps other settings/hooks.
 - `~/.local/bin/aiw`: creates or replaces a symlink to this checkout, **without a backup**.
 - `~/.zshrc`: adds the marked PATH block only if `~/.local/bin` is missing from PATH and the marker is absent.
-- If `~/.codex` exists or `codex` is on PATH: updates the harness block in `~/.codex/AGENTS.md` and the hook in `~/.codex/hooks.json`. Keeps text outside the block. Set `AI_HARNESS_NO_CODEX=1` to skip this.
+- If `~/.codex` exists or `codex` is on PATH: updates the aiw block in `~/.codex/AGENTS.md` and the hook in `~/.codex/hooks.json`. Keeps text outside the block. Set `AIW_NO_CODEX=1` to skip this.
 - Creates `state/`, makes entry scripts executable, checks routing and runs doctor; warnings may not fail installation.
 
 Changed existing files get `.bak-YYYYMMDD-HHMMSS` backups; new/unchanged files do not. JSON is checked before edits. Reinstalling avoids duplicates. `--claude-hook=plugin` removes the settings hook; manage plugin hooks separately. It does not install a plugin.
 
 ## How it works
 
-ai-harness shares work from Claude Code or Codex: code goes to Codex, reviews to another model, drafts and summaries to optional cheap/free models. The main session plans/checks results; Codex also edits code. A **seat** is a model or CLI that takes assignments. Fallback tries another seat; circuit breakers temporarily skip unavailable seats. Not a framework or service: rule files and standard-library Python scripts.
+aiw shares work from Claude Code or Codex: code goes to Codex, reviews to another model, drafts and summaries to optional cheap/free models. The main session plans/checks results; Codex also edits code. A **seat** is a model or CLI that takes assignments. Fallback tries another seat; circuit breakers temporarily skip unavailable seats. Not a framework or service: rule files and standard-library Python scripts.
 
 `codex`/`codex-sol` need Codex CLI; `claude` needs Claude Code. A CLI runs in a terminal.
 
@@ -84,7 +84,7 @@ Clone the same public repository on each machine. Keep settings/rules in your ow
 
 No uninstall option. Undo these changes; keep unrelated settings:
 
-- Remove the harness import and its personal-rule import from `~/.claude/CLAUDE.md`.
-- Remove only hooks whose command contains `ai-harness/route.py` from `~/.claude/settings.json` and, if installed, `~/.codex/hooks.json`; keep valid JSON. Remove the `ai-harness:begin` through `ai-harness:end` block from `~/.codex/AGENTS.md`.
-- Remove the `~/.local/bin/aiw` symlink and the `# ai-harness: aiw on PATH` block from `~/.zshrc` if the installer added it.
+- Remove the aiw import and its personal-rule import from `~/.claude/CLAUDE.md`.
+- Remove only hooks whose command contains `aiw/route.py` from `~/.claude/settings.json` and, if installed, `~/.codex/hooks.json`; keep valid JSON. Remove the `aiw:begin` through `aiw:end` block from `~/.codex/AGENTS.md`.
+- Remove the `~/.local/bin/aiw` symlink and the `# aiw: on PATH` block from `~/.zshrc` if the installer added it.
 - Stop any separately installed plugin hook. Delete the checkout (including local `state/`) and local aiw settings only when no longer needed. Restore `.bak-*` files only if no later changes would be lost; the symlink has no backup.

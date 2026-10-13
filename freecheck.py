@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import os
+from env_compat import getenv
 import plistlib
 import subprocess
 import sys
@@ -13,13 +14,17 @@ from pathlib import Path
 
 import ai_worker as w
 
-LABEL = 'com.ai-harness.freecheck'
+LABEL = 'com.aiw.freecheck'
 
 
 def install(uninstall=False):
     directory = Path(os.environ.get('AIW_LAUNCH_AGENTS_DIR', str(Path.home() / 'Library/LaunchAgents'))).expanduser()
     path = directory / (LABEL + '.plist')
     domain = f'gui/{os.getuid()}'
+    legacy = directory / 'com.ai-harness.freecheck.plist'
+    if legacy.exists():
+        subprocess.run(['launchctl', 'bootout', domain, str(legacy)], capture_output=True, check=False)
+        legacy.unlink()
     if not uninstall:
         directory.mkdir(parents=True, exist_ok=True)
         w.STATE.mkdir(parents=True, exist_ok=True)
@@ -30,10 +35,11 @@ def install(uninstall=False):
                   'EnvironmentVariables': {'PATH': ':'.join(paths)},
                   'StandardOutPath': str(w.STATE / 'freecheck.log'),
                   'StandardErrorPath': str(w.STATE / 'freecheck.log')}
-        for key in ("AI_HARNESS_STATE", "AGENT_USE_HOME", "AGENT_USE_CONFIG", "XDG_CONFIG_HOME", "AI_HARNESS_PYTHON",
+        for key in ("AIW_STATE", "AGENT_USE_HOME", "AGENT_USE_CONFIG", "XDG_CONFIG_HOME", "AIW_PYTHON",
                     "AIW_CONFIG", "AIW_ROUTER_RULES", "AGENT_USE_ERRAND_HOME"):
-            if os.environ.get(key):
-                config["EnvironmentVariables"][key] = os.environ[key]
+            value = getenv(key) if key in ("AIW_STATE", "AIW_PYTHON") else os.environ.get(key)
+            if value:
+                config["EnvironmentVariables"][key] = value
         path.write_bytes(plistlib.dumps(config))
     subprocess.run(['launchctl', 'bootout', domain, str(path)], capture_output=True, check=False)
     if uninstall:
@@ -65,7 +71,7 @@ def zen_check():
     if not configured:
         return '没有配置 -free 模型，跳过目录检查'
     url = os.environ.get('AIW_ZEN_MODELS_URL', 'https://opencode.ai/zen/v1/models')
-    with urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": "ai-harness-freecheck/1"}), timeout=20) as response:
+    with urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": "aiw-freecheck/1"}), timeout=20) as response:
         data = json.load(response)
     # 无效或异常短的目录不能当成模型下架。
     rows = data['data']

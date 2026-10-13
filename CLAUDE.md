@@ -1,6 +1,6 @@
 # 多模型分工
 
-项目 CLAUDE.md 或 AGENTS.md 可覆盖；install.sh 引入的 `~/.config/aiw/CLAUDE.personal.md` 冲突时优先。命令参数、rc 含义、跑腿、/goal、免费座位保护等细节见 `~/.claude/ai-harness/docs/reference.zh-CN.md`，用到时再读。
+项目 CLAUDE.md 或 AGENTS.md 可覆盖；install.sh 引入的 `~/.config/aiw/CLAUDE.personal.md` 冲突时优先。命令参数、rc 含义、跑腿、/goal、免费座位保护等细节见 `~/.claude/aiw/docs/reference.zh-CN.md`，用到时再读。
 
 ## 座位
 

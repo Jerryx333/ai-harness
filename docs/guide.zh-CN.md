@@ -1,4 +1,4 @@
-# ai-harness 使用指南
+# aiw 使用指南
 
 先看 [README](../README.zh-CN.md) 了解它解决什么问题；本文讲安装细节、工作原理和定制。
 
@@ -10,14 +10,14 @@
 - `~/.claude/settings.json`：添加或刷新 `UserPromptSubmit` 派单钩子。保留其他设置和钩子。
 - `~/.local/bin/aiw`：创建或替换指向本仓库的软链，**不备份**。
 - `~/.zshrc`：仅当 PATH 缺少 `~/.local/bin` 且文件没有安装标记时，追加带标记的 PATH 设置。
-- 若存在 `~/.codex` 或 PATH 中有 `codex`：更新 `~/.codex/AGENTS.md` 的 harness 标记块，以及 `~/.codex/hooks.json` 的钩子。保留块外文字。设 `AI_HARNESS_NO_CODEX=1` 可跳过。
+- 若存在 `~/.codex` 或 PATH 中有 `codex`：更新 `~/.codex/AGENTS.md` 的 aiw 标记块，以及 `~/.codex/hooks.json` 的钩子。保留块外文字。设 `AIW_NO_CODEX=1` 可跳过。
 - 创建仓库的 `state/` 目录，给入口脚本加执行权限，检查路由并运行 doctor。检查可能只警告，不使安装失败。
 
 已有文件改动前备份为 `.bak-年月日-时分秒`，新建或未变的不备份。先检查 JSON；重复安装不重复追加。`--claude-hook=plugin` 会移除 settings 中的派单钩子，交给另行管理的插件；它不安装插件。
 
 ## 它是怎么工作的
 
-ai-harness 帮 Claude Code 或 Codex 主会话把活分给不同模型：改代码派 Codex，只读评审派另一个模型，起草和摘要派可选的便宜或免费模型。主会话规划和验收；Codex 主会话也自己改代码。**座位**就是一个可派单的模型或命令行工具。顶替链让失败的任务换下一家；熔断暂时跳过不可用座位。不是框架或服务：规则文件和仅用标准库的 Python 脚本。
+aiw 帮 Claude Code 或 Codex 主会话把活分给不同模型：改代码派 Codex，只读评审派另一个模型，起草和摘要派可选的便宜或免费模型。主会话规划和验收；Codex 主会话也自己改代码。**座位**就是一个可派单的模型或命令行工具。顶替链让失败的任务换下一家；熔断暂时跳过不可用座位。不是框架或服务：规则文件和仅用标准库的 Python 脚本。
 
 `codex`/`codex-sol` 需 Codex CLI，`claude` 需 Claude Code；CLI 即终端程序。
 
@@ -82,7 +82,7 @@ ai-harness 帮 Claude Code 或 Codex 主会话把活分给不同模型：改代�
 
 无卸载选项。手动撤销以下改动，保留其他设置：
 
-- 从 `~/.claude/CLAUDE.md` 删除 harness 引入行及其个人规则引入行。
-- 从 `~/.claude/settings.json` 和已接入时的 `~/.codex/hooks.json` 中，仅删除命令含 `ai-harness/route.py` 的钩子，保持 JSON 合法；从 `~/.codex/AGENTS.md` 删除 `ai-harness:begin` 到 `ai-harness:end` 的整个标记块。
-- 删除 `~/.local/bin/aiw` 软链；若安装时添加过，从 `~/.zshrc` 删除 `# ai-harness: aiw on PATH` 及其 PATH 设置。
+- 从 `~/.claude/CLAUDE.md` 删除 aiw 引入行及其个人规则引入行。
+- 从 `~/.claude/settings.json` 和已接入时的 `~/.codex/hooks.json` 中，仅删除命令含 `aiw/route.py` 的钩子，保持 JSON 合法；从 `~/.codex/AGENTS.md` 删除 `aiw:begin` 到 `aiw:end` 的整个标记块。
+- 删除 `~/.local/bin/aiw` 软链；若安装时添加过，从 `~/.zshrc` 删除 `# aiw: on PATH` 及其 PATH 设置。
 - 停用另行安装的插件钩子。不再需要时才删除仓库（含本地 `state/`）和本地 aiw 配置。也可用 `.bak-*` 恢复代替手改，但须确认不会丢掉后续修改；命令软链没有备份。

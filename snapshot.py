@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """写本机脱敏快照到 snapshots/<host>.json，不提交到仓库，可对比多台机器各自生成的文件检查漂移。
 
-只记录「形状」：CLI 版本、seats.json 哈希、settings.json 里的钩子与模型、CLAUDE.md 是否引入 harness。
+只记录「形状」：CLI 版本、seats.json 哈希、settings.json 里的钩子与模型、CLAUDE.md 是否引入 aiw。
 不记录任何 env 值、token、key。
 """
 from __future__ import annotations
@@ -72,13 +72,13 @@ def agent_use_shape() -> dict:
 
 
 def hook_shapes(hooks: dict) -> tuple[dict, dict]:
-    expected = 'python3 "$HOME/.claude/ai-harness/route.py" --hook'
+    expected = 'python3 "$HOME/.claude/aiw/route.py" --hook'
     mine, others = {}, {}
     for event, groups in hooks.items():
         for group in groups:
             for hook in group.get("hooks", []):
                 command = hook.get("command", "")
-                harness = "ai-harness" in command
+                harness = "aiw" in command
                 shape = {"type": hook.get("type"), "timeout": hook.get("timeout"),
                          "cmd_sha": hashlib.sha256(command.encode()).hexdigest()[:12]}
                 if harness:
@@ -126,7 +126,7 @@ def main() -> int:
         "cli": {name: seat_shape(c) for name, c in seats["seats"].items()},
         "agent_use": agent_use_shape(),
         "claude_cli": version(os.environ.get("CLAUDE_BIN") or "claude"),
-        "claude_md_imports_harness": claude_md.exists() and "@~/.claude/ai-harness/CLAUDE.md" in claude_md.read_text(encoding="utf-8", errors="ignore"),
+        "claude_md_imports_harness": claude_md.exists() and "@~/.claude/aiw/CLAUDE.md" in claude_md.read_text(encoding="utf-8", errors="ignore"),
         "settings": settings,
     }
     out = HERE / "snapshots" / f"{snap['host']}.json"

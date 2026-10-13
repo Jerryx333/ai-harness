@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """每周快照：从账本和派单日志算指标。同一个脚本出，不手写。
 
-    python3 ops/ai-harness/weekly.py [days=7] [--json]
+    python3 ops/aiw/weekly.py [days=7] [--json]
 
 --json 只输出派单统计；token 和改进缓冲区小节仅在文本模式输出。
 """
@@ -17,7 +17,8 @@ from statistics import median
 from pathlib import Path
 
 import os
-STATE = Path(os.environ.get("AI_HARNESS_STATE", Path(__file__).resolve().parent / "state"))
+from env_compat import getenv
+STATE = Path(getenv("AIW_STATE", Path(__file__).resolve().parent / "state"))
 
 
 def rows(name: str, since: dt.datetime):
@@ -202,7 +203,7 @@ def report(days):
 def print_report(data, text_data):
     print(f"顶替上限（每日，仅成功顶替计数）：{data['substitute_limits']}")
     generated = dt.datetime.fromisoformat(data["generated_at"])
-    print(f"# AI harness 周报  {data['host']}  最近 {data['days']} 天  ({generated.date()})\n")
+    print(f"# aiw 周报  {data['host']}  最近 {data['days']} 天  ({generated.date()})\n")
     router = data["router"]
     print(f"外包调用 {data['calls']} 次；派单判定 {router['total']} 条，命中 {router['hit']}，逃生口 {router['escape']}\n")
     print("## 按座位（请求座位 → 实际执行方）")

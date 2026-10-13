@@ -64,7 +64,7 @@ def route_textwork():
 def route_override():
     with tempfile.TemporaryDirectory() as t:
         t = Path(t)
-        env = dict(os.environ, AI_HARNESS_STATE=str(t / "state"))
+        env = dict(os.environ, AIW_STATE=str(t / "state"))
         proj = t / "proj"
         (proj / ".claude").mkdir(parents=True)
         (proj / "sub").mkdir()
@@ -143,7 +143,7 @@ def map_interrupt():
             for file in files:
                 (t / file).write_text('data')
             env = dict(os.environ, AGENT_USE_HOME=str(au), MAP_PID_FILE=str(pid_file),
-                       AI_HARNESS_STATE=str(t / 'state'))
+                       AIW_STATE=str(t / 'state'))
             p = subprocess.Popen([sys.executable, str(REPO / 'map.py'), str(t), '120',
                                   str(pf), *files, '--jobs', '1'], env=env,
                                  stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
@@ -197,7 +197,7 @@ def map_batch():
             'if os.environ.get("FAKE_MAP_FAIL") in ("all", prov) and "MAP_ITEM_1" in open(a.task).read():\n'
             '    mode = "provider_failed"\n'
             'log = os.environ.get("FAKE_AU_LOG")'))
-        env = dict(os.environ, AGENT_USE_HOME=str(au), AI_HARNESS_STATE=str(t / 'state'))
+        env = dict(os.environ, AGENT_USE_HOME=str(au), AIW_STATE=str(t / 'state'))
         cmd = ['bash', str(REPO / 'bin/aiw'), 'map', str(wd), '30', str(pf)]
         ledger = t / 'state/seat-ledger.jsonl'
 
@@ -271,7 +271,7 @@ def panel_compact_context():
         output = t / 'answer.txt'
         answer = '有效意见' + '中' * 3100 + 'HIDDEN_END'
         output.write_text(answer)
-        env = dict(os.environ, AI_HARNESS_STATE=str(t / 'state'),
+        env = dict(os.environ, AIW_STATE=str(t / 'state'),
                    AGENT_USE_HOME=str(fake_agent_use(t)), FAKE_FINDINGS_OUTPUT=str(output))
         cmd = [sys.executable, str(REPO / 'panel.py'), str(t), '10',
                '只列两条', 'qoder', 'codex-sol', '--attach', 'code.txt']
@@ -309,7 +309,7 @@ def panel_compact_context():
 def panel_prior():
     with tempfile.TemporaryDirectory() as td:
         t = Path(td)
-        env = dict(os.environ, AI_HARNESS_STATE=str(t / 'state'), AGENT_USE_HOME=str(fake_agent_use(t)))
+        env = dict(os.environ, AIW_STATE=str(t / 'state'), AGENT_USE_HOME=str(fake_agent_use(t)))
         prior = t / 'own.md'; prior.write_text('PRIOR_PRIVATE_MARKER：先验判断')
         cmd = [str(REPO / 'bin/aiw'), 'panel', str(t), '10', '独立评审任务', 'qoder', 'workbuddy']
         r = sh(cmd + ['--prior', str(prior)], env=env)
@@ -338,7 +338,7 @@ def panel_prior():
 def panel():
     with tempfile.TemporaryDirectory() as t:
         t = Path(t)
-        env = dict(os.environ, PATH=f"{fake_bins(t)}:{os.environ['PATH']}", AI_HARNESS_STATE=str(t / "state"),
+        env = dict(os.environ, PATH=f"{fake_bins(t)}:{os.environ['PATH']}", AIW_STATE=str(t / "state"),
                    AGENT_USE_HOME=str(fake_agent_use(t)), AIW_MAIN="claude")
         pf = t / "p.md"; pf.write_text("这个策略的最强反例是什么？")
         aiw = str(REPO / "bin" / "aiw")
@@ -377,7 +377,7 @@ def panel_free():
     with tempfile.TemporaryDirectory() as td:
         t = Path(td)
         env = dict(os.environ, PATH=f"{fake_bins(t)}:{os.environ['PATH']}",
-                   AI_HARNESS_STATE=str(t / "state"), AGENT_USE_HOME=str(fake_agent_use(t)), AIW_MAIN="codex")
+                   AIW_STATE=str(t / "state"), AGENT_USE_HOME=str(fake_agent_use(t)), AIW_MAIN="codex")
         cmd = ["bash", str(REPO / "bin/aiw"), "panel", str(t), "30", "免费会诊测试", "--free"]
         r = sh(cmd, env=env)
         check(r.returncode == 0 and "免费会诊：" in r.stderr, f"免费会诊失败: {r.stdout}{r.stderr}")
@@ -391,7 +391,7 @@ def panel_free():
         check(not (out / "codex-sol.md").exists(), "免费会诊不应调用 codex-sol")
         r = sh(cmd + ["qoder"], env=env)
         check(r.returncode == 64 and "二选一" in r.stderr, f"免费与显式座位应互斥: {r.stderr}")
-        for name in ("route.py", "ai_worker.py", "findings.py", "harness_ids.py", "gitenv.py", "seats_config.py", "router-rules.json", "seats.json"):
+        for name in ("route.py", "ai_worker.py", "findings.py", "harness_ids.py", "gitenv.py", "env_compat.py", "repo_aliases.py", "seats_config.py", "router-rules.json", "seats.json"):
             shutil.copy(REPO / name, t / name)
         config = json.loads((t / "seats.json").read_text())
         for seat, reason in (("codex-sol", "agent_use"), ("missing-seat", "引用悬空"), ("doubao", "panel_default")):
@@ -420,7 +420,7 @@ raise SystemExit(panel.main())
 def route_seat_check():
     with tempfile.TemporaryDirectory() as td:
         t = Path(td)
-        for name in ('route.py', 'ai_worker.py', 'findings.py', 'harness_ids.py', 'gitenv.py', 'seats_config.py', 'router-rules.json', 'seats.json'):
+        for name in ('route.py', 'ai_worker.py', 'findings.py', 'harness_ids.py', 'gitenv.py', 'env_compat.py', 'repo_aliases.py', 'seats_config.py', 'router-rules.json', 'seats.json'):
             shutil.copy(REPO / name, t / name)
         cmd = [sys.executable, str(t / 'route.py'), '--check']
         check(sh(cmd, cwd=t).returncode == 0, '当前规则不通过')
@@ -483,7 +483,7 @@ def route_context_hint():
     with tempfile.TemporaryDirectory() as td:
         root = Path(td)
         home, env = fake_home(root)
-        harness = home / '.claude/ai-harness'
+        harness = home / '.claude/aiw'
         transcript = root / 'transcript.jsonl'
         payload = {'prompt': '会诊', 'cwd': str(root), 'session_id': 'fixture-session',
                    'transcript_path': str(transcript)}
@@ -573,7 +573,7 @@ def route_cross_session():
     with tempfile.TemporaryDirectory() as td:
         root = Path(td)
         home, env = fake_home(root)
-        harness = home / '.claude/ai-harness'
+        harness = home / '.claude/aiw'
         settings = json.loads((harness / 'seats.json').read_text())
         settings['findings'] = {'hint': True}
         (harness / 'seats.json').write_text(json.dumps(settings))
@@ -607,7 +607,7 @@ def handoff_cli():
     with tempfile.TemporaryDirectory() as td:
         root = Path(td)
         home, env = fake_home(root)
-        harness = home / '.claude/ai-harness'
+        harness = home / '.claude/aiw'
         workdir = root / "demo project's"
         workdir.mkdir()
         file = workdir / "handoff file's.md"

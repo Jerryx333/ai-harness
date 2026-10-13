@@ -14,6 +14,7 @@ import datetime as dt
 import json
 import math
 import os
+from env_compat import getenv
 import signal
 import subprocess
 import sys
@@ -26,7 +27,7 @@ from harness_ids import format_panel_id
 from ai_worker import AttachError, SEATS, build_attachments, dispatch
 
 HERE = Path(__file__).resolve().parent
-STATE = Path(os.environ.get("AI_HARNESS_STATE", HERE / "state"))
+STATE = Path(getenv("AIW_STATE", HERE / "state"))
 
 
 def outer_timeout(seat: str, timeout: int, grace: float) -> float:

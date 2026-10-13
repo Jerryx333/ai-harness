@@ -1,4 +1,4 @@
-"""harness 生成的 ID 格式与字面识别规则；不读取任何环境。"""
+"""aiw 生成的 ID 格式与字面识别规则；不读取任何环境。"""
 from __future__ import annotations
 
 import re

@@ -21,6 +21,7 @@ import concurrent.futures as cf
 import datetime as dt
 import json
 import os
+from env_compat import getenv
 import subprocess
 import sys
 from pathlib import Path
@@ -29,7 +30,7 @@ from ai_worker import PANEL_FORMAT
 from harness_ids import format_panel_id
 
 HERE = Path(__file__).resolve().parent
-STATE = Path(os.environ.get("AI_HARNESS_STATE", HERE / "state"))
+STATE = Path(getenv("AIW_STATE", HERE / "state"))
 ADJUDICATION = """## 主会话裁决（逐条填写）
 | # | 意见要点（来源座位） | 裁决：接受 / 驳回 / 暂缓 | 理由或证据（path:line、命令输出） |
 | --- | --- | --- | --- |

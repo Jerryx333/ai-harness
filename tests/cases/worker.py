@@ -31,7 +31,7 @@ def run_dir_persist():
         t = Path(td)
         prompt = t / "prompt.txt"
         prompt.write_text("完整 prompt\n第二行\n")
-        env = dict(os.environ, AI_HARNESS_STATE=str(t / "state"))
+        env = dict(os.environ, AIW_STATE=str(t / "state"))
 
         def run(seat="codex", mode="ok", timeout="10", extra=()):
             r = inprocess_sh([sys.executable, str(REPO / "ai_worker.py"), seat, str(t), timeout,
@@ -133,7 +133,7 @@ def run_dir_persist():
         for seat, expected in (("codex", "codex ok\n"), ("qoder", "qoder ok")):
             r = inprocess_sh([sys.executable, str(REPO / "ai_worker.py"), seat, str(t), "10",
                     str(prompt), "--ro", "--no-fallback"],
-                   env=dict(env, AI_HARNESS_STATE=str(blocked)))
+                   env=dict(env, AIW_STATE=str(blocked)))
             check(r.returncode == 0 and r.stdout == expected and "警告：写" in r.stderr, repr(r))
             row = json.loads((blocked / "seat-ledger.jsonl").read_text().splitlines()[-1])
             check(row["run_dir"] is None, str(row))
@@ -141,7 +141,7 @@ def run_dir_persist():
         missing = t / "missing-state"
         r = inprocess_sh([sys.executable, str(REPO / "ai_worker.py"), "codex", str(t), "10",
                 str(prompt), "--ro", "--no-fallback"],
-               env=dict(env, AI_HARNESS_STATE=str(missing), CODEX_BIN=str(t / "no-codex")))
+               env=dict(env, AIW_STATE=str(missing), CODEX_BIN=str(t / "no-codex")))
         row = json.loads((missing / "seat-ledger.jsonl").read_text().splitlines()[-1])
         check(r.returncode == 1 and row["run_dir"] is None and not (missing / "runs").exists(), repr(r))
 
@@ -154,7 +154,7 @@ def write_changes_report():
         work.mkdir()
         prompt = t / "prompt"
         prompt.write_text("修改文件")
-        env = dict(os.environ, AI_HARNESS_STATE=str(t / "state"))
+        env = dict(os.environ, AIW_STATE=str(t / "state"))
 
         def git(*args):
             r = sh(["git", *args], cwd=work)
@@ -220,7 +220,7 @@ def codex_sol_no_fallback():
         t = Path(t)
         # 首次认证失败，后续调用成功：同模型时仍能检出错误顶替。
         env = dict(os.environ, PATH=f"{fake_bins(t)}:{os.environ['PATH']}",
-                   AI_HARNESS_STATE=str(t / "state"), FAKE_CODEX="auth_sol",
+                   AIW_STATE=str(t / "state"), FAKE_CODEX="auth_sol",
                    FAKE_CODEX_AUTH_MARKER=str(t / "codex-auth-seen"))
         wd = t / "wd"; wd.mkdir()
         pf = t / "p.md"; pf.write_text("只回复 OK")
@@ -249,7 +249,7 @@ def repository_write_lock():
         backend = t / "backend"
         backend.write_text('#!/bin/sh\ntouch "$READY"\nsleep 30\necho ok\n')
         backend.chmod(0o755)
-        env = dict(os.environ, AI_HARNESS_STATE=str(t / "state"), CODEX_BIN=str(backend), READY=str(ready))
+        env = dict(os.environ, AIW_STATE=str(t / "state"), CODEX_BIN=str(backend), READY=str(ready))
         for first, second, git_dir in ((sub, work, None), (work, sub, None),
                                       (sub, work, str(other / ".git")),
                                       (work, sub, str(other / ".git"))):
@@ -279,7 +279,7 @@ def run_provider_location():
         t = Path(td)
         work = t / "work"; work.mkdir()
         prompt = t / "prompt"; prompt.write_text("test")
-        env = dict(os.environ, AI_HARNESS_STATE=str(t / "state"))
+        env = dict(os.environ, AIW_STATE=str(t / "state"))
         def run(**extra):
             return inprocess_sh([sys.executable, str(REPO / "ai_worker.py"), "qoder", str(work),
                        "10", str(prompt), "--ro"], env=dict(env, **extra))
@@ -308,7 +308,7 @@ def provider_cleared_on_failure():
             wd = t / "wd"; wd.mkdir()
             prompt = t / "prompt"; prompt.write_text("test")
             provider = wd / ("panel.provider" if custom else ".provider")
-            env = dict(os.environ, AI_HARNESS_STATE=str(t / "state"), AGENT_USE_HOME=str(fake_agent_use(t)))
+            env = dict(os.environ, AIW_STATE=str(t / "state"), AGENT_USE_HOME=str(fake_agent_use(t)))
             if custom:
                 env["AIW_PROVIDER_FILE"] = str(provider)
             def run(seat, **extra):
@@ -337,7 +337,7 @@ def provider_cleanup_not_work_change():
         for name in (".provider", "panel.provider"):
             provider = wd / name
             provider.write_text("stale\n")
-            env = dict(os.environ, AI_HARNESS_STATE=str(t / "state"), AIW_PROVIDER_FILE=str(provider))
+            env = dict(os.environ, AIW_STATE=str(t / "state"), AIW_PROVIDER_FILE=str(provider))
             r = inprocess_sh([sys.executable, str(REPO / "ai_worker.py"), "codex", str(wd), "30", str(prompt)], env=env)
             check(r.returncode == 0 and "工作区变化：0 个文件" in r.stderr, r.stderr)
             rows = [json.loads(line) for line in (t / "state/seat-ledger.jsonl").read_text().splitlines()]
@@ -435,7 +435,7 @@ def public_reason_vocabulary():
             prompt = t / "prompt"; prompt.write_text("Reply OK")
             state = t / "state"
             log = t / "calls"
-            env = dict(os.environ, AI_HARNESS_STATE=str(state),
+            env = dict(os.environ, AIW_STATE=str(state),
                        AGENT_USE_HOME=str(fake_agent_use(t)), FAKE_AU_LOG=str(log),
                        FAKE_AU_DOUBAO=reason)
             result = inprocess_sh([sys.executable, str(REPO / "ai_worker.py"), "doubao",
@@ -475,7 +475,7 @@ def agent_use_transient():
             wd = t / "wd"; wd.mkdir()
             prompt = t / "prompt.md"; prompt.write_text("只回复 OK")
             log = t / "calls"
-            env = dict(os.environ, AI_HARNESS_STATE=str(t / "state"),
+            env = dict(os.environ, AIW_STATE=str(t / "state"),
                        AGENT_USE_HOME=str(fake_agent_use(t)), FAKE_AU_LOG=str(log),
                        FAKE_AU_DOUBAO=reason, FAKE_AU_ERR="HEAD_SENTINEL" + "中" * 900 + "TAIL_SENTINEL")
             args = ["bash", str(REPO / "bin/aiw"), "doubao", str(wd), "30", str(prompt), "--ro"]
@@ -533,7 +533,7 @@ def page_adapter_reasons():
                     "page-backup": {"kind": "agent_use", "provider": "page_backup",
                                     "max_concurrency": 1}},
                 "fallback": {"page-primary": ["page-backup"]}}))
-            env = dict(os.environ, AIW_CONFIG=str(local), AI_HARNESS_STATE=str(t / "state"),
+            env = dict(os.environ, AIW_CONFIG=str(local), AIW_STATE=str(t / "state"),
                        AGENT_USE_HOME=str(fake_agent_use(t)), FAKE_AU_LOG=str(log),
                        FAKE_AU_PAGE_PRIMARY=reason)
             result = sh(["bash", str(REPO / "bin/aiw"), "page-primary", str(wd),
@@ -567,7 +567,7 @@ def worker_regression():
     with tempfile.TemporaryDirectory() as t:
         t = Path(t)
         log = t / "au.log"
-        env = dict(os.environ, PATH=f"{fake_bins(t)}:{os.environ['PATH']}", AI_HARNESS_STATE=str(t / "state"),
+        env = dict(os.environ, PATH=f"{fake_bins(t)}:{os.environ['PATH']}", AIW_STATE=str(t / "state"),
                    AGENT_USE_HOME=str(fake_agent_use(t)), FAKE_AU_LOG=str(log))
         wd = t / "wd"; wd.mkdir()
         pf = t / "p.md"; pf.write_text("只回复 OK")
@@ -866,7 +866,7 @@ def attach_seat_context():
         (t / 'code.txt').write_bytes(data)
         (t / '.env').write_text('private')
         prompt = t / 'prompt.md'; prompt.write_text('review')
-        env = dict(os.environ, AI_HARNESS_STATE=str(t / 'state'),
+        env = dict(os.environ, AIW_STATE=str(t / 'state'),
                    AGENT_USE_HOME=str(fake_agent_use(t)))
         def run(seat, name='code.txt', **extra):
             return inprocess_sh([sys.executable, str(REPO / 'ai_worker.py'), seat, str(t), '10',
@@ -925,7 +925,7 @@ def attach_seat_context():
 def attach():
     with tempfile.TemporaryDirectory() as t:
         t = Path(t)
-        env = dict(os.environ, PATH=f"{fake_bins(t)}:{os.environ['PATH']}", AI_HARNESS_STATE=str(t / "state"),
+        env = dict(os.environ, PATH=f"{fake_bins(t)}:{os.environ['PATH']}", AIW_STATE=str(t / "state"),
                    AGENT_USE_HOME=str(fake_agent_use(t)))
         wd = t / "proj"; (wd / "src").mkdir(parents=True)
         (wd / "src" / "a.py").write_text("def add(a, b):\n    return a + b  # MARKER_A\n")
@@ -1193,7 +1193,7 @@ time.sleep(300)
                 worker.send_signal(sig)
                 worker.communicate(timeout=10)
                 check(worker.returncode == expected, f'信号返回码错误: {worker.returncode}')
-                check(not (Path(worker_env['AI_HARNESS_STATE']) / 'inflight' / f'{worker.pid}.json').exists(), '信号退出残留 inflight')
+                check(not (Path(worker_env['AIW_STATE']) / 'inflight' / f'{worker.pid}.json').exists(), '信号退出残留 inflight')
                 try:
                     os.kill(int(pidfile.read_text()), 0)
                 except ProcessLookupError:
@@ -1238,7 +1238,7 @@ def ledger_repo_fields():
             check(r.returncode == 0, r.stderr)
         alias = t / 'alias'
         alias.symlink_to(plain, target_is_directory=True)
-        env = dict(os.environ, AI_HARNESS_STATE=str(t / 'state'))
+        env = dict(os.environ, AIW_STATE=str(t / 'state'))
         for workdir, expected in ((repo, 'github.com/owner/name'), (worktree, 'github.com/owner/name'), (alias, None)):
             for flags in (('--ro',), ()):
                 r = inprocess_sh([sys.executable, str(REPO / 'ai_worker.py'), 'codex', str(workdir), '10',

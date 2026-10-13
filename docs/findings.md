@@ -56,7 +56,7 @@
 
 每条一行 JSON。公共字段（worker 自动填，不靠执行方）：
 
-`id`（`<主机短名>-<YYYYMMDDHHMMSS>-<pid>-<序号>`）、`ts`、`host`、`session`、`source`（worker/main）、`type`（answers/observation/changes）、`seat`、`actual`、`via`、`ro`、`prompt_id`、`run_dir`、`repo`（git remote origin 归一化为 `host/owner/name`，无 remote 为 null）、`workdir`（仅 repo 为 null 时填绝对路径，用于区分本机不同目录）、`repo_rel`（workdir 相对仓库根）、`commit`、`branch`、`owned`（repo 的 owner 在 `owners` 里）、`rules_hash`（harness 的 CLAUDE.md、AGENTS.harness.md、router-rules.json、seats.json 内容 sha1 前 12 位）、`partial_context`（kind=agent_use 的座位为 true）。
+`id`（`<主机短名>-<YYYYMMDDHHMMSS>-<pid>-<序号>`）、`ts`、`host`、`session`、`source`（worker/main）、`type`（answers/observation/changes）、`seat`、`actual`、`via`、`ro`、`prompt_id`、`run_dir`、`repo`（git remote origin 归一化为 `host/owner/name`，无 remote 为 null）、`workdir`（仅 repo 为 null 时填绝对路径，用于区分本机不同目录）、`repo_rel`（workdir 相对仓库根）、`commit`、`branch`、`owned`（repo 的 owner 在 `owners` 里）、`rules_hash`（aiw 的 CLAUDE.md、AGENTS.harness.md、router-rules.json、seats.json 内容 sha1 前 12 位）、`partial_context`（kind=agent_use 的座位为 true）。
 
 - `type=answers`：每个收集了记录的成功派单一条，字段 `guess`、`deviation`、`abandoned`、`fixed`（执行方回答，「无」原样保留）。它同时是比例的分母。
 - `type=observation`：执行方每条观察一条，字段 `observation`、`expected`、`evidence`、`location`（可选）。
@@ -87,7 +87,7 @@ AIW-FINDINGS>>>
 
 **解析**：只认输出末尾最后一个完整块，且块内至少有一个已知字段。结束标记后允许不超过 3 个非空行、去掉首尾空白后不超过 300 字符且不含 `<<<AIW-FINDINGS` 的尾随正文；接受时保留尾文，并在 `parse` 第三个返回值给出非致命提示（解析结果仍存在，调用方照常入库）。超过上限维持「记录块后还有正文」拒绝行为。找到则从交付给主会话的产出里剥掉；`output.md` 保留原文。剥掉后正文为空，按 `empty` 处理（rc=2）。块不完整、格式坏、解析或记录过程出任何异常：不剥离、不入库、stderr 警告一行，不影响 rc、顶替、熔断。记录锁最多等 10 秒；进程被杀留下的半行会在下次追加前补换行，坏行在读取时跳过。只有 kind=ok 的尝试入库。
 
-**清洗**：每个字段截到 `field_max` 字；去掉代码围栏；只对自由文本字段（四个回答字段和 observation/expected/evidence/location）做密钥扫描，元数据不扫（记录 id、run 目录这类串熵很高，会误报）；密钥特征（`sk-`、`ghp_`/`gho_`/`github_pat_`、`AKIA`、`AIza` 后接 35 位 `[0-9A-Za-z_-]`、`xox[bap]-`、`-----BEGIN`、`eyJ` 开头的 JWT、高熵串）命中则整条进 quarantine，stderr 提示。高熵规则保持不变：只检查长度 ≥32 的候选串，沿用原有路径拆分条件，熵 ≥4.0 即命中，纯十六进制摘要仍排除。专用前缀检查之后、高熵扫描之前，仅将三种 harness 生成的完整标识符替换为 `x`（保持候选串连续）；主机名、座位名只认已知字面值，由不可变扫描上下文固定：每次 `record(rows)` 在取得 `records.lock` 后、扫描行之前构造一次；每次合法对象的 `triage.validate(data, …)` 在首次递归扫描前构造一次，全部字段及字典键复用（测试可显式注入上下文）。`has_secret(text, context)` 显式接收上下文，扫描不读取环境、不做进程级缓存；不同调用或机器仍各自读取当前环境：记录 id（`<主机名>-<YYYYMMDDHHMMSS>-<pid>-<序号>`，主机名来自本机 `socket.gethostname().split(".")[0]` 与本机 hub clone 的 `raw/` 子目录名的并集，目录不存在或读失败则忽略）、run 目录名（`<YYYYMMDD>-<HHMMSS>-<座位名>-<pid>-<8 位小写十六进制>`，座位名来自 `load_seats()` 合并配置，读取失败则视为空集合）、panel 目录名（`<YYYYMMDD>-<HHMMSS>-<pid>`）。已知名称经 `re.escape` 转义并按长度降序交替；主机名或座位名集合为空时不剥离对应标识符。可变部分只允许数字和十六进制：时间分别为 14 位或 8 位加 6 位数字，pid 为 1–7 位数字，记录序号为 1–4 位数字。精确正则两侧禁止紧邻 `[A-Za-z0-9_-]`，避免剥离更长随机串中的片段；其他路径片段等仍可能误判，进入隔离区人工复核。明确密钥前缀另按专用正则判定，`AIza` 规则为 `\bAIza[0-9A-Za-z_-]{35}(?![0-9A-Za-z_-])`，末尾使用字符集边界以检测以 `-` 或 `_` 结尾的密钥。
+**清洗**：每个字段截到 `field_max` 字；去掉代码围栏；只对自由文本字段（四个回答字段和 observation/expected/evidence/location）做密钥扫描，元数据不扫（记录 id、run 目录这类串熵很高，会误报）；密钥特征（`sk-`、`ghp_`/`gho_`/`github_pat_`、`AKIA`、`AIza` 后接 35 位 `[0-9A-Za-z_-]`、`xox[bap]-`、`-----BEGIN`、`eyJ` 开头的 JWT、高熵串）命中则整条进 quarantine，stderr 提示。高熵规则保持不变：只检查长度 ≥32 的候选串，沿用原有路径拆分条件，熵 ≥4.0 即命中，纯十六进制摘要仍排除。专用前缀检查之后、高熵扫描之前，仅将三种 aiw 生成的完整标识符替换为 `x`（保持候选串连续）；主机名、座位名只认已知字面值，由不可变扫描上下文固定：每次 `record(rows)` 在取得 `records.lock` 后、扫描行之前构造一次；每次合法对象的 `triage.validate(data, …)` 在首次递归扫描前构造一次，全部字段及字典键复用（测试可显式注入上下文）。`has_secret(text, context)` 显式接收上下文，扫描不读取环境、不做进程级缓存；不同调用或机器仍各自读取当前环境：记录 id（`<主机名>-<YYYYMMDDHHMMSS>-<pid>-<序号>`，主机名来自本机 `socket.gethostname().split(".")[0]` 与本机 hub clone 的 `raw/` 子目录名的并集，目录不存在或读失败则忽略）、run 目录名（`<YYYYMMDD>-<HHMMSS>-<座位名>-<pid>-<8 位小写十六进制>`，座位名来自 `load_seats()` 合并配置，读取失败则视为空集合）、panel 目录名（`<YYYYMMDD>-<HHMMSS>-<pid>`）。已知名称经 `re.escape` 转义并按长度降序交替；主机名或座位名集合为空时不剥离对应标识符。可变部分只允许数字和十六进制：时间分别为 14 位或 8 位加 6 位数字，pid 为 1–7 位数字，记录序号为 1–4 位数字。精确正则两侧禁止紧邻 `[A-Za-z0-9_-]`，避免剥离更长随机串中的片段；其他路径片段等仍可能误判，进入隔离区人工复核。明确密钥前缀另按专用正则判定，`AIza` 规则为 `\bAIza[0-9A-Za-z_-]{35}(?![0-9A-Za-z_-])`，末尾使用字符集边界以检测以 `-` 或 `_` 结尾的密钥。
 
 **回报主会话**：派单结束时 stderr 输出一行 `[ai-worker] 观察记录：N 条`；若 `fixed` 不是「无」，再输出 `[ai-worker] 范围内修改：<fixed>`，供主会话验收。账本行加 `findings_n`（观察条数，未收集时无此键）。
 
@@ -99,7 +99,7 @@ AIW-FINDINGS>>>
 
 - `aiw findings extract [--days N]`：机械抽取，写 `signals.json`，并打印摘要：
   - **文件重叠**：同一 repo 同一文件在 24 小时内被 ≥2 个不同派单（changes 记录，含集中仓库里另一台的）改动。
-  - **规则振荡**：harness 仓库里 CLAUDE.md、AGENTS.harness.md、router-rules.json、seats.json 在窗口内按 `## ` 小节统计修改次数，≥3 次列出。
+  - **规则振荡**：aiw 仓库里 CLAUDE.md、AGENTS.harness.md、router-rules.json、seats.json 在窗口内按 `## ` 小节统计修改次数，≥3 次列出。
   - **重复手写指令**：窗口内 run 目录 `task.txt`（去掉附件和记录块说明）里，长度 ≥15 字的同一行出现在 ≥5 个不同 prompt 中。
 - `aiw findings sync [--quiet]`：见下。
 - `aiw findings status`：本机未上传数、待处理数、quarantine 数、上次同步和评审时间。

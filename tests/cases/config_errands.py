@@ -34,7 +34,7 @@ def errand_registry_corrupt_rejected():
         registry.unlink()
         r = sh([sys.executable, '-c', probe], cwd=REPO, env=env)
         check(r.returncode == 0 and json.loads(r.stdout) == [], '缺失 errand 名单不兼容')
-        for name in ('route.py', 'ai_worker.py', 'findings.py', 'harness_ids.py', 'gitenv.py', 'seats_config.py', 'seats.json'):
+        for name in ('route.py', 'ai_worker.py', 'findings.py', 'harness_ids.py', 'gitenv.py', 'env_compat.py', 'repo_aliases.py', 'seats_config.py', 'seats.json'):
             shutil.copy(REPO / name, t / name)
         (t / 'router-rules.json').write_text(json.dumps({'rules': [
             {'id': 'registry-test', 'seat': 'qoder', 'patterns': ['registry'], 'instruction': 'test'}]}))
@@ -421,7 +421,7 @@ def public_config_contract():
         for main, expected in (('', ['codex-sol', 'claude']), ('claude', ['codex-sol'])):
             state = t / ('panel-' + main)
             r = sh([str(REPO / 'bin/aiw'), 'panel', str(t), '10', 'test'],
-                   env=dict(env, AIW_MAIN=main, AI_HARNESS_STATE=str(state)))
+                   env=dict(env, AIW_MAIN=main, AIW_STATE=str(state)))
             summary = json.loads(next((state / 'panels').glob('*/summary.json')).read_text())
             check([row['seat'] for row in summary['seats']] == expected, str(summary))
             check(r.returncode == 0, repr(r))
@@ -504,7 +504,7 @@ def local_router_contract():
 def configurable_map_errand():
     with tempfile.TemporaryDirectory() as td:
         t = Path(td); local = t / 'local.json'; local.write_text('{}')
-        env = dict(os.environ, AIW_CONFIG=str(local), AGENT_USE_ERRAND_HOME='', AI_HARNESS_STATE=str(t / 'state'))
+        env = dict(os.environ, AIW_CONFIG=str(local), AGENT_USE_ERRAND_HOME='', AIW_STATE=str(t / 'state'))
         prompt = t / 'prompt'; prompt.write_text('test')
         attachment = t / 'data.txt'; attachment.write_text('data')
         args = [str(REPO / 'bin/aiw'), 'map', str(t), '10', str(prompt), 'data.txt']
@@ -566,7 +566,7 @@ def contract_guards():
             script.write_text(source)
             state = t / f'state-{index}'
             r = sh([sys.executable, str(REPO / 'ai_worker.py'), 'doubao', str(wd), '10', str(prompt), '--ro'],
-                   env=dict(env, AI_HARNESS_STATE=str(state)))
+                   env=dict(env, AIW_STATE=str(state)))
             rows = [json.loads(line) for line in (state / 'seat-ledger.jsonl').read_text().splitlines()]
             valid = type(version) is int and version == 1
             check(r.returncode == 0 and rows[0]['kind'] == ('ok' if valid else 'incompatible'), r.stderr)
@@ -646,7 +646,7 @@ def agent_use_versions():
         ):
             r = sh(cmd, env=dict(env, FAKE_STATUS_FIELDS=json.dumps(fields)))
             check(r.returncode == 0, r.stdout + r.stderr)
-            row = json.loads((Path(env['AI_HARNESS_STATE']) / 'seat-ledger.jsonl').read_text().splitlines()[-1])
+            row = json.loads((Path(env['AIW_STATE']) / 'seat-ledger.jsonl').read_text().splitlines()[-1])
             check(row.get('agent_use_versions') == digest, str(row))
             check(('agent_use_versions' in row) == (digest is not None), str(row))
             check('scheduler_versions' not in row and 'adapter_versions' not in row, str(row))
@@ -670,7 +670,7 @@ def malformed_contract_metadata():
                     'st.update(json.loads(os.environ.get("FAKE_STATUS_FIELDS", "{}")))',
                     f'st.update({fields!r}) if prov == "doubao" else None'))
                 state = t / f'state-malformed-{index}-{version}'
-                r = sh(cmd, env=dict(env, AI_HARNESS_STATE=str(state)))
+                r = sh(cmd, env=dict(env, AIW_STATE=str(state)))
                 rows = [json.loads(line) for line in (state / 'seat-ledger.jsonl').read_text().splitlines()]
                 check(r.returncode == 0, r.stdout + r.stderr)
                 check(rows[0]['kind'] == ('ok' if version == 1 else 'incompatible'), str(rows))

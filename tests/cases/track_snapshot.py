@@ -20,13 +20,13 @@ from support import (
 def snapshot():
     with tempfile.TemporaryDirectory() as t:
         home, env = fake_home(Path(t))
-        sh(["bash", str(home / ".claude/ai-harness/install.sh")], env=env)
+        sh(["bash", str(home / ".claude/aiw/install.sh")], env=env)
         st = json.loads((home / ".claude/settings.json").read_text())
         st["env"] = {"ANTHROPIC_AUTH_TOKEN": "sk-should-not-leak-1234567890"}
         st["hooks"]["Stop"] = [{"hooks": [{"type": "command", "command": "notify --api-key sk-should-not-leak-1234567890"}]}]
         st["apiKeyHelper"] = "secret-helper"
         (home / ".claude/settings.json").write_text(json.dumps(st))
-        h = home / ".claude/ai-harness"
+        h = home / ".claude/aiw"
         p = inprocess_sh([sys.executable, str(h / "snapshot.py")], env=env)
         check(p.returncode == 0, f"snapshot 失败: {p.stderr}")
         files = list((h / "snapshots").glob("*.json"))
@@ -48,11 +48,11 @@ def snapshot():
 def snapshot_hooks_minimal():
     with tempfile.TemporaryDirectory() as t:
         home, env = fake_home(Path(t))
-        sh(["bash", str(home / ".claude/ai-harness/install.sh")], env=env)
+        sh(["bash", str(home / ".claude/aiw/install.sh")], env=env)
         st = json.loads((home / ".claude/settings.json").read_text())
         st["hooks"]["Stop"] = [{"hooks": [{"type": "command", "command": "mytool --weird-secret-format abc:def:ghi"}]}]
         (home / ".claude/settings.json").write_text(json.dumps(st))
-        h = home / ".claude/ai-harness"
+        h = home / ".claude/aiw"
         inprocess_sh([sys.executable, str(h / "snapshot.py")], env=env)
         text = next((h / "snapshots").glob("*.json")).read_text()
         check("abc:def:ghi" not in text and "mytool" not in text, "非 harness 钩子命令不应进快照")
@@ -60,7 +60,7 @@ def snapshot_hooks_minimal():
         check(snap["other_hooks"]["Stop"]["count"] == 1, "其它钩子数量错误")
         check(snap["harness_hooks"]["UserPromptSubmit"]["hooks"][0]["matches_expected"], "标准命令未识别")
         check(all(h["command"] not in text for groups in st["hooks"].values() for group in groups for h in group["hooks"]), "快照包含命令原文")
-        check("ai-harness/route.py" not in text and '"command":' not in text, "钩子命令泄露")
+        check("aiw/route.py" not in text and '"command":' not in text, "钩子命令泄露")
 
 
 
@@ -97,7 +97,7 @@ def track_contract():
     import time
     with tempfile.TemporaryDirectory() as td:
         root = Path(td)
-        env = {**os.environ, 'AI_HARNESS_STATE': td, 'AIW_TRACK_FLUSH_SECS': '0.03',
+        env = {**os.environ, 'AIW_STATE': td, 'AIW_TRACK_FLUSH_SECS': '0.03',
                'CLAUDE_CODE_SESSION_ID': 'track-session'}
         payload = b'first\r\n\x1b[31m' + ('长' * 100).encode() + b'\x1b[0m\x00\t\n\n'
         code = ('import os,time; os.write(1,' + repr(payload[:7]) + '); '
@@ -150,7 +150,7 @@ def track_contract():
 def track_cli():
     import time
     with tempfile.TemporaryDirectory() as td:
-        env = {**os.environ, 'AI_HARNESS_STATE': td, 'AIW_TRACK_FLUSH_SECS': '5'}
+        env = {**os.environ, 'AIW_STATE': td, 'AIW_TRACK_FLUSH_SECS': '5'}
         cmd = ['bash', str(REPO / 'bin/aiw'), 'track']
         r = sh(cmd + ['demo', '--', 'sh', '-c', 'echo a; echo b'], env=env)
         check(r.returncode == 0 and r.stdout == 'a\nb\n' and not r.stderr, 'track smoke 失败')
@@ -190,7 +190,7 @@ def track_failures_and_signals():
     import signal
     with tempfile.TemporaryDirectory() as td:
         root = Path(td)
-        env = {**os.environ, 'AI_HARNESS_STATE': str(root / 'state'), 'AIW_TRACK_FLUSH_SECS': '0.02'}
+        env = {**os.environ, 'AIW_STATE': str(root / 'state'), 'AIW_TRACK_FLUSH_SECS': '0.02'}
         # STATE 是普通文件时，拿锁和写盘失败也不得影响命令。
         (root / 'state').write_text('not a directory')
         cmd = [sys.executable, str(REPO / 'track.py')]
@@ -220,7 +220,7 @@ def track_failures_and_signals():
                     p.communicate()
         # 直接验证描述符不可继承；写盘失败不使线程挂死。
         script = '''import os, pathlib, track
-p = pathlib.Path(os.environ['AI_HARNESS_STATE']) / 'lock'
+p = pathlib.Path(os.environ['AIW_STATE']) / 'lock'
 f = track.acquire_liveness_lock(p)
 assert not os.get_inheritable(f.fileno())
 p.unlink(); f.close()
@@ -265,7 +265,7 @@ def git_locator_env():
                   f'workspace_snapshot 定位错误: {snapshot}')
             prompt = t / 'prompt.txt'
             prompt.write_text('test')
-            env = dict(os.environ, AI_HARNESS_STATE=str(t / 'state'))
+            env = dict(os.environ, AIW_STATE=str(t / 'state'))
             r = sh([sys.executable, str(REPO / 'ai_worker.py'), 'codex', str(b), '10',
                     str(prompt), '--no-fallback', '--no-findings'], env=env)
             check(r.returncode == 0, r.stderr)

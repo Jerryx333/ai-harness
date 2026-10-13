@@ -223,11 +223,11 @@ def fake_home(tmp: Path) -> tuple[Path, dict]:
     real.mkdir(parents=True)
     (tmp / "var").symlink_to(tmp / "private")
     home = tmp / "var" / "home"
-    dest = home / ".claude" / "ai-harness"
+    dest = home / ".claude" / "aiw"
     shutil.copytree(REPO, dest, ignore=shutil.ignore_patterns("state", "snapshots", "__pycache__", ".git", ".tmp-*", ".durations.json"))
     env = dict(os.environ, HOME=str(home), PATH=f"{fake_bins(tmp)}:{os.environ['PATH']}", SHELL="/bin/zsh",
                AGENT_USE_HOME=str(fake_agent_use(tmp)))
-    env["AI_HARNESS_STATE"] = str(tmp / "state")
+    env["AIW_STATE"] = str(tmp / "state")
     return home, env
 
 
@@ -257,7 +257,7 @@ def codex_preflight_case(mode):
                 (b / 'cred-tool').chmod(0o755)
             (b / 'codex').write_text('#!/bin/sh\n[ "$1" = --version ] && { echo fake; exit 0; }\necho called > "$FAKE_CODEX_ARGS"\n' + ('echo "pinentry error" >&2; exit 1\n' if mode == 'runtime' else 'echo "codex ok"\n'))
             env = dict(os.environ, HOME=str(home), PATH=f'{b}:/usr/bin:/bin',
-                       AI_HARNESS_PYTHON=sys.executable, AI_HARNESS_STATE=str(t / 'state'),
+                       AIW_PYTHON=sys.executable, AIW_STATE=str(t / 'state'),
                        AGENT_USE_HOME=str(fake_agent_use(t)), FAKE_CODEX_ARGS=str(marker))
             spec = {'argv': ['cred-tool', 'unlocked'], 'config_file': '~/.codex/config.toml', 'config_mentions': 'cred-tool'}
             custom_hint = '请在自己的终端运行 cred-tool unlock，再重派'
@@ -306,7 +306,7 @@ def task(id, owner='main', verify='false'):
 def token_worker(t, stderr, seat='codex', script=None):
     err = t / 'stderr.txt'; err.write_text(stderr)
     cmd, env, wd = worker_call(t, HOME=str(t), CODEX_HOME=str(t / '.codex'),
-                               AI_HARNESS_STATE=str(t / 'state'), FAKE_CODEX='tokens',
+                               AIW_STATE=str(t / 'state'), FAKE_CODEX='tokens',
                                FAKE_CODEX_STDERR=str(err))
     cmd[2] = seat
     cmd += ['--no-fallback', '--no-findings']
@@ -350,7 +350,7 @@ def signal_window(mode):
     import time
     with tempfile.TemporaryDirectory() as td:
         t = Path(td)
-        cmd, env, _ = worker_call(t, AI_HARNESS_STATE=str(t / 'state'),
+        cmd, env, _ = worker_call(t, AIW_STATE=str(t / 'state'),
                                   FAKE_CODEX='partial_timeout' if mode in ('startup', 'timeout') else 'ok')
         cmd[2], cmd[4] = 'codex', '1'
         wrapper, pidfile = t / 'wrapper.py', t / 'child.pid'
@@ -485,7 +485,7 @@ sys.exit(w.main())
 
 
 def free_guard_fixture(t):
-    env = dict(os.environ, AI_HARNESS_STATE=str(t / 'state'),
+    env = dict(os.environ, AIW_STATE=str(t / 'state'),
                AGENT_USE_HOME=str(fake_agent_use(t)), DISCORD_TOKEN='test-only-token',
                AIW_DISCORD_CHANNEL='test-channel', FAKE_AU_LOG=str(t / 'calls'),
                FAKE_DISCORD_LOG=str(t / 'discord'))
@@ -520,14 +520,14 @@ def errand_fixture(t):
     home = fake_agent_use(t, ['cue', 'future-errand'])
     (home / 'scripts/errand_use.py').write_text(
         "import json, sys\nprint(json.dumps(sys.argv[1:]))\nsys.exit(20)\n")
-    return dict(os.environ, AGENT_USE_HOME=str(home), AGENT_USE_ERRAND_HOME=str(home), AI_HARNESS_STATE=str(t / 'state'))
+    return dict(os.environ, AGENT_USE_HOME=str(home), AGENT_USE_ERRAND_HOME=str(home), AIW_STATE=str(t / 'state'))
 
 
 
 def errand_route_test(runtime):
     with tempfile.TemporaryDirectory() as td:
         t = Path(td); env = errand_fixture(t)
-        for name in ('route.py', 'ai_worker.py', 'findings.py', 'harness_ids.py', 'gitenv.py', 'seats_config.py', 'seats.json'):
+        for name in ('route.py', 'ai_worker.py', 'findings.py', 'harness_ids.py', 'gitenv.py', 'env_compat.py', 'repo_aliases.py', 'seats_config.py', 'seats.json'):
             shutil.copy(REPO / name, t / name)
         rule = {'id': 'errand-test', 'seat': 'cue', 'patterns': ['跑腿'], 'instruction': '执行任务'}
         for update in ({'seat': 'cue'}, {'seat': 'future-errand'},
@@ -579,7 +579,7 @@ FINDINGS_BLOCK = ("<<<AIW-FINDINGS\nguess: 无\ndeviation: 无\nabandoned: 无\n
 
 def findings_worker_fixture(root, collect=True):
     home, env = fake_home(root)
-    harness = home / '.claude/ai-harness'
+    harness = home / '.claude/aiw'
     config = json.loads((harness / 'seats.json').read_text())
     config['findings'] = {'collect': collect}
     local = root / 'findings-local.json'
@@ -814,7 +814,7 @@ def codex_home_run_case(mode):
                 (source / 'config.toml').write_text(content)
             seats = ('codex', 'codex-sol') if mode in ('normal', 'fallback', 'shared') else ('claude',)
             for seat in seats:
-                cmd, env, _ = worker_call(root, CODEX_BIN=str(cli), CLAUDE_BIN=str(cli), AI_HARNESS_STATE=str(root / 'state'))
+                cmd, env, _ = worker_call(root, CODEX_BIN=str(cli), CLAUDE_BIN=str(cli), AIW_STATE=str(root / 'state'))
                 env.pop('CODEX_HOME', None)
                 env.pop('AIW_CODEX_SHARED_HOME', None)
                 env['HOME'] = str(root)

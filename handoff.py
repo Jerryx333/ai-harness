@@ -6,6 +6,7 @@ import argparse
 import datetime as dt
 import json
 import os
+from env_compat import getenv
 from pathlib import Path
 import re
 import shlex
@@ -14,7 +15,7 @@ import subprocess
 import sys
 
 HERE = Path(__file__).resolve().parent
-STATE = Path(os.environ.get("AI_HARNESS_STATE", HERE / "state"))
+STATE = Path(getenv("AIW_STATE", HERE / "state"))
 SECTIONS = {
     "目标": "说明任务目标和验收条件。",
     "现状": "记录已完成的工作、验证结果和当前进度。",

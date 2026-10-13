@@ -34,7 +34,7 @@ def baseline_group_report():
         backend = t / "backend"
         backend.write_text('#!/bin/sh\necho changed > dirty\necho changed > tracked\necho new > created\necho ok\n')
         backend.chmod(0o755)
-        env = dict(os.environ, AI_HARNESS_STATE=str(t / "state"), CODEX_BIN=str(backend))
+        env = dict(os.environ, AIW_STATE=str(t / "state"), CODEX_BIN=str(backend))
         r = sh([sys.executable, str(REPO / "ai_worker.py"), "codex", str(work), "10", str(prompt)], env=env)
         check(r.returncode == 0, r.stderr)
         run = latest_provider(t / "state").parent
@@ -63,7 +63,7 @@ def dispatch_date():
     import hashlib
     with tempfile.TemporaryDirectory() as td:
         t = Path(td)
-        env = dict(os.environ, AI_HARNESS_STATE=str(t / 'state'),
+        env = dict(os.environ, AIW_STATE=str(t / 'state'),
                    AGENT_USE_HOME=str(fake_agent_use(t)), TZ='Asia/Bangkok')
         pf = t / 'prompt'; pf.write_text('检查新版本')
         script = """import datetime, sys
@@ -120,10 +120,10 @@ def hook_bad_payload():
 def corrupt_state_rules():
     with tempfile.TemporaryDirectory() as td:
         t = Path(td); state = t / 'state'; state.mkdir(); breaker = state / 'breaker.json'; breaker.write_text('{bad')
-        cmd, env, _ = worker_call(t, AI_HARNESS_STATE=str(state))
+        cmd, env, _ = worker_call(t, AIW_STATE=str(state))
         r = sh(cmd, env=env)
         check(r.returncode == 1 and '状态文件损坏' in r.stderr and breaker.read_text() == '{bad', '损坏状态被覆盖')
-        for name in ('route.py', 'ai_worker.py', 'findings.py', 'harness_ids.py', 'gitenv.py', 'seats_config.py', 'seats.json'): shutil.copy(REPO / name, t / name)
+        for name in ('route.py', 'ai_worker.py', 'findings.py', 'harness_ids.py', 'gitenv.py', 'env_compat.py', 'repo_aliases.py', 'seats_config.py', 'seats.json'): shutil.copy(REPO / name, t / name)
         (t / 'router-rules.json').write_text('{bad')
         r = sh([sys.executable, str(t / 'route.py'), '--check'], cwd=t)
         check(r.returncode == 1, '损坏全局规则未报错')
@@ -149,7 +149,7 @@ def substitute_reservations():
     import datetime as dt
     import time
     with tempfile.TemporaryDirectory() as td:
-        t = Path(td); env = dict(os.environ, AI_HARNESS_STATE=str(t))
+        t = Path(td); env = dict(os.environ, AIW_STATE=str(t))
         code = "import ai_worker as w; print(w.reserve_substitute('claude', 1) or 'denied')"
         procs = [subprocess.Popen([sys.executable, '-c', code], cwd=REPO, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True) for _ in range(2)]
         results = [p.communicate(timeout=10)[0].strip() for p in procs]
@@ -210,7 +210,7 @@ def gc_old_directories():
     import time
     with tempfile.TemporaryDirectory() as td:
         t = Path(td); state = t / 'state'; state.mkdir()
-        env = dict(os.environ, AI_HARNESS_STATE=str(state))
+        env = dict(os.environ, AIW_STATE=str(state))
         for parent in ('runs', 'panels', 'maps'):
             for age in ('old', 'new'):
                 p = state / parent / age; p.mkdir(parents=True); (p / 'data').write_text('data')
@@ -265,7 +265,7 @@ def test_state_contract():
         t = Path(td)
         cmd, env, wd = worker_call(t, FAKE_AU_QODER='brief', CLAUDE_CODE_SESSION_ID='board-session')
         p = subprocess.Popen(cmd, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        path = Path(env['AI_HARNESS_STATE']) / 'inflight' / f'{p.pid}.json'
+        path = Path(env['AIW_STATE']) / 'inflight' / f'{p.pid}.json'
         try:
             deadline = time.monotonic() + 8
             while not path.exists() and p.poll() is None and time.monotonic() < deadline:

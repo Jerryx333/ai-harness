@@ -28,7 +28,7 @@ def goal_init_mkdir():
 def goal_help_no_write():
     with tempfile.TemporaryDirectory() as td:
         t = Path(td)
-        env = dict(os.environ, HOME=str(t / 'home'), AI_HARNESS_STATE=str(t / 'state'))
+        env = dict(os.environ, HOME=str(t / 'home'), AIW_STATE=str(t / 'state'))
         cmd = [str(REPO / 'bin/aiw'), 'goal']
         for flag in ('-h', '--help'):
             args = [[flag]]
@@ -45,7 +45,7 @@ def goal_help_no_write():
 def goal_init_unknown_option():
     with tempfile.TemporaryDirectory() as td:
         t = Path(td)
-        env = dict(os.environ, HOME=str(t / 'home'), AI_HARNESS_STATE=str(t / 'state'))
+        env = dict(os.environ, HOME=str(t / 'home'), AIW_STATE=str(t / 'state'))
         for path in ('--unknown', '-x', '-goal.json', '-'):
             r = sh([str(REPO / 'bin/aiw'), 'goal', 'init', path, 'demo'], env=env, cwd=t)
             check(r.returncode == 64, f'{path}: {r.returncode} {r.stderr}')
@@ -57,7 +57,7 @@ def goal_verify_failure_tail():
     import shlex
     with tempfile.TemporaryDirectory() as td:
         t = Path(td)
-        env = dict(os.environ, HOME=str(t / 'home'), AI_HARNESS_STATE=str(t / 'state'))
+        env = dict(os.environ, HOME=str(t / 'home'), AIW_STATE=str(t / 'state'))
         stdout = '开头不应保留\n' + '中' * 1700 + '\nstdout end\n'
         stderr = 'stderr end\n'
         script = (
@@ -125,7 +125,7 @@ def verify_root():
 def goal_fuse_lock():
     import fcntl, hashlib
     with tempfile.TemporaryDirectory() as td:
-        t = Path(td); g = goal_file(t, [task('A')]); env = dict(os.environ, AI_HARNESS_STATE=str(t / 'state'))
+        t = Path(td); g = goal_file(t, [task('A')]); env = dict(os.environ, AIW_STATE=str(t / 'state'))
         cmd = [sys.executable, str(REPO / 'goal.py'), 'verify', str(g)]
         for expected in (1, 1, 3):
             r = sh(cmd, env=env); check(r.returncode == expected, f'保险丝错误: {r.stdout}')
@@ -188,7 +188,7 @@ def goal_paths_skip():
         g = goal_file(t, [dict(task('A', verify='echo run >> A.marker'), paths=['a/**']),
                           dict(task('B', verify='echo run >> B.marker'), paths=['b.txt'])])
         cmd = [sys.executable, str(REPO / 'goal.py'), 'verify', str(g)]
-        env = dict(os.environ, AI_HARNESS_STATE=str(t / 'state'))
+        env = dict(os.environ, AIW_STATE=str(t / 'state'))
 
         def run(*args):
             r = sh(cmd + list(args), env=env)
@@ -241,7 +241,7 @@ def goal_paths_empty_and_legacy():
         g = goal_file(t, [dict(task('empty', verify='echo run >> empty.marker'), paths=['missing/**']),
                           task('legacy', verify='echo run >> legacy.marker')])
         cmd = [sys.executable, str(REPO / 'goal.py'), 'verify', str(g)]
-        env = dict(os.environ, AI_HARNESS_STATE=str(t / 'state'))
+        env = dict(os.environ, AIW_STATE=str(t / 'state'))
         for args in ([], [], ['--full']):
             r = sh(cmd + args, env=env)
             check(r.returncode == 0 and '[empty] paths 没有匹配到文件' in r.stdout, '空匹配未警告')
@@ -258,7 +258,7 @@ def goal_paths_fingerprint():
         f = t / 'src' / 'nested' / 'f'; f.write_bytes(b'first')
         g = goal_file(t, [dict(task('A', verify='echo run >> marker'), paths=['src'])])
         cmd = [sys.executable, str(REPO / 'goal.py'), 'verify', str(g), '--force']
-        env = dict(os.environ, AI_HARNESS_STATE=str(t / 'state'))
+        env = dict(os.environ, AIW_STATE=str(t / 'state'))
 
         def run():
             r = sh(cmd, env=env)

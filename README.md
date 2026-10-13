@@ -1,4 +1,4 @@
-# ai-harness
+# aiw
 
 [English](README.md) | [中文](README.zh-CN.md)
 
@@ -42,7 +42,7 @@ See the [setup steps](docs/guide.md#add-more-models-optional).
 
 **Linux?** Untested. Only macOS has been tested.
 
-**Are the rules too forceful?** Override them with personal rules, or remove `@~/.claude/ai-harness/CLAUDE.md` from `~/.claude/CLAUDE.md`. To stop assignment suggestions too, remove the harness hooks as described in [Uninstall](docs/guide.md#uninstall).
+**Are the rules too forceful?** Override them with personal rules, or remove `@~/.claude/aiw/CLAUDE.md` from `~/.claude/CLAUDE.md`. To stop assignment suggestions too, remove the aiw hooks as described in [Uninstall](docs/guide.md#uninstall).
 
 ## Five-minute start
 
@@ -51,8 +51,8 @@ You need macOS (the only tested OS), Python 3, and logged-in Claude Code and/or 
 1. Clone and install at this exact location:
 
    ```bash
-   git clone https://github.com/Jerryx333/ai-harness.git ~/.claude/ai-harness
-   ~/.claude/ai-harness/install.sh
+   git clone https://github.com/Jerryx333/aiw.git ~/.claude/aiw
+   ~/.claude/aiw/install.sh
    ```
 
    See the [guide](docs/guide.md#what-the-installer-changes) for changed files and backups.
@@ -69,10 +69,12 @@ You need macOS (the only tested OS), Python 3, and logged-in Claude Code and/or 
 
    ```bash
    printf '%s\n' 'Read this repository. Explain its entry points with file references. Do not edit files.' > /tmp/aiw-review.txt
-   aiw codex-sol "$HOME/.claude/ai-harness" 900 /tmp/aiw-review.txt --ro
+   aiw codex-sol "$HOME/.claude/aiw" 900 /tmp/aiw-review.txt --ro
    ```
 
 4. Use Claude Code or Codex as usual. Hooks suggest assignments; the main session plans and verifies.
+
+Upgrading from ai-harness: keep the old directory or symlink and rerun `install.sh` to migrate imports, hooks, Codex blocks and PATH. `AIW_STATE`, `AIW_PYTHON`, and `AIW_NO_CODEX` take precedence over `AI_HARNESS_STATE`, `AI_HARNESS_PYTHON`, and `AI_HARNESS_NO_CODEX`; conflicting values warn once. Run `aiw freecheck --install` separately to migrate the scheduled job.
 
 ## Common commands
 
@@ -86,7 +88,7 @@ You need macOS (the only tested OS), Python 3, and logged-in Claude Code and/or 
 | `aiw goal init / verify` | Create a checklist with `aiw goal init docs/goals/demo.json`; edit its example tasks, `verify` commands and `paths`, then run `aiw goal verify docs/goals/demo.json --full`. |
 | `aiw doctor` | Check seats and setup: `aiw doctor`; `aiw doctor --fingerprint` prints a fingerprint (version/hash summary). |
 | `aiw note` | Save an observation: `aiw note . "Check failed" --expected "Check passes" --evidence "test output"`. |
-| `aiw sync` | Update this harness checkout using `git pull --ff-only`: `aiw sync`; cannot merge divergent history. Rerun the installer to refresh installed rules/hooks. |
+| `aiw sync` | Update this aiw checkout using `git pull --ff-only`: `aiw sync`; cannot merge divergent history. Rerun the installer to refresh installed rules/hooks. |
 | `aiw gc` | Delete old run/panel/map archives (30 days by default); preview first: `aiw gc 30 --dry-run`. |
 
 ## More documentation

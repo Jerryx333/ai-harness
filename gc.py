@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 # 用途：清理过期 runs/panels/maps 子目录；运行：python3 gc.py [天数] [--dry-run]
-# 依赖：Python 3 标准库；状态目录由 AI_HARNESS_STATE 指定。
+# 依赖：Python 3 标准库；状态目录由 AIW_STATE 指定。
 import os
+from env_compat import getenv
 import shutil
 import sys
 import time
@@ -23,7 +24,7 @@ def main() -> int:
         return 64
     cutoff = time.time() - int(days[0] if days else 30) * 86400
     dry = "--dry-run" in args
-    state = Path(os.environ.get("AI_HARNESS_STATE", Path(__file__).resolve().parent / "state"))
+    state = Path(getenv("AIW_STATE", Path(__file__).resolve().parent / "state"))
     count = size = 0
     for name in ("runs", "panels", "maps"):
         parent = state / name

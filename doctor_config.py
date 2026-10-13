@@ -2,6 +2,7 @@
 import hashlib
 import json
 import os
+from env_compat import getenv
 from pathlib import Path
 import re
 import shlex
@@ -39,12 +40,12 @@ def git_query(path, *args, text=False, timeout=10):
         cache[key] = result
     return cache[key]
 
-HOOK_COMMAND = 'python3 "$HOME/.claude/ai-harness/route.py" --hook'
+HOOK_COMMAND = 'python3 "$HOME/.claude/aiw/route.py" --hook'
 HOOK_TIMEOUT = 10
-IMPORT_LINE = '@~/.claude/ai-harness/CLAUDE.md'
+IMPORT_LINE = '@~/.claude/aiw/CLAUDE.md'
 PERSONAL_LINE = '@~/.config/aiw/CLAUDE.personal.md'
-BEGIN = '<!-- ai-harness:begin（install.sh 生成，勿手改） -->'
-END = '<!-- ai-harness:end -->'
+BEGIN = '<!-- aiw:begin（install.sh 生成，勿手改） -->'
+END = '<!-- aiw:end -->'
 BOARD_INSTALL = '未安装 aiw-board（可选组件）：安装后确保 aiw-board 在 PATH 中'
 REINSTALL = '重跑 install.sh'
 
@@ -67,7 +68,7 @@ def read_json(path):
 
 
 def plugin_hook(home):
-    """List enabled harness plugins with dispatch hooks; bad metadata is ignored."""
+    """List enabled aiw plugins with dispatch hooks; bad metadata is ignored."""
     try:
         enabled = read_json(home / '.claude/settings.json').get('enabledPlugins', {})
         installed = read_json(home / '.claude/plugins/installed_plugins.json')
@@ -78,7 +79,7 @@ def plugin_hook(home):
         return []
     matches = []
     for name, active in enabled.items():
-        if not name.startswith('ai-harness@') or active is not True:
+        if not name.startswith(('aiw@', 'ai-harness@')) or active is not True:
             continue
         records = plugins.get(name, [])
         if not isinstance(records, list):
@@ -99,7 +100,7 @@ def plugin_hook(home):
                         commands.append(hook.get('type') == 'command' and
                                         isinstance(command, str) and
                                         any(entry in command for entry in
-                                            ('scripts/route-hook.sh', 'ai-harness/route.py')))
+                                            ('scripts/route-hook.sh', 'aiw/route.py', 'ai-harness/route.py')))
                 if any(commands):
                     matches.append(name)
                     break
@@ -119,7 +120,9 @@ def hooks(path, name, plugins=()):
         if not isinstance(entries, list):
             raise ValueError('钩子格式错误')
         for i, hook in enumerate(entries):
-            if 'ai-harness/route.py' in hook.get('command', ''):
+            if any(x in hook.get('command', '') for x in ('aiw/route.py', 'ai-harness/route.py')):
+                if 'ai-harness/route.py' in hook.get('command', ''):
+                    warn(name, '旧钩子命令 ai-harness/route.py')
                 mine.append((g, i, hook))
     plugin_names = '、'.join(plugins)
     if plugins and mine:
@@ -127,11 +130,11 @@ def hooks(path, name, plugins=()):
              '重跑 install.sh --claude-hook=plugin')
     if not mine and len(plugins) >= 2:
         warn(name, f'多个插件（{plugin_names}）都有派单钩子，会重复执行',
-             '在 Claude Code 中只保留一个 ai-harness 插件启用')
+             '在 Claude Code 中只保留一个 aiw 插件启用')
     elif not mine and plugins:
         print(f'  ✓ {name}（由插件 {plugin_names} 提供）')
     elif len(mine) != 1:
-        warn(name, '没有 harness 钩子' if not mine else f'有多个 harness 钩子（{len(mine)} 个）')
+        warn(name, '没有 aiw 钩子' if not mine else f'有多个 aiw 钩子（{len(mine)} 个）')
     elif any(h.get('command') != HOOK_COMMAND or h.get('timeout') != HOOK_TIMEOUT for _, _, h in mine):
         warn(name, '命令或 timeout 与安装值不一致')
     elif not plugins:
@@ -141,6 +144,8 @@ def hooks(path, name, plugins=()):
 
 def import_line(home):
     text = (home / '.claude/CLAUDE.md').read_text(encoding='utf-8')
+    if '@~/.claude/ai-harness/CLAUDE.md' in text.splitlines():
+        warn('CLAUDE.md 引入', '旧引入行 @~/.claude/ai-harness/CLAUDE.md')
     if IMPORT_LINE in text.splitlines():
         print('  ✓ CLAUDE.md 引入')
     else:
@@ -169,6 +174,8 @@ def link(path, expected, name):
 
 def agents(home, repo):
     text = (home / '.codex/AGENTS.md').read_text(encoding='utf-8')
+    if '<!-- ai-harness:begin' in text or '<!-- ai-harness:end -->' in text:
+        warn('Codex AGENTS 标记块', '旧 ai-harness 标记块')
     content = (repo / 'AGENTS.harness.md').read_text(encoding='utf-8').strip()
     personal = home / '.config/aiw/AGENTS.personal.md'
     if personal.exists():
@@ -193,7 +200,7 @@ def trust(home, hp, mine):
     if not isinstance(states, dict):
         raise ValueError('信任记录格式错误')
     if not mine:
-        print('  · Codex 信任：没有可核对的 harness 钩子')
+        print('  · Codex 信任：没有可核对的 aiw 钩子')
     for g, i, _ in mine:
         name = f'Codex 信任 [{g}:{i}]'
         records = [states[key] for key in dict.fromkeys(
@@ -276,12 +283,25 @@ def check_config(repo, include_local=True):
     safe('Claude 派单钩子', lambda: hooks(home / '.claude/settings.json', 'Claude 派单钩子', plugins=plugin_hook(home)))
     safe('CLAUDE.md 引入', lambda: import_line(home))
     safe('Claude 个人规则引入', lambda: personal_import(home))
-    for rel, target, name in (('.claude/ai-harness', repo, '安装链接 harness'),
-                              ('.local/bin/aiw', repo / 'bin/aiw', '安装链接 aiw')):
+    installation = home / '.claude/aiw'
+    if installation.exists():
+        print('  ✓ 安装链接 aiw')
+    elif (home / '.claude/ai-harness').exists():
+        warn('安装链接 aiw', '旧安装路径，重跑 install.sh 迁移')
+    else:
+        warn('安装链接 aiw', '安装路径不存在')
+    from env_compat import LEGACY
+    for new, old in LEGACY.items():
+        if old in os.environ:
+            warn('环境变量', f'旧变量 {old}，请改用 {new}')
+    directory = Path(os.environ.get('AIW_LAUNCH_AGENTS_DIR', str(home / 'Library/LaunchAgents')))
+    if (directory / 'com.ai-harness.freecheck.plist').exists():
+        warn('LaunchAgent', '旧 label com.ai-harness.freecheck', '重跑 install.sh；再运行 aiw freecheck --install 迁移定时任务')
+    for rel, target, name in (('.local/bin/aiw', repo / 'bin/aiw', '安装链接 aiw'),):
         safe(name, lambda: link(home / rel, target, name))
     hp = home / '.codex/hooks.json'
-    if os.environ.get('AI_HARNESS_NO_CODEX'):
-        print('  · 跳过 Codex（AI_HARNESS_NO_CODEX 已设置；钩子、信任、功能及 AGENTS 均跳过）')
+    if getenv('AIW_NO_CODEX'):
+        print('  · 跳过 Codex（AIW_NO_CODEX 已设置；钩子、信任、功能及 AGENTS 均跳过）')
     elif not hp.exists():
         print('  · 未接入 Codex（hooks.json 不存在；钩子、信任、功能及 AGENTS 均跳过）')
     else:

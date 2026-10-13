@@ -1,4 +1,4 @@
-# ai-harness
+# aiw
 
 [English](README.md) | [中文](README.zh-CN.md)
 
@@ -42,7 +42,7 @@
 
 **支持 Linux 吗？** 尚未测试。已测试 macOS。
 
-**规则太强势怎么办？** 用个人规则覆盖，或从 `~/.claude/CLAUDE.md` 删除 `@~/.claude/ai-harness/CLAUDE.md`。若也不想收到派单提示，按[卸载小节](docs/guide.zh-CN.md#卸载)移除 harness 钩子。
+**规则太强势怎么办？** 用个人规则覆盖，或从 `~/.claude/CLAUDE.md` 删除 `@~/.claude/aiw/CLAUDE.md`。若也不想收到派单提示，按[卸载小节](docs/guide.zh-CN.md#卸载)移除 aiw 钩子。
 
 ## 5 分钟上手
 
@@ -51,8 +51,8 @@
 1. 克隆到此固定位置，再安装：
 
    ```bash
-   git clone https://github.com/Jerryx333/ai-harness.git ~/.claude/ai-harness
-   ~/.claude/ai-harness/install.sh
+   git clone https://github.com/Jerryx333/aiw.git ~/.claude/aiw
+   ~/.claude/aiw/install.sh
    ```
 
    安装会改哪些文件、怎么备份，见[使用指南](docs/guide.zh-CN.md#安装做了什么)。
@@ -69,10 +69,12 @@
 
    ```bash
    printf '%s\n' '阅读本仓库，说明入口，并引用文件位置。不要修改文件。' > /tmp/aiw-review.txt
-   aiw codex-sol "$HOME/.claude/ai-harness" 900 /tmp/aiw-review.txt --ro
+   aiw codex-sol "$HOME/.claude/aiw" 900 /tmp/aiw-review.txt --ro
    ```
 
 4. 之后照常用 Claude Code 或 Codex。钩子提示怎么派，主会话决定方案并验收。
+
+旧版迁移：保留旧目录或软链，重跑 `install.sh` 即可迁移引入、钩子、Codex 标记与 PATH。`AIW_STATE`、`AIW_PYTHON`、`AIW_NO_CODEX` 优先于旧 `AI_HARNESS_STATE`、`AI_HARNESS_PYTHON`、`AI_HARNESS_NO_CODEX`；冲突警告一次。定时任务另运行 `aiw freecheck --install` 迁移旧 label。
 
 ## 常用命令
 
@@ -86,7 +88,7 @@
 | `aiw goal init / verify` | 用 `aiw goal init docs/goals/demo.json` 建清单；修改示例任务、`verify` 命令和 `paths`，再跑 `aiw goal verify docs/goals/demo.json --full`。 |
 | `aiw doctor` | `aiw doctor` 检查座位和安装；`aiw doctor --fingerprint` 输出一行配置指纹，即版本和哈希摘要，便于比较。 |
 | `aiw note` | 保存观察：`aiw note . "检查失败" --expected "检查通过" --evidence "测试输出"`。 |
-| `aiw sync` | `aiw sync` 用 `git pull --ff-only` 更新 harness 仓库，不能合并分叉历史；更新已安装规则/钩子需重跑安装。 |
+| `aiw sync` | `aiw sync` 用 `git pull --ff-only` 更新 aiw 仓库，不能合并分叉历史；更新已安装规则/钩子需重跑安装。 |
 | `aiw gc` | 删除旧的派单、会诊、批处理归档，默认保留 30 天；先预览：`aiw gc 30 --dry-run`。 |
 
 ## 更多文档

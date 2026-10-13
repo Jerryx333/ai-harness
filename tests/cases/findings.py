@@ -36,12 +36,12 @@ def findings_hook_hint():
     with tempfile.TemporaryDirectory() as td:
         root = Path(td)
         home, env = fake_home(root)
-        harness = home / '.claude/ai-harness'
+        harness = home / '.claude/aiw'
         settings_path = harness / 'seats.json'
         settings = json.loads(settings_path.read_text())
         settings['findings'] = {'hint': True}
         settings_path.write_text(json.dumps(settings))
-        folder = Path(env['AI_HARNESS_STATE']) / 'findings'
+        folder = Path(env['AIW_STATE']) / 'findings'
         folder.mkdir(parents=True)
         cache = folder / 'count-cache.json'
         throttle = folder / 'hint.json'
@@ -218,7 +218,7 @@ def findings_secret_segments():
                           '20261010-162916-codex-sol-73190-6b28e1ea',
                           'runs/20261010-171024-workbuddy-22968-6351683f',
                           '20261011-174531-workbuddy-cn-81790-ee6ddbb2',
-                          '~/.claude/ai-harness/state/runs/20261011-174531-workbuddy-cn-81790-ee6ddbb2',
+                          '~/.claude/aiw/state/runs/20261011-174531-workbuddy-cn-81790-ee6ddbb2',
                           'Example-MacBook-Pro-20261011144503-53420-1',
                           'state/panels/20261010-231558-50917/workbuddy',
                           'short-words_joined_together_into_a_long_string'):
@@ -466,7 +466,7 @@ def findings_changes_record():
 def findings_note():
     with tempfile.TemporaryDirectory() as td:
         root = Path(td); home, env = fake_home(root)
-        harness = home / '.claude/ai-harness'
+        harness = home / '.claude/aiw'
         work = root / 'work'; work.mkdir()
         check(sh(['git', 'init', '-q', str(work)]).returncode == 0, 'git init')
         check(sh(['git', '-C', str(work), 'remote', 'add', 'origin', 'git@github.com:Owner/Name.git']).returncode == 0, 'remote')
@@ -560,7 +560,7 @@ def findings_status():
     import datetime as dt
     with tempfile.TemporaryDirectory() as td:
         root = Path(td); home, env = fake_home(root)
-        cmd = [sys.executable, str(home / '.claude/ai-harness/findings.py'), 'status']
+        cmd = [sys.executable, str(home / '.claude/aiw/findings.py'), 'status']
         r = inprocess_sh(cmd, env=env)
         check(r.returncode == 0 and all(s in r.stdout for s in ('answers: 0', 'quarantine: 0', 'daily: 0', '未同步过', '无')), r.stdout)
         folder = root / 'state/findings'; folder.mkdir(parents=True)
@@ -917,7 +917,7 @@ def findings_weekly():
     import datetime as dt
     with tempfile.TemporaryDirectory() as td:
         state = Path(td)
-        env = dict(os.environ, AI_HARNESS_STATE=str(state))
+        env = dict(os.environ, AIW_STATE=str(state))
         cmd = [sys.executable, str(REPO / 'weekly.py'), '3']
         result = inprocess_sh(cmd, env=env)
         check(result.returncode == 0 and '## 改进缓冲区' in result.stdout and

@@ -7,6 +7,7 @@ import datetime as dt
 import json
 import math
 import os
+from env_compat import getenv
 import sys
 from collections import Counter, defaultdict
 from pathlib import Path
@@ -15,7 +16,7 @@ from statistics import median
 FIELDS = ('input', 'cache_read', 'cache_creation', 'output')
 USAGE = ('input_tokens', 'cache_read_input_tokens', 'cache_creation_input_tokens', 'output_tokens')
 WEIGHTS = dict(input=1, cache_read=0.1, cache_creation=1.25, output=5)
-STATE = Path(os.environ.get('AI_HARNESS_STATE', Path(__file__).resolve().parent / 'state'))
+STATE = Path(getenv('AIW_STATE', Path(__file__).resolve().parent / 'state'))
 
 
 def timestamp(value):

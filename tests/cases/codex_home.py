@@ -116,7 +116,7 @@ def codex_home_doctor():
     with tempfile.TemporaryDirectory() as td:
         root = Path(td)
         source = codex_home_fixture(root)
-        env = dict(os.environ, CODEX_HOME=str(source), AI_HARNESS_STATE=str(root / 'state'))
+        env = dict(os.environ, CODEX_HOME=str(source), AIW_STATE=str(root / 'state'))
         for mode in ('normal', 'bad', 'shared'):
             if mode == 'bad':
                 (source / 'config.toml').write_text('broken = [ "sensitive-fake-value"')

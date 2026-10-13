@@ -8,7 +8,7 @@
 规则来源（先项目、后本机、后全局，第一条命中即停）：
     <项目根>/.claude/router-rules.json        项目特例（可选）
     ~/.config/aiw/router-rules.local.json    本机（AIW_ROUTER_RULES 可指定）
-    ~/.claude/ai-harness/router-rules.json    全局
+    ~/.claude/aiw/router-rules.json    全局
 项目根 = 从当前目录往上找，第一个含 .claude/router-rules.json 或 .git 的目录。
     aiw route --check                # 只校验规则（全局 + 当前项目），坏了返回 1
 项目文件可写 "disable": ["规则id"] 关掉某条全局规则。
@@ -20,6 +20,7 @@ import datetime as dt
 import fcntl
 import json
 import os
+from env_compat import getenv
 import re
 import socket
 import stat
@@ -39,7 +40,7 @@ except (ConfigError, SystemExit) as error:
     raise SystemExit(0 if hook else 1)
 
 HERE = Path(__file__).resolve().parent
-STATE = Path(os.environ.get("AI_HARNESS_STATE", HERE / "state"))
+STATE = Path(getenv("AIW_STATE", HERE / "state"))
 LOG = STATE / "router-log.jsonl"
 
 

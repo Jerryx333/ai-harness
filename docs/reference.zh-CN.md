@@ -1,4 +1,4 @@
-# ai-harness 参考手册
+# aiw 参考手册
 
 新手请先看 [README](../README.zh-CN.md)，安装细节见[使用指南](guide.zh-CN.md)。
 
@@ -9,17 +9,17 @@ Claude / Codex 主会话的多模型分工层，支持本地接入其他座位�
 ## 安装（每台机器一次）
 
 ```bash
-git clone https://github.com/Jerryx333/ai-harness.git ~/.claude/ai-harness
-~/.claude/ai-harness/install.sh
+git clone https://github.com/Jerryx333/aiw.git ~/.claude/aiw
+~/.claude/aiw/install.sh
 # 可选文本座位依赖 agent-use 公开核心及自行安装的适配器；可用 AGENT_USE_HOME 指定路径。
 # 按所用 CLI / 适配器的官方说明登录；Codex 可用 codex login 登录官方账号，或自行配置。
 aiw doctor
 ```
 
-通过插件管理 ai-harness 派单钩子的机器用 `~/.claude/ai-harness/install.sh --claude-hook=plugin`，由插件管理派单钩子，并清理 settings.json 中的重复钩子。卸载插件后，不带参数重跑即恢复（默认 `--claude-hook=settings`）。
+通过插件管理 aiw 派单钩子的机器用 `~/.claude/aiw/install.sh --claude-hook=plugin`，由插件管理派单钩子，并清理 settings.json 中的重复钩子。卸载插件后，不带参数重跑即恢复（默认 `--claude-hook=settings`）。
 
 `install.sh` 幂等，仅对已有且发生改动的文件在改动前备份为 `.bak-年月日-时分秒`；新建或未变的文件不备份。`~/.local/bin/aiw` 软链会被替换且不备份：
-- `~/.claude/CLAUDE.md` 末尾加一行 `@~/.claude/ai-harness/CLAUDE.md`（原内容保留）
+- `~/.claude/CLAUDE.md` 末尾加一行 `@~/.claude/aiw/CLAUDE.md`（原内容保留）
 - `~/.claude/settings.json` 加一个 `UserPromptSubmit` 派单钩子（路径用 `$HOME`，两台用户名不同也能用；其它设置和钩子保留）
 - `~/.local/bin/aiw` 创建或替换为指向本仓库的软链（不备份），必要时把 `~/.local/bin` 加进 `~/.zshrc`
 
@@ -116,7 +116,7 @@ errand 名单从 跑腿根目录下的 `config/errands.json` 的 providers 读�
 
 停用信息保存在本机 `state/disabled.json`，新条目键为 `<provider>:<model>`，沿用时间、证据和 notified 字段；旧座位键继续优先生效。credits 信号依次取最后一次 attempt 的 selected_model / actual_model / requested_model；stderr 信号取 requested_model，无则取座位配置 model；无法取得模型名时退回停用整个座位。证据最多 160 字，仅保留命中词、credits 数值或目录检查的模型名。`models` 为有序候选，默认 `[model]`。派单和 panel 过滤停用候选，首个剩余模型传 `--model`；多候选传 `--option provider.fallback_models=剩余候选（含首选）`，适配器可根据 provider 的能力设置轮换选项。候选全部停用才跳过座位；账本记 `skipped_disabled`。`--no-fallback` 点名停用座位或全链不可用返回 1。**不会自动恢复**：用户确认仍免费后执行 `aiw enable <provider>:<model>` 恢复单模型；`aiw enable <seat>` 仅移除旧座位条目，提示相关模型逐个恢复，不自动批量恢复；主会话不得自行恢复。`aiw doctor` 显示模型名、停用时间、证据、通知频道、钥匙串有/无及待发数量。
 
-首次停用通过 `discord-use send` 通知本地配置的 `notify.discord_channel_id`；`AIW_DISCORD_CHANNEL` 可覆盖。可执行文件按 `AIW_DISCORD_USE_BIN`、PATH、`~/.local/bin/discord-use` 查找。token 优先取 `DISCORD_TOKEN`，其次 macOS 钥匙串服务 `discord-use-bot` / 账户 `ai-harness`；都没有则返回 `missing_token`，不启动 discord-use，保留待发状态。token 仅经子进程环境传递，不写 argv、日志或配置。通知禁用更新检查，超时 20 秒；停用与 `notified=false` 原子保存在 `state/disabled.json`；部分下架提醒保存在 `state/notify-pending.jsonl`（每条有唯一 id）。`aiw doctor` 只读诊断，不外发，也不创建或修改 STATE 下的文件；只显示待发条数，提示由 `aiw freecheck` 或下一次通知补发。freecheck 和下一次通知会先补发：锁内快照、锁外发送、每条成功立即锁内确认；并发补发采用至少一次语义，可能少量重复但不丢消息。重复命中已停用条目不重复通知。
+首次停用通过 `discord-use send` 通知本地配置的 `notify.discord_channel_id`；`AIW_DISCORD_CHANNEL` 可覆盖。可执行文件按 `AIW_DISCORD_USE_BIN`、PATH、`~/.local/bin/discord-use` 查找。token 优先取 `DISCORD_TOKEN`，其次 macOS 钥匙串服务 `discord-use-bot` / 账户 `ai-harness`（外部凭据身份沿用旧名）；都没有则返回 `missing_token`，不启动 discord-use，保留待发状态。token 仅经子进程环境传递，不写 argv、日志或配置。通知禁用更新检查，超时 20 秒；停用与 `notified=false` 原子保存在 `state/disabled.json`；部分下架提醒保存在 `state/notify-pending.jsonl`（每条有唯一 id）。`aiw doctor` 只读诊断，不外发，也不创建或修改 STATE 下的文件；只显示待发条数，提示由 `aiw freecheck` 或下一次通知补发。freecheck 和下一次通知会先补发：锁内快照、锁外发送、每条成功立即锁内确认；并发补发采用至少一次语义，可能少量重复但不丢消息。重复命中已停用条目不重复通知。
 
 ```bash
 aiw freecheck               # 串行极小真实探测；有新停用 rc=2，否则 rc=0
@@ -126,11 +126,11 @@ aiw enable your-provider:your-model # 仅用户确认仍免费后恢复该模型
 aiw enable local-text            # 仅恢复旧座位条目
 ```
 
-freecheck 跳过旧座位条目及已停用候选，对每个唯一 provider:model 只探测一次，固定模型并按适配器能力禁用轮换，用相同 agent-use 路径发送 `Reply with exactly: FREECHECK_OK`，只读、不顶替、每模型超时 120 秒。非收费失败仅记录。通过本地配置接入 opencode provider 时，另读取 `$AGENT_USE_HOME/config/dispatcher.json` 的 `default_model`、`models`、`options.fallback_models` 中的 `-free` 模型，与 Zen `/zen/v1/models` 比较：以 `User-Agent: ai-harness-freecheck/1` 拉取，只有格式合法且至少 10 项才判定：全部下架停用，部分下架仅提醒（同组只一次），拉取失败或目录少于 10 项只记日志，不判定、不提醒；`AIW_ZEN_MODELS_URL` 可覆盖并支持 `file://` 离线测试。
+freecheck 跳过旧座位条目及已停用候选，对每个唯一 provider:model 只探测一次，固定模型并按适配器能力禁用轮换，用相同 agent-use 路径发送 `Reply with exactly: FREECHECK_OK`，只读、不顶替、每模型超时 120 秒。非收费失败仅记录。通过本地配置接入 opencode provider 时，另读取 `$AGENT_USE_HOME/config/dispatcher.json` 的 `default_model`、`models`、`options.fallback_models` 中的 `-free` 模型，与 Zen `/zen/v1/models` 比较：以 `User-Agent: aiw-freecheck/1` 拉取，只有格式合法且至少 10 项才判定：全部下架停用，部分下架仅提醒（同组只一次），拉取失败或目录少于 10 项只记日志，不判定、不提醒；`AIW_ZEN_MODELS_URL` 可覆盖并支持 `file://` 离线测试。
 
 **本地适配器限制**：opencode provider 的座位 model 为空时，仍使用 dispatcher 的默认及备选；收费按实际模型记录，doctor 展示，但当前派单暂不过滤这些已停用模型。无显式模型的 freecheck 同样沿用 dispatcher。
 
-安装生成 `~/Library/LaunchAgents/com.ai-harness.freecheck.plist`，指向本仓库绝对路径，stdout/stderr 写到 `state/freecheck.log`。安装时透传已设置的 `AI_HARNESS_STATE`、`AGENT_USE_HOME`、`AI_HARNESS_PYTHON` 到 plist 环境。请保留该仓库路径；安装后可用 doctor 查看通知配置。`AIW_LAUNCH_AGENTS_DIR` 供隔离测试覆盖目录。仅 `--install` 会安装定时任务，普通派单不会自动安装。
+安装生成 `~/Library/LaunchAgents/com.aiw.freecheck.plist`，指向本仓库绝对路径，stdout/stderr 写到 `state/freecheck.log`。安装时透传已设置的 `AIW_STATE`、`AGENT_USE_HOME`、`AIW_PYTHON` 到 plist 环境。请保留该仓库路径；安装后可用 doctor 查看通知配置。`AIW_LAUNCH_AGENTS_DIR` 供隔离测试覆盖目录。仅 `--install` 会安装定时任务，普通派单不会自动安装。
 
 ## 工作流程
 
@@ -221,7 +221,7 @@ agent_use 文本座位通过本地配置接入 [agent-use](https://github.com/Je
 - 收到「[派单]」钩子时，先定方案再执行；用户说「我自己做」「直接改」时不派单。执行方按方案交付，架构、范围或验收问题由主会话决定，不得自行扩大范围；执行方说做完了不等于验收通过。常规方案无需额外确认。
 - 工具限制看配置，只有 `require_no_tools=true` 才硬禁工具；未硬禁的座位不能当硬禁座位用。外包后检查 stderr 的「实际执行方」行（run 目录的 `provider` 文件），panel 则检查各家；顶替须在汇报中说明。只读任务可并行。
 - 认证失败请用户去官方登录，不读 App 私有凭据，不在聊天里索要 token。codex 报库锁或 pinentry，说明本机配置的凭据工具被锁：请用户在自己终端解锁，这不是登录问题。
-- 项目任务需要改共享基础设施仓库（如 agent-use、ai-harness）时，先回报再改：使用独立 git worktree，单独提交，按仓库惯例补离线测试和文档。配置保持标准排版，不整文件重排。
+- 项目任务需要改共享基础设施仓库（如 agent-use、aiw）时，先回报再改：使用独立 git worktree，单独提交，按仓库惯例补离线测试和文档。配置保持标准排版，不整文件重排。
 - 派单规则仅约束主会话。`AIW_NESTED=1` 表示外包执行方，只做本单；不得运行 aiw 或再派单，不得用 ocs、SendMessage 联系或唤醒其它会话，不做独立评审，也不附派单记录。派单明确允许时才能用 `--allow-nested`；跑腿入口仍无嵌套豁免。
 
 ### 大任务用 /goal
@@ -251,9 +251,9 @@ aiw statusline
 aiw track [--host 名称] [--timeout 秒] <标签> -- <命令> [参数...]
 ```
 
-`aiw doctor` 在座位列表后检查 Claude 派单钩子与 CLAUDE.md 引入、安装链接、Codex 钩子/信任记录/功能开关/AGENTS 标记块、状态栏命令和 aiw-board，以及本地仓库改动和相对上游的领先/落后（按上次 fetch，不联网）。配置检查只提示、不影响返回码；返回码仍只反映座位是否可用。Codex 信任记录存在不代表尚未过期；未接入或设置 `AI_HARNESS_NO_CODEX` 时跳过 Codex 检查。
+`aiw doctor` 在座位列表后检查 Claude 派单钩子与 CLAUDE.md 引入、安装链接、Codex 钩子/信任记录/功能开关/AGENTS 标记块、状态栏命令和 aiw-board，以及本地仓库改动和相对上游的领先/落后（按上次 fetch，不联网）。配置检查只提示、不影响返回码；返回码仍只反映座位是否可用。Codex 信任记录存在不代表尚未过期；未接入或设置 `AIW_NO_CODEX` 时跳过 Codex 检查。
 
-Claude 派单钩子检查也识别已启用的 `ai-harness@…` 插件提供的 `UserPromptSubmit` 命令钩子，按 route-hook.sh / route.py 派单入口识别；多个插件同时提供时也提示重复；settings.json 与插件同时提供时提示重复执行，可重跑 `install.sh --claude-hook=plugin` 清理。
+Claude 派单钩子检查也识别已启用的 `aiw@…` 插件提供的 `UserPromptSubmit` 命令钩子，按 route-hook.sh / route.py 派单入口识别；多个插件同时提供时也提示重复；settings.json 与插件同时提供时提示重复执行，可重跑 `install.sh --claude-hook=plugin` 清理。
 
 看板和状态栏是可选的独立组件 aiw-board（不随本仓库发布），`aiw board`/`aiw statusline` 在已安装时转发。状态文件约定见 [docs/state-contract.md](state-contract.md)。inflight 在强制退出后可能残留，展示端按锁判活。
 
@@ -306,7 +306,7 @@ codex / codex-sol 的派单在 prompt 末尾、观察记录要求之前固定追
 
 `codex` / `codex-sol` 的 `codex exec` 默认使用 `STATE/codex-home/`（通常是 `state/codex-home/`，目录权限 700）。源目录取父进程 `CODEX_HOME`，未设置时取 `~/.codex`。按需生成的 `config.toml` 权限为 600，原子写入且内容不变时不重写；只复制 `model_provider`、选中 provider 的完整 `model_providers` 表（含嵌套表）。hooks、MCP、插件、技能、项目和 shell 环境策略等配置不复制。
 
-源目录有 `auth.json` 时，执行方 home 中只建立指向源文件的软链，不复制凭据。启动时附加 `-c skills.include_instructions=false`，避免加载主会话技能列表；工作目录里的项目 `AGENTS.md` 仍会加载，`AIW_NESTED=1` 注入保持不变。执行方会话记录（rollout）现在落在 `state/codex-home/sessions/`（设 `AI_HARNESS_STATE` 时跟随 STATE）。
+源目录有 `auth.json` 时，执行方 home 中只建立指向源文件的软链，不复制凭据。启动时附加 `-c skills.include_instructions=false`，避免加载主会话技能列表；工作目录里的项目 `AGENTS.md` 仍会加载，`AIW_NESTED=1` 注入保持不变。执行方会话记录（rollout）现在落在 `state/codex-home/sessions/`（设 `AIW_STATE` 时跟随 STATE）。
 
 源配置缺失、解析失败、缺少 provider 表或生成失败时，stderr 提示原因并回退共享配置，不阻断派单。`AIW_CODEX_SHARED_HOME=1` 完全关闭此功能，沿用父进程配置和环境；claude、agent_use 座位及 preflight 不受影响。`aiw doctor` 共用生成逻辑检查执行方 home 是否可生成，但不落盘；显示路径与检查结果，失败时显示原因，不打印配置值。
 
@@ -317,7 +317,7 @@ codex / codex-sol 的派单在 prompt 末尾、观察记录要求之前固定追
 - 派单钩子从钩子输入认出是 Codex（带 `turn_id`），注入 Codex 版指令：改文件自己做；第二意见找 `aiw claude`；会诊用 `AIW_MAIN=codex aiw panel …`，默认仅问 claude。
 - 主会话是 Claude 时会诊默认仅问 codex-sol（Claude Code 里自动识别）。
 - 外包出去的 `claude -p` / `codex exec` 带 `AIW_NESTED=1`，它们的派单钩子静默，不会套娃；完整禁止项与 claude 只读白名单见「派单细则」。
-- 不想接 Codex：`AI_HARNESS_NO_CODEX=1 ./install.sh`。
+- 不想接 Codex：`AIW_NO_CODEX=1 ./install.sh`。
 
 Codex 当主会话时的架构：
 
@@ -386,7 +386,7 @@ Codex 主会话自己改文件，不调用 `aiw codex`；独立评审找 claude�
 - 公开脚本和规则通过 git 同步；另一台用 `aiw sync` 快进更新，本地有改动时会失败。
 - `state/`、登录状态和本机路径覆盖各机独立，不随公开仓库同步。
 - 各机运行 `aiw snapshot`，输出写入不再提交的 `snapshots/`。收集两台各自生成的文件后，用 `git diff --no-index snapshots/<机器A>.json snapshots/<机器B>.json` 比较。
-- 快照钩子只记事件、数量、type、timeout、command 的 SHA256 前 12 位（`cmd_sha`）；harness 钩子额外记 `matches_expected`，不保存钩子命令原文。
+- 快照钩子只记事件、数量、type、timeout、command 的 SHA256 前 12 位（`cmd_sha`）；aiw 钩子额外记 `matches_expected`，不保存钩子命令原文。
 - 熔断各机独立，一台登录失败不影响另一台。
 
 ## 自测
@@ -409,7 +409,7 @@ python3 tests/mutation_check.py credentials locked  # 只运行指定变异
 
 个人规则可放在 `~/.config/aiw/CLAUDE.personal.md` 和 `~/.config/aiw/AGENTS.personal.md`。建议保存在私人同步仓库，并软链到这些路径，再运行 `install.sh`。公开规则在前，个人规则在后，冲突以个人规则为准。
 
-Claude 在 harness 引入行后引入 `CLAUDE.personal.md`；文件不存在时不新增引入，已有引入保留。Codex 安装时把 `AGENTS.personal.md` 内容接在公开规则后，一并写入标记块；修改后需重跑安装。断链视为不存在并提示，`aiw doctor` 可检查引入与标记块是否同步。
+Claude 在 aiw 引入行后引入 `CLAUDE.personal.md`；文件不存在时不新增引入，已有引入保留。Codex 安装时把 `AGENTS.personal.md` 内容接在公开规则后，一并写入标记块；修改后需重跑安装。断链视为不存在并提示，`aiw doctor` 可检查引入与标记块是否同步。
 
 公开 `seats.json` 提供默认值，个人值放在 [seats.local.example.json](../seats.local.example.json) 所示的本地覆盖文件中：非空 `AIW_CONFIG` 优先（指定文件不存在时报错），否则读取存在的 `~/.config/aiw/seats.local.json`，否则只使用公开默认。同一时间只读一份本地配置，支持软链。建议将文件保存在私人同步仓库，再软链到 `~/.config/aiw/seats.local.json`。
 
@@ -434,7 +434,7 @@ agent-use 的 `status.json` 必须声明整数 `protocol_version: 1`。缺失或
 
 本地座位可选布尔字段 `expects_credits`（默认 false）：`kind=agent_use` 的座位启用后，成功但最后一个 attempt 未报告数值型 `credits` 时提示免费保护无法核对收费，成功判定不变。未知 reason 和缺少 credits 的提醒会在 findings 收集开启时写入 `source=worker` 的 observation；关闭收集或写入失败不影响派单。
 
-`aiw doctor --fingerprint` 只输出一行指纹，返回 0，可保存两台机器的输出再 diff。普通 doctor 也显示该行，snapshot 的 `fingerprint` 保存相同结构：harness、显式 `$AGENT_USE_HOME` 的 Git HEAD（有改动加 `*`），生效注册表的 env/user/repo 来源、SHA256 前 12 位与 Git HEAD，本地座位/路由覆盖及两份个人规则的文件哈希、按仓库根去重的 Git HEAD，以及 `effective_hash`。缺失或无法读取的分量为 `-`，不输出路径。doctor 同时检查启用的 agent_use 座位 provider 是否存在于生效注册表且未设 `enabled=false`；注册表不可读或不匹配只警告，不影响座位安装检查返回码。
+`aiw doctor --fingerprint` 只输出一行指纹，返回 0，可保存两台机器的输出再 diff。普通 doctor 也显示该行，snapshot 的 `fingerprint` 保存相同结构：aiw、显式 `$AGENT_USE_HOME` 的 Git HEAD（有改动加 `*`），生效注册表的 env/user/repo 来源、SHA256 前 12 位与 Git HEAD，本地座位/路由覆盖及两份个人规则的文件哈希、按仓库根去重的 Git HEAD，以及 `effective_hash`。缺失或无法读取的分量为 `-`，不输出路径。doctor 同时检查启用的 agent_use 座位 provider 是否存在于生效注册表且未设 `enabled=false`；注册表不可读或不匹配只警告，不影响座位安装检查返回码。
 
 
 ### aiw tokens
@@ -447,7 +447,7 @@ agent-use 的 `status.json` 必须声明整数 `protocol_version: 1`。缺失或
 - **子 agent**：isSidechain 或 subagents 目录中的助手回复不进入主会话统计，按父会话汇总；全局子 agent 占比 = 子 agent token /（主会话 + 子 agent token）。
 - **派单关联**：窗口内账本 rc 非 null 的记录按 actual 计数，包含失败和超时；展示有 session 的记录比例，按完整 session 关联主会话。codex/codex-sol 只合计 source=rollout 的 input/cached/output；input 已包含 cached，不再叠加。没有 session 的派单不猜测关联。
 
-转录根目录为 `AIW_CLAUDE_PROJECTS`（直接指向 projects），否则取 `${CLAUDE_CONFIG_DIR:-~/.claude}/projects`；账本为 `${AI_HARNESS_STATE}/seat-ledger.jsonl`，默认是当前 ai-harness 仓库的 state 目录，与 weekly 相同。按时间窗口内助手 message.id 去重，缺 id 用 uuid；跳过全零 usage，损坏行跳过并在 stderr 汇报数量。时间无时区的旧格式按本机时区解释。
+转录根目录为 `AIW_CLAUDE_PROJECTS`（直接指向 projects），否则取 `${CLAUDE_CONFIG_DIR:-~/.claude}/projects`；账本为 `${AIW_STATE}/seat-ledger.jsonl`，默认是当前 aiw 仓库的 state 目录，与 weekly 相同。按时间窗口内助手 message.id 去重，缺 id 用 uuid；跳过全零 usage，损坏行跳过并在 stderr 汇报数量。时间无时区的旧格式按本机时区解释。
 
 命令逐行读取，不写文件、不缓存，不输出消息正文、完整 session id 或完整路径；只展示数字、截短 session id 和项目名。项目名仍是本地元数据，分享报告前可自行检查。JSON 包含 totals、weighted、context、concentration、sessions、subagents、dispatch 等对应数字，占比为 0–1。
 

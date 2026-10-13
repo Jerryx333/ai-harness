@@ -25,7 +25,7 @@ from support import (
 def doctor():
     with tempfile.TemporaryDirectory() as t:
         t = Path(t)
-        env = dict(os.environ, PATH=f"{fake_bins(t)}:{os.environ['PATH']}", AI_HARNESS_STATE=str(t / "state"),
+        env = dict(os.environ, PATH=f"{fake_bins(t)}:{os.environ['PATH']}", AIW_STATE=str(t / "state"),
                    AGENT_USE_HOME=str(fake_agent_use(t)))
         versions = t / 'versions'
         codex = t / 'fakebin/codex'
@@ -54,9 +54,9 @@ def doctor_config():
     with tempfile.TemporaryDirectory() as td:
         t = Path(td)
         home, env = fake_home(t)
-        env.pop('AI_HARNESS_NO_CODEX', None)
+        env.pop('AIW_NO_CODEX', None)
         env.pop('CODEX_BIN', None)
-        repo = home / '.claude/ai-harness'
+        repo = home / '.claude/aiw'
         # 隔离 PATH，避免本机已安装的看板影响测试。
         bins = t / 'fakebin'
         for name in ('bash', 'dirname', 'readlink', 'python3', 'git', 'mkdir', 'chmod', 'ln', 'grep', 'cp', 'date'):
@@ -90,7 +90,7 @@ def doctor_config():
 
         for path in (hp, hp.resolve()):
             trusted(path)
-            run('✓ Claude 派单钩子', '✓ CLAUDE.md 引入', '✓ 安装链接 harness',
+            run('✓ Claude 派单钩子', '✓ CLAUDE.md 引入', '✓ 安装链接 aiw',
                 '✓ 安装链接 aiw', '✓ Codex 信任 [0:0]', '✓ Codex AGENTS 标记块',
                 '无法确认是否过期', '· 仓库状态：不是 git 仓库', '⚠ aiw-board 转发')
         config.write_text('')
@@ -126,7 +126,7 @@ def doctor_config():
         md.write_text('# missing import\n')
         agents.write_text(original[agents].replace(module.BEGIN + '\n', module.BEGIN + '\nchanged\n'))
         run('⚠ Claude 派单钩子', '⚠ CLAUDE.md 引入', '⚠ Codex AGENTS 标记块')
-        out = run('· 跳过 Codex', AI_HARNESS_NO_CODEX='1')
+        out = run('· 跳过 Codex', AIW_NO_CODEX='1')
         check('⚠ Codex' not in out and '✓ Codex' not in out, out)
         for f, text in original.items():
             f.write_text(text)
@@ -144,20 +144,20 @@ def doctor_config():
         run('⚠ 状态栏命令', '⚠ aiw-board 转发')
         settings.write_text(original[settings])
         # 缺文件、坏 JSON、重复和缺失钩子均只提示。
-        for text, expected in (('{bad', 'JSONDecodeError'), ('{}', '没有 harness 钩子'),
+        for text, expected in (('{bad', 'JSONDecodeError'), ('{}', '没有 aiw 钩子'),
                                ('{"hooks": {"UserPromptSubmit": null}}', 'ValueError')):
             settings.write_text(text)
             run('⚠ Claude 派单钩子', expected)
         data = json.loads(original[settings])
         data['hooks']['UserPromptSubmit'] *= 2
         settings.write_text(json.dumps(data))
-        run('有多个 harness 钩子')
+        run('有多个 aiw 钩子')
         settings.unlink()
         run('⚠ Claude 派单钩子：文件不存在')
         settings.write_text(original[settings])
         # Plugin-managed Claude hooks need no settings hook; duplicate sources warn.
-        plugin_name = 'ai-harness@test-marketplace'
-        plugin_dir = home / '.claude/plugins/cache/test-marketplace/ai-harness/0.1.0'
+        plugin_name = 'aiw@test-marketplace'
+        plugin_dir = home / '.claude/plugins/cache/test-marketplace/aiw/0.1.0'
         plugin_hooks = plugin_dir / 'hooks/hooks.json'
         plugin_hooks.parent.mkdir(parents=True)
         plugin_data = {'hooks': {'UserPromptSubmit': [{'hooks': [{'type': 'command',
@@ -180,21 +180,21 @@ def doctor_config():
             check('⚠ Claude 派单钩子' not in out, out)
         plugin_hooks.write_text(json.dumps({'hooks': {'UserPromptSubmit': [
             {'hooks': [{'type': 'command', 'command': 'echo other'}]}]}}))
-        run('⚠ Claude 派单钩子：没有 harness 钩子。修：重跑 install.sh')
+        run('⚠ Claude 派单钩子：没有 aiw 钩子。修：重跑 install.sh')
         plugin_hooks.write_text(json.dumps({'hooks': {'UserPromptSubmit': [
             {'hooks': [{'type': 'command', 'command': module.HOOK_COMMAND}]}]}}))
         run(f'✓ Claude 派单钩子（由插件 {plugin_name} 提供）')
         plugin_hooks.write_text(json.dumps(plugin_data))
-        multiple_names = ['ai-harness@a', 'ai-harness@b']
+        multiple_names = ['aiw@a', 'aiw@b']
         multiple_records = {name: records[plugin_name] * 2 for name in multiple_names}
         data['enabledPlugins'] = {name: True for name in reversed(multiple_names)}
         settings.write_text(json.dumps(data))
         installed.write_text(json.dumps({'plugins': multiple_records}))
-        out = run('⚠ Claude 派单钩子：多个插件（ai-harness@a、ai-harness@b）都有派单钩子，会重复执行。修：在 Claude Code 中只保留一个 ai-harness 插件启用')
+        out = run('⚠ Claude 派单钩子：多个插件（aiw@a、aiw@b）都有派单钩子，会重复执行。修：在 Claude Code 中只保留一个 aiw 插件启用')
         check('✓ Claude 派单钩子' not in out, out)
         data['hooks'] = json.loads(original[settings])['hooks']
         settings.write_text(json.dumps(data))
-        out = run('⚠ Claude 派单钩子：settings.json 与插件 ai-harness@a、ai-harness@b 都有派单钩子，会重复执行',
+        out = run('⚠ Claude 派单钩子：settings.json 与插件 aiw@a、aiw@b 都有派单钩子，会重复执行',
                   '重跑 install.sh --claude-hook=plugin')
         check('✓ Claude 派单钩子' not in out, out)
         data['hooks']['UserPromptSubmit'] = []
@@ -202,23 +202,23 @@ def doctor_config():
         installed.write_text(json.dumps({'plugins': records}))
         data['enabledPlugins'][plugin_name] = False
         settings.write_text(json.dumps(data))
-        run('⚠ Claude 派单钩子：没有 harness 钩子。修：重跑 install.sh')
+        run('⚠ Claude 派单钩子：没有 aiw 钩子。修：重跑 install.sh')
         data['enabledPlugins'][plugin_name] = True
         settings.write_text(json.dumps(data))
         for broken in ('{PRIVATE_SENTINEL', '[]', '{"hooks": {"UserPromptSubmit": {}}}',
                        '{"hooks": {"UserPromptSubmit": [{"hooks": null}]}}',
                        '{"hooks": {"UserPromptSubmit": [{"hooks": [null]}]}}'):
             plugin_hooks.write_text(broken)
-            run('⚠ Claude 派单钩子：没有 harness 钩子。修：重跑 install.sh')
+            run('⚠ Claude 派单钩子：没有 aiw 钩子。修：重跑 install.sh')
         plugin_hooks.unlink()
-        run('⚠ Claude 派单钩子：没有 harness 钩子。修：重跑 install.sh')
+        run('⚠ Claude 派单钩子：没有 aiw 钩子。修：重跑 install.sh')
         plugin_hooks.write_text(json.dumps(plugin_data))
         for broken in ('{PRIVATE_SENTINEL', '[]', '{"plugins": []}',
                        json.dumps({plugin_name: {'installPath': str(plugin_dir)}})):
             installed.write_text(broken)
-            run('⚠ Claude 派单钩子：没有 harness 钩子。修：重跑 install.sh')
+            run('⚠ Claude 派单钩子：没有 aiw 钩子。修：重跑 install.sh')
         installed.unlink()
-        run('⚠ Claude 派单钩子：没有 harness 钩子。修：重跑 install.sh')
+        run('⚠ Claude 派单钩子：没有 aiw 钩子。修：重跑 install.sh')
         settings.write_text(original[settings])
         config.unlink()
         run('⚠ Codex 配置：文件不存在')
@@ -264,19 +264,19 @@ def doctor_config():
 def install_fresh():
     with tempfile.TemporaryDirectory() as t:
         home, env = fake_home(Path(t))
-        p = sh(["bash", str(home / ".claude/ai-harness/install.sh")], env=env)
+        p = sh(["bash", str(home / ".claude/aiw/install.sh")], env=env)
         check(p.returncode == 0, f"安装失败: {p.stdout}{p.stderr}")
         md = (home / ".claude/CLAUDE.md").read_text()
-        check("@~/.claude/ai-harness/CLAUDE.md" in md, "CLAUDE.md 未引入")
+        check("@~/.claude/aiw/CLAUDE.md" in md, "CLAUDE.md 未引入")
         st = json.loads((home / ".claude/settings.json").read_text())
         cmds = [h["command"] for g in st["hooks"]["UserPromptSubmit"] for h in g["hooks"]]
-        check(any("$HOME/.claude/ai-harness/route.py" in c for c in cmds), f"钩子未写入或路径写死: {cmds}")
+        check(any("$HOME/.claude/aiw/route.py" in c for c in cmds), f"钩子未写入或路径写死: {cmds}")
         aiw = home / ".local/bin/aiw"
         check(aiw.is_symlink() and os.access(aiw, os.X_OK), "aiw 软链不存在或不可执行")
         # 通过软链调用（真实使用方式）
         p = sh([str(aiw), "route", "帮我批量重命名所有文件"], env=env, cwd=home)
         check(p.returncode == 0 and '"bulk"' in p.stdout, f"通过软链调用 aiw route 失败: {p.stdout}{p.stderr}")
-        check("ai-harness: aiw on PATH" in (home / ".zshrc").read_text(), "PATH 未写入 .zshrc")
+        check("aiw: on PATH" in (home / ".zshrc").read_text(), "PATH 未写入 .zshrc")
 
 
 
@@ -292,32 +292,32 @@ def install_existing():
         (home / ".codex/AGENTS.md").write_text("# 我的 Codex 约定\n- 中文\n")
         (home / ".codex/hooks.json").write_text(json.dumps({"hooks": {"UserPromptSubmit": [{"hooks": [{"type": "command", "command": "echo codex-mine"}]}],
                                                                     "Stop": [{"hooks": [{"type": "command", "command": "x"}]}]}}))
-        inst = str(home / ".claude/ai-harness/install.sh")
+        inst = str(home / ".claude/aiw/install.sh")
         for _ in range(2):  # 跑两次验证幂等
             p = sh(["bash", inst], env=env)
             check(p.returncode == 0, f"安装失败: {p.stdout}{p.stderr}")
         md = (home / ".claude/CLAUDE.md").read_text()
-        check(md.startswith("# 我原来的全局约定") and md.count("@~/.claude/ai-harness/CLAUDE.md") == 1, f"CLAUDE.md 原内容被改或重复追加:\n{md}")
+        check(md.startswith("# 我原来的全局约定") and md.count("@~/.claude/aiw/CLAUDE.md") == 1, f"CLAUDE.md 原内容被改或重复追加:\n{md}")
         st = json.loads((home / ".claude/settings.json").read_text())
         check(st["model"] == "opus" and st["permissions"]["allow"] == ["Bash(git status)"], "原 settings 被改")
         cmds = [h["command"] for g in st["hooks"]["UserPromptSubmit"] for h in g["hooks"]]
-        check("echo mine" in cmds and sum("ai-harness/route.py" in c for c in cmds) == 1, f"钩子合并不对: {cmds}")
+        check("echo mine" in cmds and sum("aiw/route.py" in c for c in cmds) == 1, f"钩子合并不对: {cmds}")
         check(st["hooks"]["Stop"][0]["hooks"][0]["command"] == "say done", "其它钩子被改")
         baks = list((home / ".claude").glob("*.bak-*"))
         check(len(baks) >= 2, f"应生成 CLAUDE.md 与 settings.json 备份: {baks}")
-        check((home / ".zshrc").read_text().count("ai-harness: aiw on PATH") == 1, "PATH 重复追加")
+        check((home / ".zshrc").read_text().count("aiw: on PATH") == 1, "PATH 重复追加")
         # Codex 接入：原 AGENTS.md 保留、标记块只有一份；hooks.json 原有钩子保留、派单钩子只加一次
         ag = (home / ".codex/AGENTS.md").read_text()
-        check(ag.startswith("# 我的 Codex 约定") and ag.count("ai-harness:begin") == 1 and "AIW_MAIN=codex" in ag, f"AGENTS.md 合并不对:\n{ag[:400]}")
+        check(ag.startswith("# 我的 Codex 约定") and ag.count("aiw:begin") == 1 and "AIW_MAIN=codex" in ag, f"AGENTS.md 合并不对:\n{ag[:400]}")
         hk = json.loads((home / ".codex/hooks.json").read_text())
         cmds = [h["command"] for g in hk["hooks"]["UserPromptSubmit"] for h in g["hooks"]]
-        check("echo codex-mine" in cmds and sum("ai-harness/route.py" in c for c in cmds) == 1 and hk["hooks"]["Stop"], f"Codex 钩子合并不对: {hk}")
+        check("echo codex-mine" in cmds and sum("aiw/route.py" in c for c in cmds) == 1 and hk["hooks"]["Stop"], f"Codex 钩子合并不对: {hk}")
         # 改了 AGENTS.harness.md 再装：标记块被刷新，块外内容不动
-        src = home / ".claude/ai-harness/AGENTS.harness.md"
+        src = home / ".claude/aiw/AGENTS.harness.md"
         src.write_text(src.read_text() + "\nNEW_LINE_X\n")
         sh(["bash", inst], env=env)
         ag = (home / ".codex/AGENTS.md").read_text()
-        check(ag.count("ai-harness:begin") == 1 and "NEW_LINE_X" in ag and ag.startswith("# 我的 Codex 约定"), "标记块应原地刷新")
+        check(ag.count("aiw:begin") == 1 and "NEW_LINE_X" in ag and ag.startswith("# 我的 Codex 约定"), "标记块应原地刷新")
         # 坏 settings.json：拒绝改动，不覆盖
         (home / ".claude/settings.json").write_text("{oops")
         p = sh(["bash", inst], env=env)
@@ -331,9 +331,9 @@ def install_personal_rules():
     import doctor_config as d
     with tempfile.TemporaryDirectory() as td:
         home, env = fake_home(Path(td))
-        env.pop('AI_HARNESS_NO_CODEX', None)
+        env.pop('AIW_NO_CODEX', None)
         (home / '.codex').mkdir(exist_ok=True)
-        repo = home / '.claude/ai-harness'
+        repo = home / '.claude/aiw'
         md = home / '.claude/CLAUDE.md'
         ag = home / '.codex/AGENTS.md'
         folder = home / '.config/aiw'
@@ -408,10 +408,10 @@ def install_personal_rules():
 def install_claude_hook_mode():
     with tempfile.TemporaryDirectory() as t:
         home, env = fake_home(Path(t))
-        inst = ["bash", str(home / ".claude/ai-harness/install.sh")]
+        inst = ["bash", str(home / ".claude/aiw/install.sh")]
         settings = home / ".claude/settings.json"
         (home / ".codex").mkdir()
-        route = {"type": "command", "command": 'python3 "$HOME/.claude/ai-harness/route.py" --hook'}
+        route = {"type": "command", "command": 'python3 "$HOME/.claude/aiw/route.py" --hook'}
         other = {"type": "command", "command": "echo other", "timeout": 23}
         expected = {"model": "opus", "permissions": {"allow": ["Read"]}, "hooks": {
             "UserPromptSubmit": [{"matcher": "*", "hooks": [other]}, {"hooks": [other]}],
@@ -440,12 +440,12 @@ def install_claude_hook_mode():
               "重复 plugin 改写了文件或产生新备份")
         codex_hooks = (home / ".codex/hooks.json").read_bytes()
         codex_agents = (home / ".codex/AGENTS.md").read_bytes()
-        check("ai-harness/route.py" in codex_hooks.decode() and "ai-harness:begin" in codex_agents.decode(),
+        check("aiw/route.py" in codex_hooks.decode() and "aiw:begin" in codex_agents.decode(),
               "plugin 影响了 Codex 安装")
         for args in ((), ("--claude-hook=settings",)):
             run(*args)
             hooks = json.loads(settings.read_text())["hooks"]["UserPromptSubmit"]
-            check(sum("ai-harness/route.py" in h["command"] for g in hooks for h in g["hooks"]) == 1,
+            check(sum("aiw/route.py" in h["command"] for g in hooks for h in g["hooks"]) == 1,
                   "默认恢复或显式 settings 失败")
         check((home / ".codex/hooks.json").read_bytes() == codex_hooks
               and (home / ".codex/AGENTS.md").read_bytes() == codex_agents, "模式切换影响 Codex")
@@ -458,7 +458,7 @@ def install_claude_hook_mode():
                          ("--claude-hook=plugin", "--unknown")):
                 before_files = {str(p.relative_to(home)): p.read_bytes() for p in home.rglob("*")
                                 if p.is_file() and not p.is_symlink()}
-                r = sh(inst + list(args), env=dict(env, AI_HARNESS_PYTHON="/missing/python"))
+                r = sh(inst + list(args), env=dict(env, AIW_PYTHON="/missing/python"))
                 check(r.returncode == 64 and "用法：" in r.stderr, "非法参数没有在预检前退出 64")
                 after_files = {str(p.relative_to(home)): p.read_bytes() for p in home.rglob("*")
                                if p.is_file() and not p.is_symlink()}
@@ -471,7 +471,7 @@ def install_claude_hook_mode():
 
 def install_preflight():
     with tempfile.TemporaryDirectory() as td:
-        home, env = fake_home(Path(td)); inst = ['bash', str(home / '.claude/ai-harness/install.sh')]
+        home, env = fake_home(Path(td)); inst = ['bash', str(home / '.claude/aiw/install.sh')]
         settings = home / '.claude/settings.json'; md = home / '.claude/CLAUDE.md'
         for value in ([], {'hooks': []}, {'hooks': {'UserPromptSubmit': {}}},
                       {'hooks': {'UserPromptSubmit': [1]}}, {'hooks': {'UserPromptSubmit': [{'hooks': {}}]}}):
@@ -481,7 +481,7 @@ def install_preflight():
         md.write_text('保留'); settings.write_text('{"hooks": []}')
         r = sh(inst, env=env); check(r.returncode == 1 and md.read_text() == '保留', '预检覆盖原文件')
         settings.write_text('{}'); (home / '.codex').mkdir(); bad = home / '.codex/hooks.json'; bad.write_text('{bad')
-        r = sh(inst, env=dict(env, AI_HARNESS_NO_CODEX='1'))
+        r = sh(inst, env=dict(env, AIW_NO_CODEX='1'))
         check(r.returncode == 0 and bad.read_text() == '{bad', f'跳过 Codex 失败: {r.stderr}')
 
 

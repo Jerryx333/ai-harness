@@ -166,7 +166,7 @@ def workbuddy_hy4():
     with tempfile.TemporaryDirectory() as td:
         t = Path(td)
         env = dict(os.environ, PATH=f"{fake_bins(t)}:{os.environ['PATH']}",
-                   AI_HARNESS_STATE=str(t / "state"), AGENT_USE_HOME=str(fake_agent_use(t)),
+                   AIW_STATE=str(t / "state"), AGENT_USE_HOME=str(fake_agent_use(t)),
                    FAKE_AU_LOG=str(t / "calls"))
         (t / "prompt.md").write_text("test")
         for seat, model in (("workbuddy", "free-model-a"), ("workbuddy-hy4", "free-model-b")):
@@ -386,7 +386,7 @@ def agent_use_registry():
     with tempfile.TemporaryDirectory() as td:
         t = Path(td)
         env = dict(os.environ, HOME=str(t), AGENT_USE_CONFIG='',
-                   AGENT_USE_HOME=str(t / 'agent-use'), AI_HARNESS_STATE=str(t / 'state'))
+                   AGENT_USE_HOME=str(t / 'agent-use'), AIW_STATE=str(t / 'state'))
         fallback = t / 'agent-use/config/dispatcher.json'
         default = t / '.config/agent-use/dispatcher.json'
         explicit = t / 'explicit.json'
@@ -489,19 +489,23 @@ def freecheck_install():
         launchctl = b / 'launchctl'
         launchctl.write_text('#!/bin/sh\nprintf "%s\\n" "$*" >> "$LAUNCH_LOG"\n[ "$1" = bootout ] && exit 1\nexit 0\n')
         launchctl.chmod(0o755)
-        env.update(AI_HARNESS_PYTHON=sys.executable, PATH=str(b) + ':' + env['PATH'], AIW_LAUNCH_AGENTS_DIR=str(t / 'agents'), LAUNCH_LOG=str(t / 'launch'))
+        env.update(AIW_PYTHON=sys.executable, PATH=str(b) + ':' + env['PATH'], AIW_LAUNCH_AGENTS_DIR=str(t / 'agents'), LAUNCH_LOG=str(t / 'launch'))
         env.update(AIW_ROUTER_RULES=str(t / 'rules.json'), AGENT_USE_ERRAND_HOME=str(t / 'errands'),
                    AGENT_USE_CONFIG=str(t / 'registry.json'), XDG_CONFIG_HOME=str(t / 'xdg'))
         cmd = [str(REPO / 'bin/aiw'), 'freecheck']
+        legacy = t / 'agents/com.ai-harness.freecheck.plist'
+        legacy.parent.mkdir(parents=True)
+        legacy.write_bytes(plistlib.dumps({'Label': 'com.ai-harness.freecheck'}))
         r = sh(cmd + ['--install'], env=env)
+        check(not legacy.exists() and str(legacy) in (t / 'launch').read_text(), 'old LaunchAgent not unloaded/deleted')
         check(r.returncode == 0, repr(r))
-        path = t / 'agents/com.ai-harness.freecheck.plist'
+        path = t / 'agents/com.aiw.freecheck.plist'
         data = plistlib.loads(path.read_bytes())
-        check(data['Label'] == 'com.ai-harness.freecheck' and data['ProgramArguments'] == [str(REPO / 'bin/aiw'), 'freecheck'], str(data))
+        check(data['Label'] == 'com.aiw.freecheck' and data['ProgramArguments'] == [str(REPO / 'bin/aiw'), 'freecheck'], str(data))
         check(data['StartCalendarInterval'] == {'Hour': 9, 'Minute': 30}, str(data))
         check(data['StandardOutPath'] == data['StandardErrorPath'] == str(t / 'state/freecheck.log'), str(data))
         check(data['EnvironmentVariables']['PATH'].split(':') == [str(Path(env['HOME']) / '.local/bin'), str(Path(env['HOME']) / '.opencode/bin'), '/opt/homebrew/bin', '/usr/local/bin', '/usr/bin', '/bin'], str(data))
-        for key in ('AI_HARNESS_STATE', 'AGENT_USE_HOME', 'AGENT_USE_CONFIG', 'XDG_CONFIG_HOME', 'AI_HARNESS_PYTHON', 'AIW_CONFIG', 'AIW_ROUTER_RULES', 'AGENT_USE_ERRAND_HOME'):
+        for key in ('AIW_STATE', 'AGENT_USE_HOME', 'AGENT_USE_CONFIG', 'XDG_CONFIG_HOME', 'AIW_PYTHON', 'AIW_CONFIG', 'AIW_ROUTER_RULES', 'AGENT_USE_ERRAND_HOME'):
             check(data['EnvironmentVariables'][key] == env[key], key)
         empty_env = dict(env, AIW_CONFIG='', AIW_ROUTER_RULES='', AGENT_USE_CONFIG='', XDG_CONFIG_HOME='')
         empty_env.pop('AGENT_USE_ERRAND_HOME', None)
@@ -511,7 +515,7 @@ def freecheck_install():
         check(sh(cmd + ['--uninstall'], env=env).returncode == 0 and not path.exists(), '卸载失败')
         check(sh(cmd + ['--uninstall'], env=env).returncode == 0, '重复卸载失败')
         commands = (t / 'launch').read_text().splitlines()
-        check([x.split()[0] for x in commands] == ['bootout', 'bootstrap', 'bootout', 'bootstrap', 'bootout', 'bootout'], str(commands))
+        check([x.split()[0] for x in commands] == ['bootout', 'bootout', 'bootstrap', 'bootout', 'bootstrap', 'bootout', 'bootout'], str(commands))
         check(all(f'gui/{os.getuid()}' in x for x in commands), str(commands))
 
 
@@ -647,7 +651,7 @@ def freecheck_catalog_safety():
 import freecheck as f
 for rows in ([], [{'id': str(i)} for i in range(9)], [{'bad': 'row'}]):
     def fetch(request, timeout):
-        assert request.get_header('User-agent') == 'ai-harness-freecheck/1'
+        assert request.get_header('User-agent') == 'aiw-freecheck/1'
         return io.StringIO(json.dumps({'data': rows}))
     f.urllib.request.urlopen = fetch
     try: f.zen_check()

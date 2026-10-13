@@ -142,7 +142,7 @@ def tokens_report():
                dict(base, session=None, tokens=dict(source='stderr')), dict(base, rc=None),
                dict(base, ts=(now-dt.timedelta(days=20)).isoformat())]
         (state / 'seat-ledger.jsonl').write_text('\n'.join(json.dumps(r) for r in led))
-        env = dict(os.environ, AIW_CLAUDE_PROJECTS=str(projects), AI_HARNESS_STATE=str(state))
+        env = dict(os.environ, AIW_CLAUDE_PROJECTS=str(projects), AIW_STATE=str(state))
         cmd = [str(REPO / 'bin/aiw'), 'tokens', '7']
         result = sh(cmd + ['--json'], env=env); check(result.returncode == 0, result.stderr)
         d = json.loads(result.stdout)
@@ -162,7 +162,7 @@ def tokens_report():
         bool_state = t / 'bool-state'; bool_state.mkdir()
         bool_ledger = [dict(base, tokens=dict(source='rollout', input=True, cached=0, output=0)), base]
         (bool_state / 'seat-ledger.jsonl').write_text('\n'.join(json.dumps(r) for r in bool_ledger))
-        bool_env = dict(env, AIW_CLAUDE_PROJECTS=str(bool_state), AI_HARNESS_STATE=str(bool_state))
+        bool_env = dict(env, AIW_CLAUDE_PROJECTS=str(bool_state), AIW_STATE=str(bool_state))
         bool_result = sh(cmd + ['--json'], env=bool_env)
         check(bool_result.returncode == 0, bool_result.stderr)
         bool_data = json.loads(bool_result.stdout)
@@ -186,7 +186,7 @@ def tokens_report():
         check(updated['totals']['output'] == d['totals']['output'] + 20
               and updated['context']['rounds'] == c['rounds'] + 1, str(updated))
         empty = t / 'empty'; empty.mkdir()
-        env.update(AIW_CLAUDE_PROJECTS=str(empty), AI_HARNESS_STATE=str(empty))
+        env.update(AIW_CLAUDE_PROJECTS=str(empty), AIW_STATE=str(empty))
         result = sh(cmd, env=env)
         check(result.returncode == 0 and result.stdout.strip() == '无数据', result.stdout)
 
@@ -196,7 +196,7 @@ def weekly_repo_section():
     with tempfile.TemporaryDirectory() as td:
         t = Path(td)
         weekly_repo_fixture(t)
-        r = sh([sys.executable, str(REPO / 'weekly.py')], env=dict(os.environ, AI_HARNESS_STATE=str(t)))
+        r = sh([sys.executable, str(REPO / 'weekly.py')], env=dict(os.environ, AIW_STATE=str(t)))
         check(r.returncode == 0, r.stderr)
         section = r.stdout.split('## 按仓库\n')[1].split('\n\n')[0]
         expected = ('- owner/a: 尝试 3 · 成功 2 · 成功率 66.7% · 超时 1（33.3%） · 成功单中位耗时 3s · 写任务改动文件中位数 4\n'
@@ -220,7 +220,7 @@ def weekly_json():
         rows.append(dict(rows[0], ts=(dt.datetime.now().astimezone() - dt.timedelta(days=5)).isoformat(), repo='old', kind='other', rc=1))
         with (t / 'seat-ledger.jsonl').open('a') as f:
             f.write(json.dumps(rows[-1]) + '\n')
-        env = dict(os.environ, AI_HARNESS_STATE=str(t))
+        env = dict(os.environ, AIW_STATE=str(t))
         command = [sys.executable, str(REPO / 'weekly.py')]
         r = sh(command + ['--json'], env=env)
         check(r.returncode == 0 and '有 1 行解析不了' in r.stderr, repr(r))
@@ -268,7 +268,7 @@ def weekly_tokens():
                 dict(row, actual='qoder', tokens=usage), dict(row, actual='codex-sol', tokens=usage)]
         def report(data):
             (t / 'seat-ledger.jsonl').write_text('\n'.join(json.dumps(r) for r in data) + '\n')
-            result = sh([sys.executable, str(REPO / 'weekly.py')], env=dict(os.environ, AI_HARNESS_STATE=str(t)))
+            result = sh([sys.executable, str(REPO / 'weekly.py')], env=dict(os.environ, AIW_STATE=str(t)))
             check(result.returncode == 0, result.stderr)
             return result.stdout
         output = report(rows)
@@ -301,7 +301,7 @@ def weekly_via():
                 dict(row, actual='skipped-only', rc=None, kind='skipped_disabled')]
         (t / 'seat-ledger.jsonl').write_text('\n'.join(json.dumps(r) for r in rows) + '\n')
         r = sh([sys.executable, str(REPO / 'weekly.py')],
-               env=dict(os.environ, AI_HARNESS_STATE=str(t)))
+               env=dict(os.environ, AIW_STATE=str(t)))
         check(r.returncode == 0, r.stdout + r.stderr)
         section = r.stdout.split('## 按座位成功率\n')[1].split('\n\n')[0]
         expected = ('口径：按实际执行座位；不计 freecheck=true 和 skipped_*；成功与超时按 kind 判断；失败分布取前三项。\n'
@@ -316,7 +316,7 @@ def weekly_via():
                                          ('', '', 'direct'), ('', 'map', 'map')):
         with tempfile.TemporaryDirectory() as td:
             t = Path(td)
-            cmd, env, wd = worker_call(t, AI_HARNESS_STATE=str(t / 'state'))
+            cmd, env, wd = worker_call(t, AIW_STATE=str(t / 'state'))
             for key, value in (('AIW_PANEL_DIR', panel_dir), ('AIW_MAP_DIR', map_dir)):
                 env.pop(key, None)
                 if value is not None:
@@ -351,7 +351,7 @@ def weekly_seat_stats():
                 dict(row, actual='odd-success', rc=1)]
         (t / 'seat-ledger.jsonl').write_text('\n'.join(json.dumps(r) for r in rows) + '\n')
         result = sh([sys.executable, str(REPO / 'weekly.py')],
-                    env=dict(os.environ, AI_HARNESS_STATE=str(t)))
+                    env=dict(os.environ, AIW_STATE=str(t)))
         check(result.returncode == 0, result.stderr)
         section = result.stdout.split('## 按座位成功率\n')[1].split('\n\n')[0]
         check('- qoder: 尝试 4 · 成功 2 · 成功率 50.0% · 超时 1（25.0%）'
@@ -372,7 +372,7 @@ def weekly_mixed_ledger():
         rows += [dict(row, seat='codex', actual='codex', effort=effort, ts=rows[0]['ts']) for effort in ('high', 'high', 'low')]
         rows.append(dict(rows[-1], rc=None, kind='skipped_breaker'))
         (t / 'seat-ledger.jsonl').write_text('\n'.join(json.dumps(r) for r in rows) + '\n{bad\n')
-        r = sh([sys.executable, str(REPO / 'weekly.py')], env=dict(os.environ, AI_HARNESS_STATE=str(t)))
+        r = sh([sys.executable, str(REPO / 'weekly.py')], env=dict(os.environ, AIW_STATE=str(t)))
         check(r.returncode == 0 and '外包调用 5 次' in r.stdout and '有 1 行解析不了' in r.stderr, f'周报错误: {r.stdout}{r.stderr}')
         section = r.stdout.split('## 推理档位\n')[1].split('\n## 结果分类')[0]
         check(section.strip() == '- codex / high: 2\n- codex / low: 1', f'档位计数错误: {section}')

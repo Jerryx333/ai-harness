@@ -32,7 +32,7 @@ while [ -L "$src" ]; do
 done
 H="$(cd -P "$(dirname "$src")/.." && pwd)"
 source "${H}/env_compat.sh"
-PY="${AIW_PYTHON-python3}"
+PY="${AIW_PYTHON:-python3}"
 
 cmd="${1:-help}"
 case "$cmd" in

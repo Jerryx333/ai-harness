@@ -284,8 +284,11 @@ def check_config(repo, include_local=True):
     safe('CLAUDE.md 引入', lambda: import_line(home))
     safe('Claude 个人规则引入', lambda: personal_import(home))
     installation = home / '.claude/aiw'
-    if installation.exists():
-        print('  ✓ 安装链接 aiw')
+    if installation.exists() or installation.is_symlink():
+        if installation.resolve() == repo.resolve():
+            print('  ✓ 安装链接 aiw')
+        else:
+            warn('安装链接 aiw', f'~/.claude/aiw 指向另一份 checkout：{installation.resolve()}，请先处理')
     elif (home / '.claude/ai-harness').exists():
         warn('安装链接 aiw', '旧安装路径，重跑 install.sh 迁移')
     else:

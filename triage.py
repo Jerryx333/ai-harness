@@ -7,7 +7,7 @@ import datetime as dt
 import fcntl
 import json
 import os
-from repo_aliases import canonical_repo, canonical_key, normalize_record
+from repo_aliases import canonical_repo, canonical_key, legacy_key, normalize_record
 import re
 import socket
 import sys
@@ -418,6 +418,9 @@ def persist_issue(mapping_path, mapping, mapping_key, repo, title, body, labels,
     """查映射、按完整 aiw-key 行搜索、必要时创建，并立即落盘编号；调用方须持有 issues.lock。"""
     repo = canonical_repo(repo)
     mapping_key = canonical_key(mapping_key)
+    marker = canonical_key(marker)
+    body = '\n'.join(canonical_key(line) if line.startswith('aiw-key: ') else line
+                     for line in body.split('\n'))
     normalized = {canonical_key(k): v for k, v in mapping.items()}
     mapping.clear()
     mapping.update(normalized)
@@ -427,16 +430,11 @@ def persist_issue(mapping_path, mapping, mapping_key, repo, title, body, labels,
                                   '--search', marker + ' in:body', '--json', 'number,title,body']))
     match = next((row for row in found if marker in [canonical_key(line) for line in (row.get('body') or '').splitlines()]), None)
     if match is None:
-        from repo_aliases import ALIASES
-        for old, new in ALIASES.items():
-            legacy_marker = marker.replace(new.lower(), old.lower())
-            if legacy_marker == marker:
-                continue
+        legacy_marker = legacy_key(marker)
+        if legacy_marker != marker:
             legacy = json.loads(f._command(['gh', 'issue', 'list', '--repo', repo, '--state', 'all',
                                            '--search', legacy_marker + ' in:body', '--json', 'number,title,body']))
             match = next((row for row in legacy if marker in [canonical_key(line) for line in (row.get('body') or '').splitlines()]), None)
-            if match is not None:
-                break
     if match:
         mapping[mapping_key] = match['number']
     else:
@@ -473,7 +471,7 @@ def issues(data):
         repo = canonical_repo(f.config()['hub'])
         # Bare legacy keys have no repository identity. Only migrate with provenance.
         legacy_hub = read(folder() / 'sync.json', {}).get('visibility_hub')
-        mapping = {(f'{repo}#{key}' if '#' not in key else canonical_key(key)): value
+        mapping = {(canonical_key(f'{repo}#{key}') if '#' not in key else canonical_key(key)): value
                    for key, value in mapping.items() if '#' in key or canonical_repo(legacy_hub) == repo}
         if mapping != read(mapping_path, {}):
             f._atomic_json(mapping_path, mapping)
@@ -481,7 +479,7 @@ def issues(data):
         for issue in data.get('issues', []):
             try:
                 key = issue['key']
-                mapping_key = f'{repo}#{key}'
+                mapping_key = canonical_key(f'{repo}#{key}')
                 if mapping_key in mapping:
                     print(f"issue {key} 已存在：#{mapping[mapping_key]}")
                     continue
@@ -532,7 +530,7 @@ def issues(data):
                     if hub_error:
                         raise ValueError(hub_error)
                 key = f"project:{project}:{issue['key']}"
-                mapping_key = f'{target.lower()}#{key}'
+                mapping_key = canonical_key(f'{target.lower()}#{key}')
                 marker = 'aiw-key: ' + key
                 labels = issue['labels'] + ([f'project:{name}'] if reason else [])
                 title = (f'[{name}] ' if reason else '') + issue['title']

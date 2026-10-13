@@ -22,7 +22,7 @@ def install(uninstall=False):
     path = directory / (LABEL + '.plist')
     domain = f'gui/{os.getuid()}'
     legacy = directory / 'com.ai-harness.freecheck.plist'
-    if legacy.exists():
+    if uninstall and legacy.exists():
         subprocess.run(['launchctl', 'bootout', domain, str(legacy)], capture_output=True, check=False)
         legacy.unlink()
     if not uninstall:
@@ -41,12 +41,17 @@ def install(uninstall=False):
             if value:
                 config["EnvironmentVariables"][key] = value
         path.write_bytes(plistlib.dumps(config))
+        if plistlib.loads(path.read_bytes()) != config:
+            raise OSError('新 LaunchAgent plist 校验失败')
     subprocess.run(['launchctl', 'bootout', domain, str(path)], capture_output=True, check=False)
     if uninstall:
         path.unlink(missing_ok=True)
         print(f'已卸载：{path}')
     else:
         subprocess.run(['launchctl', 'bootstrap', domain, str(path)], check=True, capture_output=True)
+        if legacy.exists():
+            subprocess.run(['launchctl', 'bootout', domain, str(legacy)], capture_output=True, check=False)
+            legacy.unlink()
         print(f'已安装每日 09:30 检查：{path}')
     return 0
 

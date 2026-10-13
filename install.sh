@@ -31,9 +31,17 @@ H="$(cd -P "$(dirname "$src")" && pwd)"
 CLAUDE_DIR="${HOME}/.claude"
 STAMP="$(date +%Y%m%d-%H%M%S)"
 source "${H}/env_compat.sh"
-PY="${AIW_PYTHON-python3}"
+PY="${AIW_PYTHON:-python3}"
 
 command -v "$PY" >/dev/null || { echo "需要 python3" >&2; exit 1; }
+
+# 已有安装入口必须属于这份 checkout；包括失效软链。
+"$PY" - "${CLAUDE_DIR}/aiw" "$H" <<'PYEOF'
+import os, sys
+path, repo = sys.argv[1:]
+if os.path.lexists(path) and os.path.realpath(path) != os.path.realpath(repo):
+    sys.exit(f"~/.claude/aiw 指向另一份 checkout：{os.path.realpath(path)}，请先处理")
+PYEOF
 
 # 0. 预检：要改的 JSON 先全部解析一遍，任何一个坏了就一处都不动
 CHECK_FILES=("${CLAUDE_DIR}/settings.json")
@@ -144,7 +152,7 @@ if sys.argv[3] == "plugin":
             kept_groups.append(group)
         else:
             changed = True
-            if kept:
+            if kept or any(k != "hooks" for k in group):
                 kept_groups.append(dict(group, hooks=kept))
     if changed:
         if kept_groups:
@@ -159,22 +167,29 @@ if sys.argv[3] == "plugin":
     sys.exit(0)
 hooks = data.setdefault("hooks", {})
 groups = hooks.setdefault("UserPromptSubmit", [])
-mine = [h for g in groups for h in g.get("hooks", []) if any(x in h.get("command", "") for x in ("aiw/route.py", "ai-harness/route.py"))]
-stale = [h for h in mine if h.get("command") != cmd or h.get("timeout") != 10]
-if mine and not stale:
-    print(f"✓ {p} 已有派单钩子")
-elif mine:
-    shutil.copy2(p, p.with_name(p.name + ".bak-" + stamp))
-    for h in stale:
-        h.update(type="command", command=cmd, timeout=10)
-    atomic_write(p, json.dumps(data, ensure_ascii=False, indent=2) + "\n")
-    print(f"✓ {p} 刷新旧的派单钩子（备份 {p.name}.bak-{stamp}）")
-else:
+before = json.dumps(data, ensure_ascii=False, sort_keys=True)
+installed = False
+for group in groups:
+    kept = []
+    for hook in group.get("hooks", []):
+        mine = (isinstance(hook, dict) and isinstance(hook.get("command"), str)
+                and any(x in hook["command"] for x in ("aiw/route.py", "ai-harness/route.py")))
+        if not mine:
+            kept.append(hook)
+        elif not installed:
+            kept.append(dict(hook, type="command", command=cmd, timeout=10))
+            installed = True
+    if "hooks" in group:
+        group["hooks"] = kept
+if not installed:
+    groups.append({"hooks": [{"type": "command", "command": cmd, "timeout": 10}]})
+if json.dumps(data, ensure_ascii=False, sort_keys=True) != before:
     if p.exists():
         shutil.copy2(p, p.with_name(p.name + ".bak-" + stamp))
-    groups.append({"hooks": [{"type": "command", "command": cmd, "timeout": 10}]})
     atomic_write(p, json.dumps(data, ensure_ascii=False, indent=2) + "\n")
-    print(f"✓ {p} 加入派单钩子" + (f"（备份 {p.name}.bak-{stamp}）" if p.with_name(p.name + '.bak-' + stamp).exists() else ""))
+    print(f"✓ {p} 合并派单钩子")
+else:
+    print(f"✓ {p} 已有派单钩子")
 PYEOF
 
 # 3. aiw 命令
@@ -243,22 +258,29 @@ if hp.exists():
         sys.exit(f"✗ {hp} 不是合法 JSON（{e}），没有改动。修好后重跑。")
 groups = data.setdefault("hooks", {}).setdefault("UserPromptSubmit", [])
 cmd = 'python3 "$HOME/.claude/aiw/route.py" --hook'
-mine = [h for g in groups for h in g.get("hooks", []) if any(x in h.get("command", "") for x in ("aiw/route.py", "ai-harness/route.py"))]
-stale = [h for h in mine if h.get("command") != cmd or h.get("timeout") != 10]
-if mine and not stale:
-    print(f"✓ {hp} 已有派单钩子")
-elif mine:
-    shutil.copy2(hp, hp.with_name(hp.name + ".bak-" + stamp))
-    for h in stale:
-        h.update(type="command", command=cmd, timeout=10)
-    atomic_write(hp, json.dumps(data, ensure_ascii=False, indent=2) + "\n")
-    print(f"✓ {hp} 刷新旧的派单钩子（备份 {hp.name}.bak-{stamp}）")
-else:
+before = json.dumps(data, ensure_ascii=False, sort_keys=True)
+installed = False
+for group in groups:
+    kept = []
+    for hook in group.get("hooks", []):
+        mine = (isinstance(hook, dict) and isinstance(hook.get("command"), str)
+                and any(x in hook["command"] for x in ("aiw/route.py", "ai-harness/route.py")))
+        if not mine:
+            kept.append(hook)
+        elif not installed:
+            kept.append(dict(hook, type="command", command=cmd, timeout=10))
+            installed = True
+    if "hooks" in group:
+        group["hooks"] = kept
+if not installed:
+    groups.append({"hooks": [{"type": "command", "command": cmd, "timeout": 10}]})
+if json.dumps(data, ensure_ascii=False, sort_keys=True) != before:
     if hp.exists():
         shutil.copy2(hp, hp.with_name(hp.name + ".bak-" + stamp))
-    groups.append({"hooks": [{"type": "command", "command": cmd, "timeout": 10}]})
     atomic_write(hp, json.dumps(data, ensure_ascii=False, indent=2) + "\n")
-    print(f"✓ {hp} 加入派单钩子（Codex 下次启动会请你确认信任这个新钩子）")
+    print(f"✓ {hp} 合并派单钩子")
+else:
+    print(f"✓ {hp} 已有派单钩子")
 PYEOF
 else
   echo "· 未发现 Codex，跳过 Codex 接入"

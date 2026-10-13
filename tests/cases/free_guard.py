@@ -515,7 +515,7 @@ def freecheck_install():
         check(sh(cmd + ['--uninstall'], env=env).returncode == 0 and not path.exists(), '卸载失败')
         check(sh(cmd + ['--uninstall'], env=env).returncode == 0, '重复卸载失败')
         commands = (t / 'launch').read_text().splitlines()
-        check([x.split()[0] for x in commands] == ['bootout', 'bootout', 'bootstrap', 'bootout', 'bootstrap', 'bootout', 'bootout'], str(commands))
+        check([x.split()[0] for x in commands] == ['bootout', 'bootstrap', 'bootout', 'bootout', 'bootstrap', 'bootout', 'bootout'], str(commands))
         check(all(f'gui/{os.getuid()}' in x for x in commands), str(commands))
 
 

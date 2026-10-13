@@ -300,7 +300,7 @@ worker 只接受 `--ro --net --no-fallback --no-findings --allow-nested --attach
 
 `aiw route --check` 同时检查指令里的座位是否存在、panel 名单是否等于默认名单去掉对应主会话座位。
 
-`aiw gc` 默认清理 `STATE/runs/`、`STATE/panels/`、`STATE/maps/` 下 mtime 早于 30 天的直接子目录；`aiw gc 7 --dry-run` 仅列出预计删除数量和空间。跳过软链，保留账本、熔断、计数、路由日志及锁文件；实际删除不可恢复。
+`aiw gc` 默认清理 `STATE/runs/`、`STATE/panels/`、`STATE/maps/` 下 mtime 早于 30 天的直接子目录；`STATE/codex-home/sessions/YYYY/MM/DD/` 则按目录名日期清理早于本机时区截止日的整日目录（截止当天保留，不看 mtime），不触碰 codex-home 下其他文件。`aiw gc 7 --dry-run` 仅列出预计删除数量和空间。跳过软链，保留账本、熔断、计数、路由日志及锁文件；实际删除不可恢复。
 
 所有座位每次实际运行都在 `state/runs/<时间>-<座位>-<pid>/` 留下完整 prompt（含附件）的 `task.txt`、全文 `output.md` 和只保留末尾 200KB 的 `stderr.txt`；CLI 失败、超时、中断也保存已取得的 stdout（可能为空），agent-use 有答复时保存全文，并保留 `result/` 结果目录（含 `status.json`）。账本记录 `run_dir`。中断也归档并记账本（SIGINT 130、SIGTERM 124）。成功且全文写入成功时 stderr 最后一行为 `[ai-worker] 全文：<run_dir>/output.md`；失败且最后一次尝试有运行目录时为 `[ai-worker] 排查：<run_dir>`。成功但 output.md 写入失败时末行给出排查目录并说明全文只在上面的输出里。stdout 不混入路径；归档写入失败只警告，不改变派单结果。
 

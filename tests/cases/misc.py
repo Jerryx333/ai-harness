@@ -244,6 +244,58 @@ def gc_old_directories():
 
 
 
+def gc_codex_sessions():
+    import datetime as dt
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        state = root / 'state'
+        home = state / 'codex-home'
+        cutoff = dt.date.today() - dt.timedelta(days=30)
+        sessions = home / 'sessions'
+
+        def dated(date):
+            path = sessions / date.strftime('%Y/%m/%d')
+            path.mkdir(parents=True, exist_ok=True)
+            (path / 'rollout.jsonl').write_text('session')
+            return path
+
+        old = dated(cutoff - dt.timedelta(days=1))
+        boundary = dated(cutoff)
+        new = dated(dt.date.today())
+        os.utime(new, (0, 0))  # Date, not mtime, determines retention.
+        outside = root / 'outside'
+        outside.mkdir()
+        (outside / 'keep').write_text('keep')
+        old_link = old / 'linked'
+        old_link.symlink_to(outside)
+        links = [sessions / '1900', sessions / '1901/01', sessions / '1902/01/01']
+        for link in links:
+            link.parent.mkdir(parents=True, exist_ok=True)
+            link.symlink_to(outside)
+        invalid = sessions / '1903/02/30'
+        invalid.mkdir(parents=True)
+        (home / 'config.toml').write_text('keep')
+        (home / 'auth.json').symlink_to(outside / 'keep')
+        cmd = [sys.executable, str(REPO / 'gc.py')]
+        env = dict(os.environ, AIW_STATE=str(state))
+        r = sh(cmd + ['--dry-run'], env=env)
+        check(r.returncode == 0 and '预计删除 1 个目录' in r.stdout and old.exists(), 'sessions dry-run failed')
+        r = sh(cmd, env=env)
+        check(r.returncode == 0 and '已删除 1 个目录' in r.stdout and not old.exists(), 'old session not deleted')
+        check(boundary.exists() and new.exists() and invalid.exists() and all(p.is_symlink() for p in links),
+              'session boundary/symlink damaged')
+        check((home / 'config.toml').read_text() == (outside / 'keep').read_text() == 'keep'
+              and (home / 'auth.json').is_symlink(), 'non-session data damaged')
+        for ancestor in (sessions, home):
+            moved = ancestor.with_name(ancestor.name + '-real')
+            ancestor.rename(moved)
+            ancestor.symlink_to(moved)
+            check('已删除 0 个目录' in sh(cmd + ['0'], env=env).stdout, 'followed session ancestor symlink')
+            ancestor.unlink()
+            moved.rename(ancestor)
+
+
+
 def seats_json_canonical():
     # seats.json 保持 json.dumps(indent=2, ensure_ascii=False) 的标准排版：脚本改写不产生整文件重排的噪音 diff
     text = (REPO / "seats.json").read_text(encoding="utf-8")
@@ -371,6 +423,7 @@ CASES = {case.__name__: case for case in (
     unknown_flags,
     substitute_reservations,
     gc_old_directories,
+    gc_codex_sessions,
     seats_json_canonical,
     test_state_contract,
     test_aiw_board_forward,

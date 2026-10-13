@@ -21,6 +21,7 @@ from support import (
     subprocess,
     sys,
     tempfile,
+    wait_until,
     worker_call,
     write_legacy_local,
 )
@@ -57,7 +58,7 @@ def run_dir_persist():
         data = (path / "stderr.txt").read_bytes()
         check(r.returncode == 0 and 0 < len(data) <= 200 * 1024, repr(r))
         check(data.decode("utf-8") == "中" * (200 * 1024 // 3), "中文 stderr 截尾损坏")
-        r, path = run(mode="partial_timeout", timeout="3")
+        r, path = run(mode="partial_timeout", timeout="1")
         check(r.returncode == 124 and r.stdout == "", repr(r))
         check((path / "output.md").read_text() == "before timeout\n", "超时部分输出丢失")
         check((path / "stderr.txt").read_text() == "timeout stderr\n", "超时 stderr 丢失")
@@ -179,7 +180,7 @@ def write_changes_report():
         check("开工前已有改动的文件：1 个文件\n   M dirty" in r.stderr, r.stderr)
         r, row = run()
         check(r.returncode == 0 and row["changed_files"] == 0 and "注意：写任务正常结束" in r.stderr, f"写任务零变化未提示: {r.stderr}")
-        r, row = run("write_slow", timeout="3")
+        r, row = run("write_slow", timeout="1")
         check(r.returncode == 124 and row["changed_files"] == 1 and "  ?? partial" in r.stderr, r.stderr)
         plain = t / "plain"
         plain.mkdir()
@@ -692,13 +693,19 @@ def worker_regression():
         check(any(r.get("model") == "free-model-q" for r in rows), "账本应记录 agent-use 报告的模型")
         check(all("effort" not in r for r in rows if r["actual"] in ("qoder", "workbuddy", "antigravity", "doubao", "opencode", "claude")), "不支持的座位不应记录 effort")
         # 同目录互斥：写任务之间互斥；只读任务不受写锁影响
-        (t / "fakebin" / "codex").write_text('#!/bin/bash\nsleep 4; echo slow\n')
+        ready = t / 'lock-ready'
+        release = t / 'lock-release'
+        env.update(LOCK_READY=str(ready), LOCK_RELEASE=str(release))
+        (t / 'fakebin/codex').write_text(
+            '#!/bin/bash\ntouch "$LOCK_READY"\n'
+            'while [ ! -e "$LOCK_RELEASE" ]; do sleep .02; done\necho slow\n')
         lockp = subprocess.Popen(["bash", aiw, "codex", str(wd), "30", str(pf)], env=env)
-        import time; time.sleep(1)
+        wait_until(ready.exists, '写锁任务未就绪')
         p_ro = run("qoder")
         p_rw = run("codex", extra=())
         active = json.loads((t / "state" / "inflight" / f"{lockp.pid}.json").read_text())
         check(active["effort"] == "medium", f"inflight 应记录默认 medium: {active}")
+        release.touch()
         lockp.wait()
         check(p_ro.returncode == 0, f"只读任务不应被写锁挡住: {p_ro.returncode} {p_ro.stderr}")
         check(p_rw.returncode == 75, f"写任务并发应被锁拒绝 rc=75: {p_rw.returncode} {p_rw.stderr}")
@@ -1093,8 +1100,32 @@ def codex_nested_env_policy():
 
 
 def codex_preflight():
-    for mode in ('locked', 'unlock_hint', 'ok', 'missing_config', 'unrelated_config', 'missing_binary'):
-        codex_preflight_case(mode)
+    codex_preflight_case('locked')
+
+
+
+def codex_preflight_unlock_hint():
+    codex_preflight_case('unlock_hint')
+
+
+
+def codex_preflight_optional():
+    codex_preflight_case('ok')
+
+
+
+def codex_preflight_missing_config():
+    codex_preflight_case('missing_config')
+
+
+
+def codex_preflight_unrelated_config():
+    codex_preflight_case('unrelated_config')
+
+
+
+def codex_preflight_missing_binary():
+    codex_preflight_case('missing_binary')
 
 
 
@@ -1171,7 +1202,7 @@ time.sleep(300)
         (home / 'scripts/run_agent.py').write_text(script)
         env = dict(os.environ, AGENT_USE_HOME=str(home), FAKE_PID=str(pidfile), AIW_PANEL_GRACE='0')
         try:
-            r = sh([sys.executable, str(REPO / 'panel.py'), str(t), '3', '测试', 'qoder'], env=env)
+            r = sh([sys.executable, str(REPO / 'panel.py'), str(t), '1', '测试', 'qoder'], env=env)
             check(r.returncode == 1 and '会诊外层超时' in r.stdout, f'未触发外层超时: {r.stdout}{r.stderr}')
             pid = int(pidfile.read_text())
             for _ in range(50):
@@ -1214,7 +1245,7 @@ time.sleep(300)
         child = "import signal,time; signal.signal(signal.SIGTERM, signal.SIG_IGN); time.sleep(300)"
         parent = ("import subprocess,os,time; p=subprocess.Popen([" + repr(sys.executable) + ", '-c', " + repr(child)
                   + "],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL); open(os.environ['FAKE_PID'],'w').write(str(p.pid)); time.sleep(300)")
-        code = "import ai_worker; ai_worker.run_group([" + repr(sys.executable) + ", '-c', " + repr(parent) + "], 3)"
+        code = "import ai_worker; ai_worker.run_group([" + repr(sys.executable) + ", '-c', " + repr(parent) + "], 1)"
         r = sh([sys.executable, '-c', code], env=env, cwd=REPO)
         check(r.returncode != 0 and 'TimeoutExpired' in r.stderr, 'run_group 未超时')
         pid = int(pidfile.read_text())
@@ -1409,6 +1440,11 @@ CASES = {case.__name__: case for case in (
     codex_locked_runtime,
     codex_nested_env_policy,
     codex_preflight,
+    codex_preflight_unlock_hint,
+    codex_preflight_optional,
+    codex_preflight_missing_config,
+    codex_preflight_unrelated_config,
+    codex_preflight_missing_binary,
     codex_preflight_exceptions,
     provider_write_failure,
     process_cleanup,

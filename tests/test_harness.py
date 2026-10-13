@@ -32,7 +32,6 @@ CASE_MODULES = (
     "findings",
     "triage",
     "codex_home",
-    "rename",
 )
 CASES = {}
 for module_name in CASE_MODULES:

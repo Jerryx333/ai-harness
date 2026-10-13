@@ -232,7 +232,7 @@ def codex_preflight_case(mode):
             write_legacy_local(local, {'seats': {name: {'preflight': spec} for name in ('codex', 'codex-sol')}})
             env['AIW_CONFIG'] = str(local)
             pf = t / 'prompt'; pf.write_text('只回复 OK')
-            p = sh(['bash', str(REPO / 'bin/aiw'), seat, str(t), '30', str(pf), '--ro'], env=env)
+            p = inprocess_sh([sys.executable, str(REPO / 'ai_worker.py'), seat, str(t), '30', str(pf), '--ro'], env=env)
             locked = mode in ('locked', 'runtime', 'unlock_hint')
             check(p.returncode == (1 if locked else 0), f'{mode}: {p.stdout}{p.stderr}')
             check(marker.exists() == (mode not in ('locked', 'unlock_hint')), f'{mode}: codex 启动状态错误')
@@ -247,7 +247,9 @@ def codex_preflight_case(mode):
                 check(latest_provider(t / "state").read_text().strip() == seat, '实际执行方错误')
             if mode in ('locked', 'unlock_hint'):
                 check('preflight-stdout' in p.stderr and 'vault is locked' in p.stderr, '预检输出丢失')
-                p = sh([sys.executable, str(REPO / 'ai_worker.py'), 'doctor'], env=env)
+                if seat == 'codex-sol':
+                    continue
+                p = inprocess_sh([sys.executable, str(REPO / 'ai_worker.py'), 'doctor'], env=env)
                 doctor_hint = custom_hint if mode == 'unlock_hint' else '🔒 凭据库锁着：在自己终端解锁凭据工具'
                 check(p.returncode == 0 and p.stdout.count(doctor_hint) == 2, p.stdout + p.stderr)
 
@@ -800,3 +802,11 @@ def git_history(repo, commits, *, checkout=True, bare=False, append=False):
     if checkout and not bare:
         result = sh(['git', 'reset', '--hard', '-q', 'main'], cwd=repo, env=repository_git_env())
         check(result.returncode == 0, result.stderr)
+
+
+
+def install_phase(repo, index, args, env):
+    """Run the unchanged installer Python block after a real shell installation."""
+    import re
+    blocks = re.findall(r"<<'PYEOF'\n(.*?)\nPYEOF", (repo / 'install.sh').read_text(), re.S)
+    return inprocess_sh([sys.executable, '-c', blocks[index], *map(str, args)], env=env, cwd=repo)

@@ -467,24 +467,26 @@ def panel():
         aiw = str(REPO / "bin" / "aiw")
         p = sh(["bash", aiw, "panel", str(t), "30", str(pf)], env=env)
         check(p.returncode == 0, f"默认座位都答应 rc=0: {p.stdout}{p.stderr}")
-        d = sorted((t / "state" / "panels").iterdir())[-1]
+        d = max((t / "state" / "panels").iterdir(), key=lambda p: p.stat().st_mtime_ns)
         for s in ("workbuddy", "workbuddy-hy4", "qoder", "opencode"):
             check((d / f"{s}.md").read_text() == ("workbuddy ok" if s == "workbuddy-hy4" else f"{s} ok") and (d / f"{s}.provider").read_text().strip() == s, f"{s} 产出或 provider 不对")
         check("codex ok" in (d / "codex-sol.md").read_text() and (d / "codex-sol.provider").read_text().strip() == "codex-sol", "会诊应包含 codex-sol")
         check(not (t / ".provider").exists(), "panel 不应写共享 .provider")
         # 一家挂了：不顶替，记为缺席；两家仍算会诊
         p = sh(["bash", aiw, "panel", str(t), "30", str(pf)], env=dict(env, FAKE_AU_QODER="auth"))
-        d = sorted((t / "state" / "panels").iterdir())[-1]
+        d = max((t / "state" / "panels").iterdir(), key=lambda p: p.stat().st_mtime_ns)
         summ = json.loads((d / "summary.json").read_text())
         check(p.returncode == 0 and summ["answered"] == ["workbuddy", "workbuddy-hy4", "opencode", "codex-sol"], f"一家缺席不应被顶替: {summ}")
         # Codex 当主会话：不问 codex-sol，改问 claude；Claude Code 里（CLAUDECODE=1）自动不问 claude
         p = sh(["bash", aiw, "panel", str(t), "30", str(pf)], env=dict(env, AIW_MAIN="codex"))
-        summ = json.loads((sorted((t / "state" / "panels").iterdir())[-1] / "summary.json").read_text())
+        d = max((t / "state" / "panels").iterdir(), key=lambda p: p.stat().st_mtime_ns)
+        summ = json.loads((d / "summary.json").read_text())
         check([x["seat"] for x in summ["seats"]] == ["workbuddy", "workbuddy-hy4", "qoder", "opencode", "claude"], f"codex 主会话会诊座位不对: {summ}")
-        check("nested=1" in (sorted((t / "state" / "panels").iterdir())[-1] / "claude.md").read_text(), "外包出去的 claude 应带 AIW_NESTED=1")
+        check("nested=1" in (d / "claude.md").read_text(), "外包出去的 claude 应带 AIW_NESTED=1")
         e2 = {k: v for k, v in env.items() if k != "AIW_MAIN"}; e2["CLAUDECODE"] = "1"
         p = sh(["bash", aiw, "panel", str(t), "30", str(pf)], env=e2)
-        summ = json.loads((sorted((t / "state" / "panels").iterdir())[-1] / "summary.json").read_text())
+        d = max((t / "state" / "panels").iterdir(), key=lambda p: p.stat().st_mtime_ns)
+        summ = json.loads((d / "summary.json").read_text())
         check("claude" not in [x["seat"] for x in summ["seats"]] and "codex-sol" in [x["seat"] for x in summ["seats"]], f"Claude 主会话不应问 claude: {summ}")
         # 重复座位拒绝
         p = sh(["bash", aiw, "panel", str(t), "30", str(pf), "qoder", "qoder"], env=env)

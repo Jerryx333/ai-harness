@@ -600,7 +600,8 @@ from pathlib import Path
 p = Path(os.environ['FAKE_DISCORD_LOG'])
 with p.open('a') as f: f.write(sys.argv[-1] + '\\n')
 if sys.argv[-1] == 'second':
-    time.sleep(4)
+    release = Path(os.environ['FAKE_DISCORD_LOG']).with_suffix('.release')
+    while not release.exists(): time.sleep(.02)
     sys.exit(0)
 ''')
         p = subprocess.Popen([sys.executable, '-c', 'import ai_worker as w; w.retry_notifications()'], cwd=REPO, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
@@ -614,6 +615,7 @@ if sys.argv[-1] == 'second':
             check(r.returncode == 0 and time.monotonic() - start < 2, '发送持全局锁')
             r = sh([sys.executable, '-c', "import ai_worker as w\nwith w.state_lock(): w.queue_notification('second')"], cwd=REPO, env=env)
             check(r.returncode == 0, r.stderr)
+            (t / 'discord.release').touch()
             p.communicate(timeout=6)
             rows = [json.loads(x) for x in (t / 'state/notify-pending.jsonl').read_text().splitlines()]
             check(len(rows) == 1 and rows[0]['message'] == 'second', '按 id 删除误删新入队消息')

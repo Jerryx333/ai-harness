@@ -1,5 +1,7 @@
 # aiw 使用指南
 
+先看 [README](../README.md) 了解它解决什么问题；本文讲安装细节、工作原理和定制。
+
 ## 角色与单家安装
 
 使用 `aiw write|review|draft <workdir> <timeout> <prompt>`；角色解析到哪个座位见 `aiw doctor`。
@@ -20,8 +22,6 @@ claude 与 claude-write 均固定 `--model opus`，不跟随用户默认模型�
 
 panel 默认名单去掉主会话自身后过滤不可用座位，stderr 列原因；不足两家时不派单、rc=1，提示「会诊需要至少两家可用座位；单家安装可接入 agent-use 文本座位」。显式名单同样过滤不可用座位并列原因；显式单家仍展示结果、rc=1。map_default 默认为 draft，也可配置角色；`--seat` 仍可点名座位。
 
-
-先看 [README](../README.md) 了解它解决什么问题；本文讲安装细节、工作原理和定制。
 
 ## 安装做了什么
 
@@ -57,7 +57,7 @@ aiw 帮 Claude Code 或 Codex 主会话把活分给不同模型：改代码用 w
 产出 → 主会话核对文件、证据和测试
 ```
 
-产出都是**待审稿**。成功时，stderr 的「实际执行方」行报告实际座位及 `provider` 文件的实际路径，可核对顶替。默认写在 run 目录；设置 `AIW_PROVIDER_FILE` 时写到指定路径。Git 仓库根目录与子目录的写单共用一把锁。Git 写单开工前保存 `baseline-status.txt`，结束时分列开工前已有改动与本单期间新出现变化的文件。默认有 `codex`、`codex-sol`、`claude`、`claude-write`，顶替链为空，需本地配置。文本座位需显式用 `--attach 文件` 才能看到仓库材料。直接派单的附件按实际座位分发：CLI 座位只收通过安全校验的文件清单（相对路径、字节数、SHA256 前 12 位），在工作目录自行读取；其它座位收内联全文。两种方式均保留 200KB 上限及安全检查；直接派单到文本座位时，附件超过 30KB 只警告一次、不拒绝。panel 预检读取附件一次，将全文渲染进共用 `prompt.md` 快照，各家（含 CLI 座位）收到同一份全文；附件合计超过 30KB 在预检时提醒一次，全 CLI 会诊也适用。附件内容会原样发给对应座位背后的模型服务；安全检查只拦凭据类文件、越界路径和二进制等，不识别正文里的密码、密钥或私人数据，发送前请自行确认。
+产出都是**待审稿**，主会话要核对实际执行方和改动。附件发送方式与运行记录见[进阶细节](#进阶细节)。
 
 ## 接入更多模型（可选）
 
@@ -107,7 +107,7 @@ aiw 帮 Claude Code 或 Codex 主会话把活分给不同模型：改代码用 w
 
 冲突时以个人规则为准。新增个人文件或修改 Codex 规则后重跑 `install.sh`。项目路由放在 `.claude/router-rules.json`，优先级是项目 > 本地 > 公开。座位配置的对象递归合并，列表整体替换。
 
-CLI 座位可选 `adapter`：缺省或 `null` 为普通 CLI；目前字符串仅允许 `"codex"`，且仅用于 `kind=cli`。本地 `"adapter": null` 可清除公开配置继承值，部分字段覆盖则继续继承。升级时，本地覆盖会继承公开配置的 adapter；若将 `codex`/`codex-sol` 改为非 Codex 的 CLI 或 `agent_use`，须显式写 `"adapter": null`；继续使用 Codex 时，`argv_rw`/`argv_ro` 须保持 exec 形状。Codex 适配器要求 `argv_rw`、`argv_ro` 的 `argv[0]` 为 `"{bin}"`，第二项为 `"exec"`，各恰好含一个 `"--sandbox"`，`argv_ro` 其后必须为 `"read-only"`，`argv_rw` 可为 `"read-only"` 或 `"workspace-write"`。它启用沙箱/派单提醒、内层 shell 防嵌套、linked worktree 可写根、写单 `--net`、独立 CODEX_HOME 和 token 记账；行为按实际执行座位判断。新增 `codex-high` 等别名时，在本地 `seats` 中复制公开 `codex` 座位完整配置（含 argv），保留 `"adapter": "codex"`，再调整 `effort` 等字段；座位名本身不会启用适配器。看起来是 Codex 命令却未声明 adapter 时，doctor 只警告。
+日常只需调整角色候选、顶替链和会诊名单；可直接从[最佳实践的推荐配置](best-practices.zh-CN.md#推荐配置)开始。自定义 CLI 的 adapter 与 argv 约束见[进阶细节](#进阶细节)。
 
 ## 多台机器
 
@@ -121,3 +121,13 @@ CLI 座位可选 `adapter`：缺省或 `null` 为普通 CLI；目前字符串仅
 - 从 `~/.claude/settings.json` 和已接入时的 `~/.codex/hooks.json` 中，仅删除命令含 `aiw/route.py` 的钩子，保持 JSON 合法；从 `~/.codex/AGENTS.md` 删除 `aiw:begin` 到 `aiw:end` 的整个标记块。
 - 删除 `~/.local/bin/aiw` 软链；若安装时添加过，从 `~/.zshrc` 删除 `# aiw: on PATH` 及其 PATH 设置。
 - 停用另行安装的插件钩子。不再需要时才删除仓库（含本地 `state/`）和本地 aiw 配置。也可用 `.bak-*` 恢复代替手改，但须确认不会丢掉后续修改；命令软链没有备份。
+
+## 进阶细节
+
+### 附件与运行记录
+
+产出都是**待审稿**。成功时，stderr 的「实际执行方」行报告实际座位及 `provider` 文件的实际路径，可核对顶替。默认写在 run 目录；设置 `AIW_PROVIDER_FILE` 时写到指定路径。Git 仓库根目录与子目录的写单共用一把锁。Git 写单开工前保存 `baseline-status.txt`，结束时分列开工前已有改动与本单期间新出现变化的文件。默认有 `codex`、`codex-sol`、`claude`、`claude-write`，顶替链为空，需本地配置。文本座位需显式用 `--attach 文件` 才能看到仓库材料。直接派单的附件按实际座位分发：CLI 座位只收通过安全校验的文件清单（相对路径、字节数、SHA256 前 12 位），在工作目录自行读取；其它座位收内联全文。两种方式均保留 200KB 上限及安全检查；直接派单到文本座位时，附件超过 30KB 只警告一次、不拒绝。panel 预检读取附件一次，将全文渲染进共用 `prompt.md` 快照，各家（含 CLI 座位）收到同一份全文；附件合计超过 30KB 在预检时提醒一次，全 CLI 会诊也适用。附件内容会原样发给对应座位背后的模型服务；安全检查只拦凭据类文件、越界路径和二进制等，不识别正文里的密码、密钥或私人数据，发送前请自行确认。
+
+### 自定义 CLI 适配器
+
+CLI 座位可选 `adapter`：缺省或 `null` 为普通 CLI；目前字符串仅允许 `"codex"`，且仅用于 `kind=cli`。本地 `"adapter": null` 可清除公开配置继承值，部分字段覆盖则继续继承。升级时，本地覆盖会继承公开配置的 adapter；若将 `codex`/`codex-sol` 改为非 Codex 的 CLI 或 `agent_use`，须显式写 `"adapter": null`；继续使用 Codex 时，`argv_rw`/`argv_ro` 须保持 exec 形状。Codex 适配器要求 `argv_rw`、`argv_ro` 的 `argv[0]` 为 `"{bin}"`，第二项为 `"exec"`，各恰好含一个 `"--sandbox"`，`argv_ro` 其后必须为 `"read-only"`，`argv_rw` 可为 `"read-only"` 或 `"workspace-write"`。它启用沙箱/派单提醒、内层 shell 防嵌套、linked worktree 可写根、写单 `--net`、独立 CODEX_HOME 和 token 记账；行为按实际执行座位判断。新增 `codex-high` 等别名时，在本地 `seats` 中复制公开 `codex` 座位完整配置（含 argv），保留 `"adapter": "codex"`，再调整 `effort` 等字段；座位名本身不会启用适配器。看起来是 Codex 命令却未声明 adapter 时，doctor 只警告。

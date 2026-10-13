@@ -1,0 +1,98 @@
+{
+  "seats": {
+    "opencode": {
+      "kind": "agent_use",
+      "provider": "opencode",
+      "model": "",
+      "label": "OpenCode optional free text seat",
+      "disabled": true,
+      "free_only": true,
+      "free_guard": true,
+      "max_concurrency": 1
+    }
+  },
+  "roles": {
+    "claude": {
+      "write": [
+        "codex",
+        "claude-write"
+      ],
+      "review": [
+        "codex-sol",
+        "claude",
+        "opencode"
+      ],
+      "draft": [
+        "opencode",
+        "codex-sol",
+        "claude"
+      ]
+    },
+    "codex": {
+      "write": [],
+      "review": [
+        "claude",
+        "codex-sol",
+        "opencode"
+      ],
+      "draft": [
+        "opencode",
+        "codex-sol",
+        "claude"
+      ]
+    },
+    "default": {
+      "write": [
+        "codex",
+        "claude-write"
+      ],
+      "review": [
+        "codex-sol",
+        "claude",
+        "opencode"
+      ],
+      "draft": [
+        "opencode",
+        "codex-sol",
+        "claude"
+      ]
+    }
+  },
+  "fallback": {
+    "codex": [
+      "claude-write"
+    ],
+    "claude-write": [
+      "codex"
+    ],
+    "codex-sol": [
+      "claude"
+    ],
+    "claude": [
+      "codex-sol"
+    ],
+    "opencode": [
+      "codex-sol",
+      "claude"
+    ]
+  },
+  "panel_default": [
+    "codex-sol",
+    "claude",
+    "opencode"
+  ],
+  "panel_free": [
+    "opencode"
+  ],
+  "self_seats": {
+    "claude": [
+      "claude",
+      "claude-write"
+    ],
+    "codex": [
+      "codex",
+      "codex-sol"
+    ]
+  },
+  "map_default": "draft"
+}

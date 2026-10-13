@@ -1,0 +1,23 @@
+name: 功能建议 / Feature request
+description: 从使用场景说明需求 / Explain a need through a usage scenario.
+title: "[Feature] "
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: 使用场景和问题 / Scenario and problem
+      description: 现在什么事做起来困难？不要附私人数据 / What is difficult today? Do not include private data.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 希望得到的效果 / Desired outcome
+      description: 给一个前后行为例子 / Give an example of current and desired behavior.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: 替代方案与验收 / Alternatives and verification
+      description: 已试过什么，怎样证明需求满足？ / What have you tried, and how would you verify success?

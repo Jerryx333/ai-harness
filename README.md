@@ -84,7 +84,6 @@
 
 4. 之后照常用 Claude Code 或 Codex。遇到适合派出去的活，它会提示该交给谁，主会话决定方案并验收。
 
-从旧名 ai-harness 升级见[使用指南](docs/guide.zh-CN.md#从旧版-ai-harness-升级)。
 
 ## 常用命令
 

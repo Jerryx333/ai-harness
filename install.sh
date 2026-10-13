@@ -34,7 +34,6 @@ done
 H="$(cd -P "$(dirname "$src")" && pwd)"
 CLAUDE_DIR="${HOME}/.claude"
 STAMP="$(date +%Y%m%d-%H%M%S)"
-source "${H}/env_compat.sh"
 PY="${AIW_PYTHON:-python3}"
 
 command -v "$PY" >/dev/null || { echo "需要 python3" >&2; exit 1; }
@@ -92,7 +91,7 @@ md, personal, stamp = Path(sys.argv[1]), Path(sys.argv[2]), sys.argv[3]
 IMPORT_LINE = '@~/.claude/aiw/CLAUDE.md'
 PERSONAL_LINE = '@~/.config/aiw/CLAUDE.personal.md'
 old = md.read_text(encoding="utf-8") if md.exists() else ""
-new = old.replace('@~/.claude/ai-harness/CLAUDE.md', IMPORT_LINE)
+new = old
 # Collapse duplicate project imports, preserving the first position.
 seen = False
 lines = []
@@ -151,7 +150,7 @@ if sys.argv[3] == "plugin":
         items = group.get("hooks", [])
         kept = [h for h in items if not (
             isinstance(h, dict) and isinstance(h.get("command"), str)
-            and any(x in h["command"] for x in ("aiw/route.py", "ai-harness/route.py")))]
+            and 'aiw/route.py' in h["command"])]
         if len(kept) == len(items):
             kept_groups.append(group)
         else:
@@ -177,7 +176,7 @@ for group in groups:
     kept = []
     for hook in group.get("hooks", []):
         mine = (isinstance(hook, dict) and isinstance(hook.get("command"), str)
-                and any(x in hook["command"] for x in ("aiw/route.py", "ai-harness/route.py")))
+                and 'aiw/route.py' in hook["command"])
         if not mine:
             kept.append(hook)
         elif not installed:
@@ -207,7 +206,7 @@ from pathlib import Path
 p, stamp = Path(sys.argv[1]), sys.argv[2]
 old = p.read_text() if p.exists() else ''
 mark = '# aiw: on PATH'
-new = old.replace('# ai-harness: aiw on PATH', mark)
+new = old
 if mark not in new.splitlines() and str(Path.home() / '.local/bin') not in sys.argv[3].split(':'):
     new += '\n' + mark + '\nexport PATH="$HOME/.local/bin:$PATH"\n'
 if new != old:
@@ -238,10 +237,8 @@ elif personal.is_symlink():
 block = f"{BEGIN}\n{content}\n{END}\n"
 md = d / "AGENTS.md"
 old = md.read_text(encoding="utf-8") if md.exists() else ""
-# Normalize legacy delimiters before refreshing the whole block.
-normalized = old.replace('<!-- ai-harness:begin', '<!-- aiw:begin').replace('<!-- ai-harness:end -->', END)
-if BEGIN in normalized and END in normalized:
-    head, rest = normalized.split(BEGIN, 1)
+if BEGIN in old and END in old:
+    head, rest = old.split(BEGIN, 1)
     new = head + block + rest.split(END, 1)[1].lstrip("\n")
 else:
     new = old + ("\n" if old and not old.endswith("\n") else "") + ("\n" if old else "") + block
@@ -268,7 +265,7 @@ for group in groups:
     kept = []
     for hook in group.get("hooks", []):
         mine = (isinstance(hook, dict) and isinstance(hook.get("command"), str)
-                and any(x in hook["command"] for x in ("aiw/route.py", "ai-harness/route.py")))
+                and 'aiw/route.py' in hook["command"])
         if not mine:
             kept.append(hook)
         elif not installed:

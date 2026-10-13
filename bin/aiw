@@ -31,7 +31,6 @@ while [ -L "$src" ]; do
   case "$src" in /*) ;; *) src="${dir}/${src}" ;; esac
 done
 H="$(cd -P "$(dirname "$src")/.." && pwd)"
-source "${H}/env_compat.sh"
 PY="${AIW_PYTHON:-python3}"
 
 cmd="${1:-help}"

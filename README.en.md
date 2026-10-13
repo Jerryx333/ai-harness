@@ -84,7 +84,6 @@ You need macOS (the only tested OS), Python 3, and logged-in Claude Code and/or 
 
 4. Use Claude Code or Codex as usual. When work is suitable to hand off, it suggests who should take it; the main conversation plans and verifies.
 
-Upgrading from the old name ai-harness: see the [guide](docs/guide.md#upgrade-from-ai-harness).
 
 ## Common commands
 

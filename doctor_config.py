@@ -79,7 +79,7 @@ def plugin_hook(home):
         return []
     matches = []
     for name, active in enabled.items():
-        if not name.startswith(('aiw@', 'ai-harness@')) or active is not True:
+        if not name.startswith('aiw@') or active is not True:
             continue
         records = plugins.get(name, [])
         if not isinstance(records, list):
@@ -100,7 +100,7 @@ def plugin_hook(home):
                         commands.append(hook.get('type') == 'command' and
                                         isinstance(command, str) and
                                         any(entry in command for entry in
-                                            ('scripts/route-hook.sh', 'aiw/route.py', 'ai-harness/route.py')))
+                                            ('scripts/route-hook.sh', 'aiw/route.py')))
                 if any(commands):
                     matches.append(name)
                     break
@@ -120,9 +120,7 @@ def hooks(path, name, plugins=()):
         if not isinstance(entries, list):
             raise ValueError('钩子格式错误')
         for i, hook in enumerate(entries):
-            if any(x in hook.get('command', '') for x in ('aiw/route.py', 'ai-harness/route.py')):
-                if 'ai-harness/route.py' in hook.get('command', ''):
-                    warn(name, '旧钩子命令 ai-harness/route.py')
+            if 'aiw/route.py' in hook.get('command', ''):
                 mine.append((g, i, hook))
     plugin_names = '、'.join(plugins)
     if plugins and mine:
@@ -144,8 +142,6 @@ def hooks(path, name, plugins=()):
 
 def import_line(home):
     text = (home / '.claude/CLAUDE.md').read_text(encoding='utf-8')
-    if '@~/.claude/ai-harness/CLAUDE.md' in text.splitlines():
-        warn('CLAUDE.md 引入', '旧引入行 @~/.claude/ai-harness/CLAUDE.md')
     if IMPORT_LINE in text.splitlines():
         print('  ✓ CLAUDE.md 引入')
     else:
@@ -174,8 +170,6 @@ def link(path, expected, name):
 
 def agents(home, repo):
     text = (home / '.codex/AGENTS.md').read_text(encoding='utf-8')
-    if '<!-- ai-harness:begin' in text or '<!-- ai-harness:end -->' in text:
-        warn('Codex AGENTS 标记块', '旧 ai-harness 标记块')
     content = (repo / 'AGENTS.harness.md').read_text(encoding='utf-8').strip()
     personal = home / '.config/aiw/AGENTS.personal.md'
     if personal.exists():
@@ -289,17 +283,8 @@ def check_config(repo, include_local=True):
             print('  ✓ 安装链接 aiw')
         else:
             warn('安装链接 aiw', f'~/.claude/aiw 指向另一份 checkout：{installation.resolve()}，请先处理')
-    elif (home / '.claude/ai-harness').exists():
-        warn('安装链接 aiw', '旧安装路径，重跑 install.sh 迁移')
     else:
         warn('安装链接 aiw', '安装路径不存在')
-    from env_compat import LEGACY
-    for new, old in LEGACY.items():
-        if old in os.environ:
-            warn('环境变量', f'旧变量 {old}，请改用 {new}')
-    directory = Path(os.environ.get('AIW_LAUNCH_AGENTS_DIR', str(home / 'Library/LaunchAgents')))
-    if (directory / 'com.ai-harness.freecheck.plist').exists():
-        warn('LaunchAgent', '旧 label com.ai-harness.freecheck', '重跑 install.sh；再运行 aiw freecheck --install 迁移定时任务')
     for rel, target, name in (('.local/bin/aiw', repo / 'bin/aiw', '安装链接 aiw'),):
         safe(name, lambda: link(home / rel, target, name))
     hp = home / '.codex/hooks.json'

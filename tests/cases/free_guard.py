@@ -493,11 +493,7 @@ def freecheck_install():
         env.update(AIW_ROUTER_RULES=str(t / 'rules.json'), AGENT_USE_ERRAND_HOME=str(t / 'errands'),
                    AGENT_USE_CONFIG=str(t / 'registry.json'), XDG_CONFIG_HOME=str(t / 'xdg'))
         cmd = [str(REPO / 'bin/aiw'), 'freecheck']
-        legacy = t / 'agents/com.ai-harness.freecheck.plist'
-        legacy.parent.mkdir(parents=True)
-        legacy.write_bytes(plistlib.dumps({'Label': 'com.ai-harness.freecheck'}))
         r = sh(cmd + ['--install'], env=env)
-        check(not legacy.exists() and str(legacy) in (t / 'launch').read_text(), 'old LaunchAgent not unloaded/deleted')
         check(r.returncode == 0, repr(r))
         path = t / 'agents/com.aiw.freecheck.plist'
         data = plistlib.loads(path.read_bytes())
@@ -515,7 +511,7 @@ def freecheck_install():
         check(sh(cmd + ['--uninstall'], env=env).returncode == 0 and not path.exists(), '卸载失败')
         check(sh(cmd + ['--uninstall'], env=env).returncode == 0, '重复卸载失败')
         commands = (t / 'launch').read_text().splitlines()
-        check([x.split()[0] for x in commands] == ['bootout', 'bootstrap', 'bootout', 'bootout', 'bootstrap', 'bootout', 'bootout'], str(commands))
+        check([x.split()[0] for x in commands] == ['bootout', 'bootstrap', 'bootout', 'bootstrap', 'bootout', 'bootout'], str(commands))
         check(all(f'gui/{os.getuid()}' in x for x in commands), str(commands))
 
 

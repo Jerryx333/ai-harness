@@ -21,10 +21,6 @@ def install(uninstall=False):
     directory = Path(os.environ.get('AIW_LAUNCH_AGENTS_DIR', str(Path.home() / 'Library/LaunchAgents'))).expanduser()
     path = directory / (LABEL + '.plist')
     domain = f'gui/{os.getuid()}'
-    legacy = directory / 'com.ai-harness.freecheck.plist'
-    if uninstall and legacy.exists():
-        subprocess.run(['launchctl', 'bootout', domain, str(legacy)], capture_output=True, check=False)
-        legacy.unlink()
     if not uninstall:
         directory.mkdir(parents=True, exist_ok=True)
         w.STATE.mkdir(parents=True, exist_ok=True)
@@ -49,9 +45,6 @@ def install(uninstall=False):
         print(f'已卸载：{path}')
     else:
         subprocess.run(['launchctl', 'bootstrap', domain, str(path)], check=True, capture_output=True)
-        if legacy.exists():
-            subprocess.run(['launchctl', 'bootout', domain, str(legacy)], capture_output=True, check=False)
-            legacy.unlink()
         print(f'已安装每日 09:30 检查：{path}')
     return 0
 

@@ -92,6 +92,10 @@ Codex/Claude seats use your own accounts and their billing. `free_only` labels a
 
 Clone the same public repository on each machine. Keep settings/rules in your own private repository; symlink into `~/.config/aiw/`. Compare `aiw doctor --fingerprint` on both; login and runtime state stay local.
 
+## Upgrade from ai-harness
+
+Keep the old directory or symlink and rerun `install.sh` to migrate imports, hooks, Codex blocks and PATH. `AIW_STATE`, `AIW_PYTHON`, and `AIW_NO_CODEX` take precedence over `AI_HARNESS_STATE`, `AI_HARNESS_PYTHON`, and `AI_HARNESS_NO_CODEX`; conflicting values warn once. Run `aiw freecheck --install` separately to migrate the scheduled job.
+
 ## Uninstall
 
 No uninstall option. Undo these changes; keep unrelated settings:

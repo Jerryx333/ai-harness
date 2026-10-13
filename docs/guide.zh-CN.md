@@ -90,6 +90,10 @@ aiw 帮 Claude Code 或 Codex 主会话把活分给不同模型：改代码派 C
 
 每台都克隆同一个公开仓库。本地配置和个人规则放进自己的私有仓库，软链到 `~/.config/aiw/`。比较两台的 `aiw doctor --fingerprint`；登录和运行状态各机独立。
 
+## 从旧版 ai-harness 升级
+
+保留旧目录或软链，重跑 `install.sh` 即可迁移引入、钩子、Codex 标记与 PATH。`AIW_STATE`、`AIW_PYTHON`、`AIW_NO_CODEX` 优先于旧 `AI_HARNESS_STATE`、`AI_HARNESS_PYTHON`、`AI_HARNESS_NO_CODEX`；冲突警告一次。定时任务另运行 `aiw freecheck --install` 迁移旧 label。
+
 ## 卸载
 
 无卸载选项。手动撤销以下改动，保留其他设置：

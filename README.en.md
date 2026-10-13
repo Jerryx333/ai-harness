@@ -2,7 +2,7 @@
 
 [中文](README.md) | [English](README.en.md)
 
-Let your main Claude Code / Codex model focus on planning and checking results. Hand off routine work such as reading code, running commands and drafting summaries to Codex or cheaper models you already have available. Install it and start using it, with no service to run or dependencies to install.
+Let your main Claude Code / Codex model focus on planning and checking results. Hand off routine work such as reading code, running commands and drafting summaries to Codex or cheaper models you already have available. Install it and start using it, with no service to run or dependencies to install. It works best if you use both Claude Code and Codex.
 
 ## What problems does it solve?
 
@@ -13,7 +13,7 @@ Let your main Claude Code / Codex model focus on planning and checking results. 
 ## What changes after installation?
 
 - Your main model's allowance goes further: hand off routine work and spend it on planning and checking results.
-- The main conversation stays cleaner: assigned work reads files and runs commands elsewhere; the main conversation receives the results.
+- Less clutter in the main conversation: assigned work reads files and runs commands elsewhere. Those file contents and command output stay out of the main conversation; it receives only the results.
 - You get another review: different models can write and review code; `aiw panel` collects independent opinions from several models.
 - Keep your usual workflow: use Claude Code or Codex as usual. When work is suitable to hand off, it suggests who should take it; the main conversation decides whether to assign it.
 - If a model is unavailable, it can automatically try the next one so work can continue. By default there is only one choice per task; set the alternatives and their order in [local configuration](docs/guide.md#customize).
@@ -26,13 +26,23 @@ If you have other subscriptions, local models or free models and want them to sh
 - **An outage or rate limit stops the work.** agent-use automatically tries the next model in your chosen order so work can continue.
 - **Can you trust what another model returns?** Original responses and execution records are saved every time. All results are drafts for the main conversation to check before accepting them.
 
-See the [setup steps](docs/guide.md#add-more-models-optional).
+Just want common CLIs such as Codex, Claude Code and OpenCode? [agent-use-adapters](https://github.com/Jerryx333/agent-use-adapters) has ready-made adapters. Add one flag when installing aiw to set them up too, including a seat for OpenCode's free models: `~/.claude/aiw/install.sh --with-agent-use`. Manual steps are in the [guide](docs/guide.md#add-more-models-optional).
 
 ## Questions you may have
 
 **Will quality suffer?** All assigned work is a draft for review. The main conversation checks files, evidence and test results before accepting it.
 
 **Does assigning work also use the main model's tokens?** Yes: writing instructions, reading results and checking them all use tokens. Very small tasks may not be worth handing off, so it only suggests assignments; it does not make them automatically. To see your actual usage, use `aiw tokens` (local Claude Code main-session usage and context breakdown) and `aiw weekly` (assignment success rates and token totals).
+
+**How long does an assignment take?** It depends on the work. Medians from one week on the author's machine:
+
+- Code changes: about 4 minutes. Codex reads code, edits files and runs tests; it is doing real work.
+- Read-only reviews and searching a repository: about 2–3 minutes.
+- Text only (drafts, summaries, second opinions): about 20 seconds with free models, about 2 minutes with Claude.
+
+The main conversation can keep working meanwhile. For small, urgent work, doing it yourself is faster.
+
+**Will it mess up my repository?** Code-change work runs in the Codex sandbox: it can write only to the project directory and has no network by default. When it finishes, it lists the changed files. Changes stay in your working tree for the main conversation to review before committing. Read-only work cannot change files.
 
 **Does it cost money?** Codex and Claude use your own accounts and their billing. Connected free models can be marked for free-tier use only and automatically disabled when charging is detected. Detection happens after a call, so this does not guarantee zero cost.
 
@@ -72,9 +82,9 @@ You need macOS (the only tested OS), Python 3, and logged-in Claude Code and/or 
    aiw codex-sol "$HOME/.claude/aiw" 900 /tmp/aiw-review.txt --ro
    ```
 
-4. Use Claude Code or Codex as usual. Hooks suggest assignments; the main session plans and verifies.
+4. Use Claude Code or Codex as usual. When work is suitable to hand off, it suggests who should take it; the main conversation plans and verifies.
 
-Upgrading from ai-harness: keep the old directory or symlink and rerun `install.sh` to migrate imports, hooks, Codex blocks and PATH. `AIW_STATE`, `AIW_PYTHON`, and `AIW_NO_CODEX` take precedence over `AI_HARNESS_STATE`, `AI_HARNESS_PYTHON`, and `AI_HARNESS_NO_CODEX`; conflicting values warn once. Run `aiw freecheck --install` separately to migrate the scheduled job.
+Upgrading from the old name ai-harness: see the [guide](docs/guide.md#upgrade-from-ai-harness).
 
 ## Common commands
 
@@ -82,13 +92,13 @@ Upgrading from ai-harness: keep the old directory or symlink and rerun `install.
 
 | Command | Purpose and example |
 | --- | --- |
-| `aiw <seat> <dir> <seconds> <prompt> [--ro] [--net]` | Assign work; `--net` enables network and local ports for Codex write tasks only (default off); conflicts with `--ro` and non-Codex seats return 64. `--ro` requests read-only: `aiw codex-sol . 900 task.txt --ro`. |
-| `aiw panel` | Opinions: `aiw panel . 600 task.txt --prior prior.md`; defaults to at most 4 items and 1500 characters, each with conclusion, evidence (or “无证据”), and impact or advice; stdout includes answers (up to 3000 characters per seat, with full archives). `--full` adds no format requirement and omits each seat's answer from stdout (full answers are in `<seat>.md` in the panel directory); automatically detects the main session in Claude Code; for a Codex main session, add the `AIW_MAIN=codex` prefix; excludes the main session, possibly leaving one reviewer. Exit code 0 requires at least two successful seats with output (`rc == 0` and `chars > 0`); fewer return 1. A single seat still runs and its result is displayed, but its opinion does not constitute a panel. Write your judgment first and pass it with `--prior`; then adjudicate each key opinion: accept / reject (with reasons) / defer (state what is pending), without majority voting. |
+| `aiw <seat> <dir> <seconds> <prompt> [--ro] [--net]` | Assign work: `aiw codex-sol . 900 task.txt --ro`. `--ro` requests read-only; `--net` opens the network for Codex code-change work (off by default). |
+| `aiw panel` | Ask several models the same question for independent opinions: `aiw panel . 600 task.txt --prior prior.md`. Pass your own judgment with `--prior`; then accept, reject or defer each opinion, without majority voting. A panel succeeds only when at least two models answer; with one, it still shows the result but returns 1. Output format and options: [reference manual](docs/reference.zh-CN.md#命令) (Chinese). |
 | `aiw map` | Apply one instruction per file: `aiw map . 600 task.txt src/a.py src/b.py`; defaults to `codex-sol`, up to 3 jobs. |
 | `aiw goal init / verify` | Create a checklist with `aiw goal init docs/goals/demo.json`; edit its example tasks, `verify` commands and `paths`, then run `aiw goal verify docs/goals/demo.json --full`. |
 | `aiw doctor` | Check seats and setup: `aiw doctor`; `aiw doctor --fingerprint` prints a fingerprint (version/hash summary). |
 | `aiw note` | Save an observation: `aiw note . "Check failed" --expected "Check passes" --evidence "test output"`. |
-| `aiw sync` | Update this aiw checkout using `git pull --ff-only`: `aiw sync`; cannot merge divergent history. Rerun the installer to refresh installed rules/hooks. |
+| `aiw sync` | Update this aiw checkout using `git pull --ff-only`: `aiw sync`; cannot merge divergent history. Installed agent-use and agent-use-adapters checkouts are updated too. Rerun the installer to refresh installed rules/hooks. |
 | `aiw gc` | Delete old run/panel/map archives (30 days by default); preview first: `aiw gc 30 --dry-run`. |
 
 ## More documentation
@@ -101,6 +111,6 @@ Upgrading from ai-harness: keep the old directory or symlink and rerun `install.
 
 ## Contributing
 
-Run `python3 tests/test_harness.py` (background priority; concurrency defaults to one quarter of CPUs (minimum 1); `-j N` is capped at half of CPUs (minimum 1), `-j 1` runs serially, `--durations` lists the slowest cases) and `python3 tests/mutation_check.py`, then open a PR. Cases live in `tests/cases/`, with shared helpers in `tests/support.py`.
+Run `python3 tests/test_harness.py` and `python3 tests/mutation_check.py` (concurrency and other options: [reference manual](docs/reference.zh-CN.md#自测), Chinese), then open a PR. Cases live in `tests/cases/`, with shared helpers in `tests/support.py`. License: [Apache-2.0](LICENSE).
 
 License: [Apache-2.0](LICENSE).

@@ -803,6 +803,84 @@ def install_doctor_agent_use_hint():
         check(disabled.returncode == 0 and hint in disabled.stdout, disabled.stdout)
 
 
+def repository_git_env_shell_guard():
+    import ast
+    import re
+    tree = ast.parse((REPO / 'gitenv.py').read_text())
+    function = next(node for node in tree.body
+                    if isinstance(node, ast.FunctionDef) and node.name == 'repository_git_env')
+    excluded = next(node.value for node in function.body if isinstance(node, ast.Assign)
+                    and any(isinstance(target, ast.Name) and target.id == 'excluded'
+                            for target in node.targets))
+    python_vars = ast.literal_eval(excluded)
+    shell = (REPO / 'agent_use_setup.sh').read_text()
+    wrapper = re.search(r'^aiw_git\(\) \{\n(.*?)^\}', shell, re.M | re.S)
+    check(wrapper is not None, '缺少 aiw_git 包装函数')
+    shell_vars = set(re.findall(r'-u\s+(GIT_[A-Z_]+)\b', wrapper.group(1)))
+    check(python_vars == shell_vars,
+          f'Git 环境变量列表不一致: Python={sorted(python_vars)}, shell={sorted(shell_vars)}')
+
+
+def install_sync_foreign_git_env():
+    from support import git_history
+    with tempfile.TemporaryDirectory() as td:
+        t = Path(td)
+        home, clean_env, core, adapters = ecosystem_fixture(t)
+        caller_origin = git_template(t / 'caller-origin', {'marker': 'caller initial'})
+        caller = t / 'caller'
+        result = sh(['git', 'clone', str(caller_origin), str(caller)], env=clean_env)
+        check(result.returncode == 0, result.stderr)
+        git_history(caller_origin, [('next', {'marker': 'caller next'},
+                                    '2026-10-13T01:00:00+07:00')], append=True)
+        (caller / 'private-untracked').write_text('preserve caller data')
+
+        def caller_snapshot():
+            return {str(path.relative_to(caller)): path.read_bytes()
+                    for path in caller.rglob('*') if path.is_file()}
+
+        before = caller_snapshot()
+        env = dict(clean_env, GIT_DIR=str(caller / '.git'), GIT_WORK_TREE=str(caller))
+        # Fresh installation exercises clone with a foreign repository environment.
+        out = ecosystem_install(home, env, '--with-agent-use')
+        check(out.count('已克隆') == 2, out)
+        check(caller_snapshot() == before, '安装克隆修改了调用方仓库')
+        check((home / 'adapter-installs').read_text() == 'installed\n', '未识别适配器仓库')
+        check('opencode' in json.loads((home / '.config/aiw/seats.local.json').read_text())['seats'],
+              '未安装可选座位')
+        checkouts = (home / 'ecosystem/agent-use', home / 'ecosystem/adapters')
+        for upstream in (core, adapters):
+            git_history(upstream, [('install update', {'marker': 'install updated'},
+                                   '2026-10-13T02:00:00+07:00')], append=True)
+        out = ecosystem_install(home, env, '--with-agent-use')
+        check(out.count('已更新（pull --ff-only）') == 2, out)
+        for checkout in checkouts:
+            check((checkout / 'marker').read_text() == 'install updated', '安装未更新正确仓库')
+        check(caller_snapshot() == before, '重复安装修改了调用方仓库')
+
+        repo = home / '.claude/aiw'
+        origin = git_template(t / 'aiw-origin', {'marker': 'initial'})
+        result = sh(['git', 'clone', str(origin), str(t / 'aiw-clone')], env=clean_env)
+        check(result.returncode == 0, result.stderr)
+        shutil.copytree(t / 'aiw-clone/.git', repo / '.git')
+        for upstream in (origin, core, adapters):
+            git_history(upstream, [('sync update', {'marker': 'sync updated'},
+                                   '2026-10-13T03:00:00+07:00')], append=True)
+        command = ['bash', str(repo / 'bin/aiw'), 'sync']
+        result = sh(command, env=env)
+        check(result.returncode == 0 and result.stdout.count('已更新（pull --ff-only）') == 2,
+              result.stdout + result.stderr)
+        for checkout in (repo, *checkouts):
+            check((checkout / 'marker').read_text() == 'sync updated', 'sync 未更新正确仓库')
+        check(caller_snapshot() == before, 'sync 修改了调用方仓库')
+        # A broken aiw upstream must still stop sync with Git's nonzero status.
+        (repo / '.git/config').write_text('[core]\n repositoryformatversion = 0\n')
+        expected = sh(['git', '-C', str(repo), 'pull', '--ff-only'], env=clean_env)
+        result = sh(command, env=env)
+        check(result.returncode == expected.returncode != 0 and 'agent-use 已更新' not in result.stdout,
+              result.stdout + result.stderr)
+        check(caller_snapshot() == before, '失败的 sync 修改了调用方仓库')
+
+
 def sync_agent_use_repos():
     from support import git_history
     with tempfile.TemporaryDirectory() as td:
@@ -846,5 +924,7 @@ CASES = {case.__name__: case for case in (
     install_agent_use_dangling_symlink_config,
     install_agent_use_registry_conflict,
     install_doctor_agent_use_hint,
+    repository_git_env_shell_guard,
+    install_sync_foreign_git_env,
     sync_agent_use_repos,
 )}

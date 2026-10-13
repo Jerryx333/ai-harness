@@ -81,8 +81,8 @@ case "$cmd" in
   snapshot) exec "$PY" "${H}/snapshot.py" ;;
   gc)       shift; exec "$PY" "${H}/gc.py" "$@" ;;
   sync)
-    git -C "${H}" pull --ff-only
     source "${H}/agent_use_setup.sh"
+    aiw_git -C "${H}" pull --ff-only
     aiw_agent_use_paths
     if aiw_is_git_repo "$AU"; then aiw_pull_optional "$AU" agent-use; fi
     if aiw_is_git_repo "$ADAPTERS"; then aiw_pull_optional "$ADAPTERS" agent-use-adapters; fi

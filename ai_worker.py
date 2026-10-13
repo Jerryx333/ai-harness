@@ -1209,7 +1209,7 @@ def dispatch_reminders(seat: str, ro: bool, workdir: str, net: bool = False) -> 
         return ""
     sandbox = ""
     if codex_workspace_write(seat, ro):
-        access = "本单已开放网络和本地端口（--net）" if net else "默认不能联网、不能监听本地端口"
+        access = "本单已开放网络和本地端口（--net）" if net else "默认不能联网、不能监听本地端口（需要时由主会话加 --net 重派）"
         sandbox = (f"沙箱说明：{access}，只能写工作目录及本单明确开放的 worktree Git 目录。"
                    "验收命令因沙箱失败时不要绕过或改测试迁就；在回答里列「需主会话补跑」小节，写出命令和失败原因。\n")
         if worktree_writable_roots(workdir):

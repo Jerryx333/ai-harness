@@ -223,7 +223,7 @@ agent_use 文本座位通过本地配置接入 [agent-use](https://github.com/Je
 - 材料先压缩适用于约 300 行或 20KB 以上的日志、文档、网页抓取、命令输出和代码，产物须带 path:line。读代码先用 `rg -l` 或 `rg -n` 定位候选文件；候选不超过 3 个文件且合计不到 20KB 时直接读，不派单。沿调用链多跳追踪可用 `Agent(model: "haiku")` 子代理，但不强制。凭据、账户、私人数据不外发，由主会话自己读。
 - Codex 主会话有文本座位时，起草、改写、摘要、翻译和长材料提炼必须派单；commit message、PR 描述、发布说明和命名建议也用文本座位，无文本座位时自己写。凭据、账户、私人数据由主会话自己读写，并在汇报中说明。用户说「我自己做」「直接改」时免于派单要求，仍记录未派单理由。
 - 推理档位默认 codex medium、codex-sol low，按难度用 `--effort low|medium|high` 调整；high 只用于关键架构改动，或 medium 返工仍不合格时；返工那一次可以升一档。codex-sol 遇难排查的问题或关键评审加 medium，关键架构评审用 high，文本座位不接受此开关。能力和验收都满足时，优先选便宜的执行方；拿不准的由主会话先判断。
-- codex-sol 不顶替：它与 codex 共用 CLI 和凭据，不可用就直接失败，由主会话决定换家或重试。codex-sol 沙箱只读，claude 由白名单限制为只读（仅 Read/Grep/Glob）。不合格只返工一次；超时须拆小，不得换模型重跑。
+- codex-sol 不顶替：它与 codex 共用 CLI 和凭据，不可用就直接失败，由主会话决定换家或重试。codex-sol 沙箱只读，claude 由白名单限制为只读（仅 Read/Grep/Glob），不能执行命令，测试输出和 diff 由主会话附上。不合格只返工一次；超时须拆小，不得换模型重跑。
 - 会诊问 panel_default 中除自己外的座位，不顶替；仅一家可用时仍执行并展示结果，但单家意见不构成会诊，返回码为 1。非关键问题用 `aiw panel --free <workdir> 600 <prompt>`，只问 panel_free 中的免费座位。Codex 主会话必须带 `AIW_MAIN=codex`，排除自己；默认名单见「本地配置」。批量文本用 `aiw map <workdir> 600 <prompt文件> 文件...`，产物仍是待审稿，参数见「命令」。
 - 收到「[派单]」钩子时，先定方案再执行；用户说「我自己做」「直接改」时不派单。执行方按方案交付，架构、范围或验收问题由主会话决定，不得自行扩大范围；执行方说做完了不等于验收通过。常规方案无需额外确认。
 - 工具限制看配置，只有 `require_no_tools=true` 才硬禁工具；未硬禁的座位不能当硬禁座位用。外包后检查 stderr 的「实际执行方」行（run 目录的 `provider` 文件），panel 则检查各家；顶替须在汇报中说明。只读任务可并行。
@@ -303,7 +303,7 @@ worker 只接受 `--ro --net --no-fallback --no-findings --allow-nested --attach
 
 `adapter="codex"` 写单在 linked worktree 中自动添加 `-c sandbox_workspace_write.writable_roots=[...]`（TOML 字符串数组）。通过 `git rev-parse --git-dir` 与 `--git-common-dir` 探测，要求 git-dir 的 realpath 位于 `<common-dir>/worktrees/` 下，且 git-dir 和 objects 本身不是软链；只包含 worktree 私有 git-dir 和 `<common-dir>/objects` 的 realpath，供 `git add` 写索引及对象；不开放整个共享 `.git`，hooks/config/refs 保持不可写。普通仓库、Git 探测失败或只读单不添加。`git commit` 及其它改 refs 的操作会被沙箱拒绝，执行方不要尝试，改动留在暂存区，由主会话提交。
 
-`adapter="codex"` 座位的派单在 prompt 末尾、观察记录要求之前固定追加提醒（panel 也有，文本座位没有）：写单说明默认不能联网、不能监听本地端口，只能写工作目录及明确开放的 worktree Git 目录；本单用了 `--net` 则说明网络和本地端口已开放。当 `worktree_writable_roots(workdir)` 非空时，写单另加「本目录是 linked worktree，git add 可用；git commit 及其它改 refs 的操作会被沙箱拒绝，不要尝试，改动留在暂存区，由主会话提交。」普通仓库写单及只读单不加该句。验收因沙箱失败不得绕过或改测试迁就，回答须列「需主会话补跑」小节，写出命令和失败原因。写单和只读单都提醒：规则、数据字段含义的转述以原文为准，发现不符按原文理解，并在回答中指出不符之处（附 path:line）。
+`adapter="codex"` 座位的派单在 prompt 末尾、观察记录要求之前固定追加提醒（panel 也有，文本座位没有）：写单说明默认不能联网、不能监听本地端口，并提示需要时由主会话加 --net 重派，只能写工作目录及明确开放的 worktree Git 目录；本单用了 `--net` 则说明网络和本地端口已开放。当 `worktree_writable_roots(workdir)` 非空时，写单另加「本目录是 linked worktree，git add 可用；git commit 及其它改 refs 的操作会被沙箱拒绝，不要尝试，改动留在暂存区，由主会话提交。」普通仓库写单及只读单不加该句。验收因沙箱失败不得绕过或改测试迁就，回答须列「需主会话补跑」小节，写出命令和失败原因。写单和只读单都提醒：规则、数据字段含义的转述以原文为准，发现不符按原文理解，并在回答中指出不符之处（附 path:line）。
 
 `--allow-nested` 只在主会话的派单说明明确允许时使用；被外包的会话在沙箱里调用其他座位可能因读不到登录状态而误判认证失败、触发误熔断。
 

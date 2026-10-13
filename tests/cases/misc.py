@@ -347,6 +347,12 @@ def invariants_table():
     check(all(isinstance(m.get('expect'), str) and m['expect'].strip()
               for m in module.MUTATIONS), '变异缺少非空 expect')
     check(all(c in CASES for m in module.MUTATIONS for c in m['tests']), '变异引用了未注册用例')
+    bad_anchors = []
+    for m in module.MUTATIONS:
+        count = (REPO / m['file']).read_text(encoding='utf-8').count(m['old'])
+        if count != 1:
+            bad_anchors.append(f"{m['id']}: {count}")
+    check(not bad_anchors, f"变异锚点出现次数应为 1: {', '.join(bad_anchors)}")
 
 
 

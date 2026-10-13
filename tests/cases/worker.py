@@ -718,6 +718,7 @@ def codex_net():
         check(argv.index(override) < argv.index('--skip-git-repo-check'), str(argv))
         task = (Path(row['run_dir']) / 'task.txt').read_text()
         check('本单已开放网络和本地端口（--net）' in task and '默认不能联网' not in task, task)
+        check('加 --net 重派' not in task, task)
         cmd = [sys.executable, str(harness / 'ai_worker.py')]
         for seat, flags in (('codex', ['--net', '--ro']), ('codex-sol', ['--net']),
                             ('workbuddy', ['--net', '--ro']), ('claude', ['--net'])):
@@ -807,9 +808,10 @@ def codex_dispatch_reminders():
             check(r.returncode == 0, r.stderr)
             task = (Path(row['run_dir']) / 'task.txt').read_text()
             semantic = '派单里对规则、数据字段含义的转述以原文为准'
-            sandbox = '沙箱说明：默认不能联网、不能监听本地端口'
+            sandbox = '沙箱说明：默认不能联网、不能监听本地端口（需要时由主会话加 --net 重派）'
             check((semantic in task) == (seat != 'workbuddy'), task)
             check((sandbox in task) == ('--ro' not in flags), task)
+            check(('加 --net 重派' in task) == ('--ro' not in flags), task)
             check(linked_notice not in task, task)
             if seat != 'workbuddy':
                 check('附 path:line' in task, task)
@@ -854,6 +856,7 @@ def codex_dispatch_reminders():
             check(r.returncode == 0, r.stderr)
             task = (Path(row['run_dir']) / 'task.txt').read_text()
             check((linked_notice in task) == ('--ro' not in flags), task)
+            check(('加 --net 重派' in task) == ('--ro' not in flags and '--net' not in flags), task)
 
 
 

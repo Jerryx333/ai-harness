@@ -29,7 +29,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from ai_worker import PANEL_FORMAT
+from ai_worker import PANEL_FORMAT, atomic_write_bytes
 from harness_ids import format_panel_id
 
 HERE = Path(__file__).resolve().parent
@@ -152,7 +152,7 @@ def main() -> int:
     if attachment_files:
         manifest = [{"path": rel, "bytes": len(data), "sha256": hashlib.sha256(data).hexdigest()}
                     for rel, data in attachment_files]
-        (out / "attachments.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+        atomic_write_bytes(out / "attachments.json", json.dumps(manifest, ensure_ascii=False, indent=2).encode("utf-8"))
     prompt_file = str(out / "prompt.md")  # 各家共用这一份快照
     if prior is not None:
         (out / "prior.md").write_text(prior, encoding="utf-8")

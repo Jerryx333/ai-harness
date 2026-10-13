@@ -96,7 +96,7 @@ worker 在首次写 JSON 前创建或打开同名 `<pid>.lock` 并持有 `fcntl.
 | model | `agent_use` 座位的完成记录为实际产出答复的模型，按 `actual_model` → `selected_model` → `requested_model` 取值，都缺失时回退到座位配置；其他座位为座位配置的模型，未配置时为 `default` |
 | freecheck | 每日免费检测由 freecheck.py 写入 true；周报座位质量统计据此剔除检测行，同时不计 skipped_* 跳过行 |
 | agent_use_versions | 可选字符串：status.json 有 scheduler_versions 时，对 `{"scheduler": scheduler_versions, "adapter": 最后一个 attempt 的 adapter_versions 或 {}}` 以 `json.dumps(sort_keys=True, separators=(",", ":"))` 序列化，取 UTF-8 字节的 SHA256 前 12 位；仅记录摘要，不保存原始映射。旧版无 scheduler_versions 时不写此字段 |
-| tokens | 仅实际执行的 codex / codex-sol 尝试：rollout 为 `{input: int, cached: int, cache_write: int, output: int, reasoning: int, calls: int, source: "rollout"}`，取最后非空 total_token_usage，calls 为非空 info 的 token_count 事件数；input 含缓存命中；rollout 在 CODEX_HOME、~/.codex、状态目录下的 codex-home 三处查找。stderr 兜底为 `{uncached_plus_output: int, source: "stderr"}`，为 input − cached + output，不含缓存命中；两者不可混算。无法测量时为 null；文本座位、跳过及旧记录没有此键 |
+| tokens | 仅实际执行座位的 seat_adapter(s) == "codex" 时写入，包含别名座位；历史用量报告按账本 token 元数据及 actual 汇总，不依赖当前座位配置。rollout 为 `{input: int, cached: int, cache_write: int, output: int, reasoning: int, calls: int, source: "rollout"}`，取最后非空 total_token_usage，calls 为非空 info 的 token_count 事件数；input 含缓存命中；rollout 在 CODEX_HOME、~/.codex、状态目录下的 codex-home 三处查找。stderr 兜底为 `{uncached_plus_output: int, source: "stderr"}`，为 input − cached + output，不含缓存命中；两者不可混算。无法测量时为 null；文本座位、跳过及旧记录没有此键 |
 | tokens_null_reason | rollout 未用上时的原因：no_session_id、rollout_missing、rollout_unparsed、error；stderr 兜底或 tokens=null 时出现，正常 rollout 不写此键。异常只影响测量，不改变派单结果 |
 | findings_n | 可选整数，本次收集的 observation 条数；未收集时无此键，展示端不依赖它 |
 | changed_files | #6：写任务每次尝试相对派单开始时的变化文件数；非 git 或统计失败为 null；只读任务没有这个键 |

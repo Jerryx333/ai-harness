@@ -115,7 +115,7 @@ def report(days, top):
                         continue
                     seat = row.get('actual') or 'unknown'
                     usage = row.get('tokens')
-                    measured = seat in rollout and isinstance(usage, dict) and usage.get('source') == 'rollout'
+                    measured = isinstance(usage, dict) and usage.get('source') == 'rollout'
                     values = {f: usage.get(f, 0) for f in ('input', 'cached', 'output')} if measured else {}
                     if any(not isinstance(v, int) or isinstance(v, bool) or v < 0 for v in values.values()):
                         raise ValueError('invalid ledger usage')
@@ -127,6 +127,7 @@ def report(days, top):
                         linked += 1
                         dispatch_counts[sid] += 1
                     if measured:
+                        rollout.setdefault(seat, dict(input=0, cached=0, output=0))
                         for f, value in values.items():
                             rollout[seat][f] += value
                         if sid:
@@ -145,6 +146,8 @@ def report(days, top):
         reasons.append('窗口内未读到有效行')
     coverage = dict(sources=sources, level='无数据' if not root_source['exists'] or not valid_rows
                     else '部分' if reasons else '完整', reasons=reasons)
+    rollout = {seat: rollout[seat] for seat in ('codex', 'codex-sol',
+               *sorted(set(rollout) - {'codex', 'codex-sol'}))}
     turns = [t for session in main.values() for t in session]
     context = summary(turns)
     ctx_total = sum(t[1] for t in turns)

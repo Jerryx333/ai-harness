@@ -147,9 +147,11 @@ def findings_section(since: dt.datetime, sources=None, reasons=None):
         print("无数据")
 
 
-def tokens_section(calls):
-    print("\n## token（codex / codex-sol）")
-    for actual in ("codex", "codex-sol"):
+def tokens_section(ledger):
+    print("\n## token（codex 类座位）")
+    extra = {r["actual"] for r in ledger if "tokens" in r} - {"codex", "codex-sol"}
+    calls = [r for r in ledger if r.get("rc") is not None]
+    for actual in ("codex", "codex-sol", *sorted(extra)):
         attempts = [r for r in calls if r.get("actual") == actual]
         if not attempts:
             print(f"- {actual}: 无数据")
@@ -228,7 +230,7 @@ def report(days):
             "seats": seats, "repos": repos,
             "substituted_ok": sum(bool(r.get("substituted")) and r["kind"] == "ok" for r in calls),
             "substitute_limits": substitute_limits(), "coverage": coverage_summary(coverage_sources)}
-    text_data = {"calls": calls,
+    text_data = {"calls": calls, "ledger": led,
                  "seat_counts": sorted(Counter((r.get("host"), r["seat"], r["actual"]) for r in calls).items()),
                  "ok_secs": [r["secs"] for r in calls if r["kind"] == "ok"],
                  "rule_counts": Counter((r.get("project"), r["rule"]) for r in rl if r["rule"]).most_common()}
@@ -283,7 +285,7 @@ def print_report(data, text_data):
     secs = text_data["ok_secs"]
     if secs:
         print(f"成功单平均耗时 {sum(secs)/len(secs):.0f}s，最长 {max(secs):.0f}s")
-    tokens_section(text_data["calls"])
+    tokens_section(text_data["ledger"])
     print("\n## 派单规则命中")
     for k, n in text_data["rule_counts"]:
         print(f"- {k}: {n}")

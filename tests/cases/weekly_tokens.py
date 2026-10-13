@@ -175,6 +175,25 @@ def tokens_report():
         check(sentinel not in result.stdout + result.stderr + text.stdout + text.stderr and sid not in json.dumps(d) + text.stdout, 'privacy leak')
         limited = json.loads(sh(cmd + ['--json', '--top', '1'], env=env).stdout)
         check(len(limited['sessions']) == 1 and limited['totals'] == d['totals'], str(limited))
+        alias_state = t / 'alias-state'; alias_state.mkdir()
+        aliases = [dict(base, actual='codex-z'), dict(base, actual='codex-high'),
+                   dict(base, actual='codex-high', tokens=dict(source='rollout', input=200, cached=100, output=5)),
+                   dict(base, actual='codex-high', rc=None),
+                   dict(base, actual='codex-high', ts=(now-dt.timedelta(days=20)).isoformat()),
+                   dict(base, actual='qoder', tokens=None),
+                   dict(base, actual='stderr-only', tokens=dict(source='stderr'))]
+        aliases += [dict(base, actual='invalid-alias', tokens=dict(source='rollout', input=value))
+                    for value in (True, -1, 1.5)]
+        (alias_state / 'seat-ledger.jsonl').write_text('\n'.join(json.dumps(r) for r in aliases))
+        alias_result = sh(cmd + ['--json'], env=dict(env, AIW_STATE=str(alias_state)))
+        check(alias_result.returncode == 0, alias_result.stderr)
+        alias_data = json.loads(alias_result.stdout)
+        rollout = alias_data['dispatch']['rollout']
+        check(list(rollout) == ['codex', 'codex-sol', 'codex-high', 'codex-z'], str(rollout))
+        check(rollout['codex-high'] == dict(input=1200, cached=800, output=25), str(rollout))
+        check(rollout['codex-z'] == dict(input=1000, cached=700, output=20), str(rollout))
+        check(rollout['codex'] == rollout['codex-sol'] == dict(input=0, cached=0, output=0), str(rollout))
+        check(alias_data['malformed_lines'] == 4, str(alias_data))
         duplicate = assistant('updated', 100)
         duplicate['message']['usage']['output_tokens'] = 1
         transcript = project / (sid + '.jsonl')
@@ -207,7 +226,7 @@ def weekly_repo_section():
         check(r.stdout.index('## 按座位成功率') < r.stdout.index('## 按仓库') < r.stdout.index('被顶替但记成功'), r.stdout)
         check('外包调用 8 次；派单判定 1 条，命中 1，逃生口 0' in r.stdout, r.stdout)
         check('- codex: 尝试 6 · 成功 3 · 成功率 50.0% · 超时 1（16.7%） · 成功单中位耗时 2s · 失败分布 timeout 1、auth 1、format 1 · direct 5 · panel 1 · map 0 · 未记录 0' in r.stdout, r.stdout)
-        check('被顶替但记成功：1 次' in r.stdout and '## token（codex / codex-sol）' in r.stdout and '## 改进缓冲区' in r.stdout, r.stdout)
+        check('被顶替但记成功：1 次' in r.stdout and '## token（codex 类座位）' in r.stdout and '## 改进缓冲区' in r.stdout, r.stdout)
 
 
 
@@ -265,21 +284,38 @@ def weekly_tokens():
                 dict(row, tokens=None, tokens_null_reason='no_session_id'),
                 dict(row, tokens=None, tokens_null_reason='error', rc=1, kind='other'), row,
                 dict(row, tokens=usage, rc=None, kind='skipped_breaker'),
-                dict(row, actual='qoder', tokens=usage), dict(row, actual='codex-sol', tokens=usage)]
+                dict(row, actual='qoder'), dict(row, actual='codex-sol', tokens=usage),
+                dict(row, actual='codex-high', tokens=usage),
+                dict(row, actual='codex-high'),
+                dict(row, actual='alias-null', tokens=None),
+                dict(row, actual='alias-skipped', tokens=None, rc=None, kind='skipped_breaker'),
+                dict(row, actual='alias-stderr', tokens=dict(source='stderr', uncached_plus_output=10)),
+                dict(row, actual='old-alias', tokens=usage,
+                     ts=(dt.datetime.now().astimezone() - dt.timedelta(days=20)).isoformat())]
         def report(data):
             (t / 'seat-ledger.jsonl').write_text('\n'.join(json.dumps(r) for r in data) + '\n')
             result = sh([sys.executable, str(REPO / 'weekly.py')], env=dict(os.environ, AIW_STATE=str(t)))
             check(result.returncode == 0, result.stderr)
             return result.stdout
         output = report(rows)
-        section = output.split('## token（codex / codex-sol）')[1].split('## 派单规则命中')[0]
+        section = output.split('## token（codex 类座位）')[1].split('## 派单规则命中')[0]
         for expected in ('codex: 总尝试 6', 'rollout 2（覆盖率 33.3%）', 'stderr 兜底 1',
                          'tokens=null 2（error 1、no_session_id 1）', '旧记录 1',
                          '2000 / 1000 / 200 / 3', '合计 input 4000、cached 2000（缓存占比 50.0%）、output 400',
                          'codex-sol: 总尝试 1', 'Claude 主会话用量见 aiw tokens'):
             check(expected in section, section)
-        check('qoder' not in section, section)
-        check(output.index('## 按座位成功率') < output.index('## token（codex / codex-sol）') < output.index('## 派单规则命中'), output)
+        check('qoder' not in section and 'old-alias' not in section, section)
+        alias = section.split('- codex-high:')[1].split('\n')[0]
+        for expected in ('总尝试 2', 'rollout 1（覆盖率 50.0%）', '旧记录 1',
+                         '合计 input 1000、cached 600（缓存占比 60.0%）、output 100'):
+            check(expected in alias, alias)
+        check('alias-null: 总尝试 1' in section and 'tokens=null 1（未记录 1）' in section, section)
+        check('- alias-skipped: 无数据' in section, section)
+        check('alias-stderr: 总尝试 1' in section and 'stderr 兜底 1' in section, section)
+        check(section.index('- codex:') < section.index('- codex-sol:')
+              < section.index('- alias-null:') < section.index('- alias-stderr:')
+              < section.index('- codex-high:'), section)
+        check(output.index('## 按座位成功率') < output.index('## token（codex 类座位）') < output.index('## 派单规则命中'), output)
         empty = report([])
         check('- codex: 无数据' in empty and '- codex-sol: 无数据' in empty, empty)
         zero = report([dict(row, tokens=dict(usage, input=0, cached=0))])

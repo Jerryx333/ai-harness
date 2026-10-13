@@ -2,22 +2,26 @@
 # 安装 / 更新 aiw 到本机。幂等：重复跑不会重复追加，改动前先备份。
 #   git clone <仓库> ~/.claude/aiw && ~/.claude/aiw/install.sh
 #   --claude-hook=settings|plugin：默认 settings；plugin 删除 settings 中的派单钩子，交给插件管理。
-# 做五件事：
+#   --with-agent-use：同时安装 / 更新公开核心、现成适配器并添加本地 OpenCode 座位。
+# 做六件事：
 #   1. ~/.claude/CLAUDE.md 引入 @~/.claude/aiw/CLAUDE.md（已有内容保留）
 #   2. ~/.claude/settings.json 加 UserPromptSubmit 派单钩子（其它设置保留）
 #   3. ~/.local/bin/aiw 软链到本仓库，必要时把 ~/.local/bin 加进 PATH
 #   4. 本机有 Codex（~/.codex 或 codex 命令）时：~/.codex/AGENTS.md 写入/刷新标记块，~/.codex/hooks.json 加派单钩子
 #      （跳过：AIW_NO_CODEX=1）
-#   5. 校验派单规则，跑一次 aiw doctor
+#   5. 可选安装 agent-use + agent-use-adapters，保留已有注册表和座位
+#   6. 校验派单规则，跑一次 aiw doctor
 # 先预检所有要改的 JSON，坏了一处都不动；JSON/标记块用临时文件原子替换。
 # 兼容 macOS 自带 bash 3.2。
 set -euo pipefail
 
 CLAUDE_HOOK=settings
+WITH_AGENT_USE=0
 for arg in "$@"; do
   case "$arg" in
     --claude-hook=settings|--claude-hook=plugin) CLAUDE_HOOK="${arg#*=}" ;;
-    *) echo "用法：$0 [--claude-hook=settings|plugin]" >&2; exit 64 ;;
+    --with-agent-use) WITH_AGENT_USE=1 ;;
+    *) echo "用法：$0 [--claude-hook=settings|plugin] [--with-agent-use]" >&2; exit 64 ;;
   esac
 done
 
@@ -289,8 +293,71 @@ fi
 # 5. 校验派单规则（坏了只提示，不中断）
 "$PY" "${H}/route.py" --check || echo "↑ 派单规则有问题，钩子会跳过派单，修好后再跑 aiw route --check。"
 
+# 可选：agent-use 生态（--with-agent-use）
+source "${H}/agent_use_setup.sh"
+aiw_agent_use_paths
+if [ "$WITH_AGENT_USE" = 1 ]; then
+  ADAPTERS_INSTALLED=0
+  aiw_install_repo "$AU" agent-use "${AIW_AGENT_USE_REPO:-https://github.com/Jerryx333/agent-use.git}" || :
+  if aiw_install_repo "$ADAPTERS" agent-use-adapters "${AIW_ADAPTERS_REPO:-https://github.com/Jerryx333/agent-use-adapters.git}"; then
+    if bash "$ADAPTERS/scripts/install.sh"; then
+      echo "✓ agent-use-adapters 注册表安装完成"
+      ADAPTERS_INSTALLED=1
+    fi
+  fi
+  if [ "$ADAPTERS_INSTALLED" = 1 ]; then
+    "$PY" - "$STAMP" <<'PYEOF'
+import json, os, shutil, sys
+from pathlib import Path
+p = Path(os.environ.get('AIW_CONFIG') or Path.home() / '.config/aiw/seats.local.json').expanduser()
+try:
+    # Resolve existing links before choosing backup/temp paths and replacing.
+    # strict=True rejects dangling links without creating their missing targets.
+    if p.is_symlink():
+        try:
+            p = p.resolve(strict=True)
+        except FileNotFoundError:
+            raise ValueError('软链断开')
+    else:
+        p = p.resolve()
+    old = p.read_text(encoding='utf-8') if p.exists() else None
+    data = json.loads(old) if old is not None else {}
+    if not isinstance(data, dict):
+        raise ValueError('顶层必须是对象')
+    for key in ('seats', 'fallback'):
+        if key in data and not isinstance(data[key], dict):
+            raise ValueError(key + ' 必须是对象')
+    seats = data.setdefault('seats', {})
+    fallback = data.setdefault('fallback', {})
+    changed = False
+    if 'opencode' not in seats:
+        seats['opencode'] = {'kind': 'agent_use', 'provider': 'opencode', 'model': '',
+                             'label': 'OpenCode 免费模型（agent-use）',
+                             'free_only': True, 'free_guard': True}
+        changed = True
+    if 'opencode' not in fallback:
+        fallback['opencode'] = []
+        changed = True
+    if changed:
+        p.parent.mkdir(parents=True, exist_ok=True)
+        if old is not None:
+            shutil.copy2(p, p.with_name(p.name + '.bak-' + sys.argv[1]))
+        tmp = p.with_name(p.name + '.tmp-aiw')
+        tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+        tmp.replace(p)
+    print(f'✓ {p} ' + ('补充 OpenCode 本地座位 / fallback' if changed else '已有 OpenCode 座位 / fallback，无需改动'))
+except (OSError, ValueError, RuntimeError) as exc:
+    print(f'⚠ {p} 未改动（{exc}），请自行检查本地座位配置')
+PYEOF
+  else
+    echo '⚠ 未添加 OpenCode 座位，因为生效注册表不是 agent-use-adapters 的；若你的注册表已有 opencode provider，可按指南手工添加座位。'
+  fi
+fi
 # 6. 体检（失败不中断安装）
 echo
 "${H}/bin/aiw" doctor || echo "↑ 有座位没装好或未在 PATH，装好后再跑 aiw doctor。"
 echo
 echo "完成。下一步：按需完成各 CLI 的官方登录（如 codex login），然后 aiw doctor"
+if [ "$WITH_AGENT_USE" = 0 ] && [ ! -f "$AU/scripts/run_agent.py" ]; then
+  echo '· 想把更多模型（如免费的 OpenCode）接进来，可重跑 install.sh --with-agent-use（会克隆 agent-use 和 agent-use-adapters）。'
+fi

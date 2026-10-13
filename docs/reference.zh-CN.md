@@ -11,12 +11,15 @@ Claude / Codex 主会话的多模型分工层，支持本地接入其他座位�
 ```bash
 git clone https://github.com/Jerryx333/aiw.git ~/.claude/aiw
 ~/.claude/aiw/install.sh
-# 可选文本座位依赖 agent-use 公开核心及自行安装的适配器；可用 AGENT_USE_HOME 指定路径。
+# 可选：一并安装公开核心、现成适配器并补充本地 OpenCode 免费文本座位
+~/.claude/aiw/install.sh --with-agent-use
 # 按所用 CLI / 适配器的官方说明登录；Codex 可用 codex login 登录官方账号，或自行配置。
 aiw doctor
 ```
 
 通过插件管理 aiw 派单钩子的机器用 `~/.claude/aiw/install.sh --claude-hook=plugin`，由插件管理派单钩子，并清理 settings.json 中的重复钩子。卸载插件后，不带参数重跑即恢复（默认 `--claude-hook=settings`）。
+
+`--with-agent-use` 可与 `--claude-hook=settings|plugin` 任意组合。核心路径用 `AGENT_USE_HOME`（默认 `~/code/ai/agent-use`），适配器路径用 `AIW_ADAPTERS_HOME`（默认核心同级的 `agent-use-adapters`）；仓库地址可用 `AIW_AGENT_USE_REPO` / `AIW_ADAPTERS_REPO` 覆盖。只补充 `AIW_CONFIG` 或 `~/.config/aiw/seats.local.json` 中缺失的 `opencode` 座位和 fallback；坏 JSON 不改，注册表冲突保留原文件并提示自行合并。不选参数且核心缺失时会给出安装建议。
 
 `install.sh` 幂等，仅对已有且发生改动的文件在改动前备份为 `.bak-年月日-时分秒`；新建或未变的文件不备份。`~/.local/bin/aiw` 软链会被替换且不备份：
 - `~/.claude/CLAUDE.md` 末尾加一行 `@~/.claude/aiw/CLAUDE.md`（原内容保留）
@@ -254,6 +257,10 @@ aiw board [--all] [--session <id>] [--once] [--interval 2] [--recent 15]
 aiw statusline
 aiw track [--host 名称] [--timeout 秒] <标签> -- <命令> [参数...]
 ```
+
+`aiw sync` 先照旧对 aiw 执行 `git pull --ff-only`，失败时保留其退出码；成功后对已存在的 agent-use 和 agent-use-adapters Git 仓库分别快进更新，后两者失败只警告。目录覆盖变量与安装相同。
+
+核心入口缺失且无启用的 `agent_use` 座位时，`aiw doctor` 给出 `install.sh --with-agent-use` 建议，不影响退出码；已有启用座位时沿用缺失提示。
 
 `aiw doctor` 在座位列表后检查 Claude 派单钩子与 CLAUDE.md 引入、安装链接、Codex 钩子/信任记录/功能开关/AGENTS 标记块、状态栏命令和 aiw-board，以及本地仓库改动和相对上游的领先/落后（按上次 fetch，不联网）。配置检查只提示、不影响返回码；返回码仍只反映座位是否可用。Codex 信任记录存在不代表尚未过期；未接入或设置 `AIW_NO_CODEX` 时跳过 Codex 检查。
 

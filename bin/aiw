@@ -21,7 +21,7 @@
 #   aiw weekly [days] [--json]  本机周报
 #   aiw snapshot               写本机脱敏快照到 snapshots/<host>.json（用于两台机器查漂移）
 #   aiw gc [天数] [--dry-run]   清理旧 runs/panels/maps（默认 30 天）
-#   aiw sync                   git pull --ff-only（拿另一台机器改的规则；本地有改动时会失败，不会改写历史）
+#   aiw sync                   先 git pull --ff-only 更新 aiw，再更新已安装的 agent-use 和 agent-use-adapters（后两者失败只警告）
 set -euo pipefail
 # 解析软链，找到仓库目录（兼容 macOS 自带 bash 3.2，不用 readlink -f）
 src="${BASH_SOURCE[0]}"
@@ -80,7 +80,14 @@ case "$cmd" in
   weekly)   shift; exec "$PY" "${H}/weekly.py" "$@" ;;
   snapshot) exec "$PY" "${H}/snapshot.py" ;;
   gc)       shift; exec "$PY" "${H}/gc.py" "$@" ;;
-  sync)     exec git -C "${H}" pull --ff-only ;;
+  sync)
+    git -C "${H}" pull --ff-only
+    source "${H}/agent_use_setup.sh"
+    aiw_agent_use_paths
+    if aiw_is_git_repo "$AU"; then aiw_pull_optional "$AU" agent-use; fi
+    if aiw_is_git_repo "$ADAPTERS"; then aiw_pull_optional "$ADAPTERS" agent-use-adapters; fi
+    exit 0
+    ;;
   help|-h|--help) sed -n '2,/^set -euo pipefail/{ /^#/p; }' "$0" | sed 's/^# \{0,1\}//' ;;
   *)        exec "$PY" "${H}/ai_worker.py" "$@" ;;
 esac

@@ -1410,6 +1410,11 @@ def _doctor() -> int:
             ver = f"版本查询失败: {e.__class__.__name__}"
         print(f"  ✓ {name:11s} {path}  {ver}  model={cfg.get('model') or 'cli-default'} effort={cfg.get('effort', '-')}" + (f"  ⚠ 熔断: {br}" if br else "") + lock_hint)
     print("（只检查安装与版本；能不能真正调用请跑一单：aiw <seat> . 120 <prompt文件> --ro）")
+    if not (agent_use_home() / 'scripts/run_agent.py').exists() and not any(
+            isinstance(cfg, dict) and cfg.get('kind') == 'agent_use'
+            and not disabled_seat(name, disabled=disabled_entries)
+            for name, cfg in (configured.items() if isinstance(configured, dict) else [])):
+        print('· 想把更多模型（如免费的 OpenCode）接进来，可重跑 install.sh --with-agent-use（会克隆 agent-use 和 agent-use-adapters）。')
     # 配置检查只提示，不参与座位可用性的退出码。
     try:
         from doctor_config import check_config

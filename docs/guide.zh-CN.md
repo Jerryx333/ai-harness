@@ -40,6 +40,18 @@ aiw 帮 Claude Code 或 Codex 主会话把活分给不同模型：改代码派 C
 
 ## 接入更多模型（可选）
 
+一键安装：
+
+```bash
+~/.claude/aiw/install.sh --with-agent-use
+```
+
+它克隆或快进更新公开核心和 [agent-use-adapters](https://github.com/Jerryx333/agent-use-adapters)，运行适配器安装脚本。仅在适配器安装成功（包括 `Already installed` 以 0 退出）后，补充缺失的本地 `opencode` 免费文本座位和空顶替链；已有座位不覆盖。适配器克隆或安装失败（如已有注册表冲突）时警告并跳过补座位，安装流程继续，原注册表保留；若生效注册表已有 `opencode` provider，可按下节手工添加座位。CLI 仍需按官方说明安装和登录。此参数可与 `--claude-hook=plugin` 组合。
+
+核心默认位于 `~/code/ai/agent-use`（`AGENT_USE_HOME` 可覆盖），适配器默认在其同级 `agent-use-adapters`（`AIW_ADAPTERS_HOME` 可覆盖）；座位写入 `AIW_CONFIG` 或 `~/.config/aiw/seats.local.json`。配置为软链时保留软链，备份和临时文件放在真实目标目录，再原子替换目标文件；断链时不改动并警告。`aiw sync` 会同时快进更新已安装的两个 Git 仓库，失败只警告。`free_only` 是 doctor 的免费标注，`free_guard` 在发现收费证据时停用座位或模型；免费模型选择由适配器负责；目前 OpenCode 模型级停用记录不会过滤 dispatcher 的默认/备选模型。
+
+也可以按以下步骤手工接入：
+
 使用公开的 [agent-use 核心](https://github.com/Jerryx333/agent-use)。若不装在 `~/code/ai/agent-use`，用 `AGENT_USE_HOME` 指定其仓库位置。
 
 1. 在 `~/.config/agent-use/dispatcher.json` 注册 **provider**，即调用模型/工具的适配器。可用 `examples/cli_adapter.py` 包装已有 CLI，参照其注册表示例。任务送到标准输入，标准输出即答复；工具需另行安装和登录。

@@ -184,6 +184,11 @@ MUTATIONS = [{'id': 'transient-fallback',
 
 
 MUTATIONS.extend([
+    {'id': 'codex-adapter-name', 'expect': '别名写单判定失效',
+     'invariant': 'Codex 专属行为按 adapter 而非座位名启用', 'file': 'ai_worker.py',
+     'old': 'return (seat_adapter(seat) == "codex" and cfg.get("kind") != "agent_use"',
+     'new': 'return (seat in ("codex", "codex-sol") and cfg.get("kind") != "agent_use"',
+     'tests': ['codex_adapter_alias'], 'location': 'codex_workspace_write'},
     {'id': 'panel-opinion-threshold', 'expect': '会诊门槛应固定两家',
      'invariant': '会诊至少两家成功且有产出，单家不能降低门槛', 'file': 'panel.py',
      'old': 'required_opinions = 2', 'new': 'required_opinions = min(2, len(seats))',

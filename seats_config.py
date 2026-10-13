@@ -103,6 +103,14 @@ def validate(merged) -> list[str]:
         kind = seat.get('kind')
         if kind not in ('agent_use', 'cli'):
             errors.append(f'{path}.kind 必须是 agent_use 或 cli')
+        adapter = seat.get('adapter')
+        if adapter is not None:
+            if not isinstance(adapter, str):
+                error(f'{path}.adapter', '字符串或 null')
+            elif adapter not in ('codex',):
+                errors.append(f'{path}.adapter 必须是 codex 或 null')
+            if kind != 'cli':
+                errors.append(f'{path}.adapter 非 null 时 kind 必须是 cli')
         required = ('provider',) if kind == 'agent_use' else ('bin',) if kind == 'cli' else ()
         for key in required:
             if not isinstance(seat.get(key), str) or not seat[key].strip():
@@ -111,6 +119,14 @@ def validate(merged) -> list[str]:
             for key in ('argv_rw', 'argv_ro'):
                 # build_argv supplies only these three format keywords.
                 templates(seat.get(key), f'{path}.{key}', ('bin', 'prompt', 'workdir'), nonempty=True)
+                if adapter == 'codex':
+                    argv = seat.get(key)
+                    if (not isinstance(argv, list) or argv[1:2] != ['exec']
+                            or argv.count('--sandbox') != 1
+                            or argv[argv.index('--sandbox') + 1:argv.index('--sandbox') + 2]
+                            not in (['read-only'], ['workspace-write'])):
+                        errors.append(f'{path}.{key} 必须是 Codex exec 命令（argv[1] 为 exec，'
+                                      '恰好一个 --sandbox，其后为 read-only 或 workspace-write）')
         if 'model' in seat and not isinstance(seat['model'], str):
             error(f'{path}.model', '字符串')
         if kind == 'cli':

@@ -346,12 +346,19 @@ def local_config(repo):
         print(f'  · 仅本地的座位：{new_seats}')
 
     seat_fields = {"disabled_by_user", "max_concurrency", "kind", "provider", "model", "models",
-                   "free_guard", "free_only", "expects_credits", "require_no_tools", "tools_note"}
+                   "free_guard", "free_only", "expects_credits", "require_no_tools", "tools_note", "adapter"}
     seat_fields.update(key for seat in public_seats.values() if isinstance(seat, dict) for key in seat)
 
     known_seats = merged.get('seats', {})
     if not isinstance(known_seats, dict):
         known_seats = {}
+    for name, seat in known_seats.items():
+        if not isinstance(seat, dict) or seat.get('kind') != 'cli' or seat.get('adapter') is not None:
+            continue
+        if any(isinstance(argv, list) and argv[1:2] == ['exec'] and '--sandbox' in argv
+               for argv in (seat.get('argv_rw'), seat.get('argv_ro'))):
+            warn(f'seats.{name}.adapter', '看起来是 Codex CLI，但未声明 adapter，不享有 codex 专属行为',
+                 '在本地座位配置中设置 "adapter": "codex"')
 
     def private_path(parts):
         return (len(parts) >= 2 and parts[0] in ('notify', 'errand') or

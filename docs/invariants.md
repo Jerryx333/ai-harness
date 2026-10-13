@@ -9,6 +9,7 @@
 | AIW_NESTED 不再派单 | `ai_worker.py:dispatch` | `nested_dispatch` | `nested` |
 | 写任务不顶替给只出文本的座位 | `ai_worker.py:dispatch` | `write_fallback_text_seat` | `write-fallback` |
 | 只出文本的座位不接写任务 | `ai_worker.py:dispatch` | `worker_regression` | `text-write` |
+| Codex 专属行为按 adapter 而非座位名启用 | `ai_worker.py:codex_workspace_write` | `codex_adapter_alias` | `codex-adapter-name` |
 | codex-sol 不顶替 | `seats.json:fallback` | `codex_sol_no_fallback` | `sol-fallback` |
 | 超时不换座位 | `ai_worker.py:dispatch` | `worker_regression` | `timeout` |
 | rc=0 且有输出优先判 ok，回答谈 quota/401 不熔断 | `ai_worker.py:classify` | `worker_regression` | `success-first` |

@@ -1191,16 +1191,21 @@ def worktree_writable_roots(workdir: str) -> list[str]:
         return []
 
 
+def seat_adapter(seat: str) -> str | None:
+    cfg = SEATS["seats"][seat]
+    return cfg.get("adapter") if cfg.get("kind") == "cli" else None
+
+
 def codex_workspace_write(seat: str, ro: bool) -> bool:
     cfg = SEATS["seats"][seat]
     argv = cfg["argv_ro"] if ro else cfg["argv_rw"]
-    return (seat in ("codex", "codex-sol") and cfg.get("kind") != "agent_use"
+    return (seat_adapter(seat) == "codex" and cfg.get("kind") != "agent_use"
             and argv[1:2] == ["exec"]
             and any(argv[i:i + 2] == ["--sandbox", "workspace-write"] for i in range(len(argv))))
 
 
 def dispatch_reminders(seat: str, ro: bool, workdir: str, net: bool = False) -> str:
-    if seat not in ("codex", "codex-sol") or SEATS["seats"][seat].get("kind") == "agent_use":
+    if seat_adapter(seat) != "codex" or SEATS["seats"][seat].get("kind") == "agent_use":
         return ""
     sandbox = ""
     if codex_workspace_write(seat, ro):
@@ -1220,8 +1225,9 @@ def build_argv(seat: str, prompt: str, workdir: str, ro: bool, effort: str | Non
     if shutil.which(binary) is None and not Path(binary).exists():
         return None
     argv = [a.format(bin=binary, prompt=prompt, workdir=workdir) for a in (cfg["argv_ro"] if ro else cfg["argv_rw"])]
-    if seat in ("codex", "codex-sol") and len(argv) > 1 and argv[1] == "exec":
-        # inherit="core" 会丢掉父进程的防嵌套标记，需显式设置执行方 shell 环境。
+    if seat_adapter(seat) == "codex" and len(argv) > 1 and argv[1] == "exec":
+        # Codex 适配器固有需求：inherit="core" 会丢掉 child_env() 设置的父进程防嵌套标记，
+        # Codex 内层 shell 不继承 AIW_NESTED，需显式设置执行方 shell 环境。
         argv[2:2] = ["-c", 'shell_environment_policy.set.AIW_NESTED="1"']
         if codex_workspace_write(seat, ro):
             overrides = []
@@ -1303,7 +1309,7 @@ def _run_seat(seat: str, prompt: str, workdir: str, timeout: int, ro: bool, effo
     if locked:
         return locked
     env = child_env()
-    if seat in ("codex", "codex-sol") and argv[1:2] == ["exec"] and os.environ.get("AIW_CODEX_SHARED_HOME") != "1":
+    if seat_adapter(seat) == "codex" and argv[1:2] == ["exec"] and os.environ.get("AIW_CODEX_SHARED_HOME") != "1":
         home, reason = prepare_codex_home()
         if home is not None:
             env["CODEX_HOME"] = str(home)
@@ -1330,7 +1336,7 @@ def _run_seat(seat: str, prompt: str, workdir: str, timeout: int, ro: bool, effo
         output_saved = write_run_file(run_dir / "output.md", out)
         write_run_file(run_dir / "stderr.txt", err, 200 * 1024)
     secs = round(time.time() - t0, 1)
-    token_fields = codex_tokens(err) if timed_out and seat in ("codex", "codex-sol") else None
+    token_fields = codex_tokens(err) if timed_out and seat_adapter(seat) == "codex" else None
     if timed_out:
         err = "timeout"
     elif rc != 0 and out.strip():
@@ -1723,7 +1729,7 @@ def dispatch(inflight: Path | None, attempt: dict) -> int:
         print(f"[ai-worker] 未知座位 {seat}；可用：{', '.join(SEATS['seats'])}", file=sys.stderr)
         return 64
     net = "--net" in flags
-    if net and (ro or seat not in ("codex", "codex-sol") or SEATS["seats"][seat].get("kind") == "agent_use"
+    if net and (ro or seat_adapter(seat) != "codex" or SEATS["seats"][seat].get("kind") == "agent_use"
                 or not codex_workspace_write(seat, ro)):
         print("[ai-worker] --net 只用于 codex 类座位的写单，不能与 --ro 或只读座位同用，也不能用于非 codex 座位", file=sys.stderr)
         return 64
@@ -1889,7 +1895,7 @@ def dispatch(inflight: Path | None, attempt: dict) -> int:
                             "run_dir": r.get("run_dir"),
                             "kind": r["kind"], "rc": r["rc"], "secs": r["secs"], "substituted": s != seat,
                             "err_tail": r["err"][-300:],
-                            **((r.get("token_fields") or codex_tokens(r["err"])) if s in ("codex", "codex-sol") and not r["kind"].startswith("skipped_") else {})})
+                            **((r.get("token_fields") or codex_tokens(r["err"])) if seat_adapter(s) == "codex" and not r["kind"].startswith("skipped_") else {})})
                 last_result = r
                 if interruption is not None:
                     raise interruption

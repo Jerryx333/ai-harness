@@ -299,11 +299,11 @@ Claude 派单钩子检查也识别已启用的 `aiw@…` 插件提供的 `UserPr
 
 worker 只接受 `--ro --net --no-fallback --no-findings --allow-nested --attach --effort`，panel 只接受 `--attach`、`--prior`、`--free`、`--full`；未知开关返回 64，旧 `--require-no-tools` 提示「已移除，忽略」后继续。
 
-`--net` 默认不开，只对 codex 类座位的写单有效，在 prompt 前添加 `-c sandbox_workspace_write.network_access=true`，开放网络和本地端口；与 `--ro`（含只读座位）同用或用于非 codex 座位返回 64 并说明。
+`--net` 默认不开，只对 `adapter="codex"` 座位的写单有效，在 prompt 前添加 `-c sandbox_workspace_write.network_access=true`，开放网络和本地端口；与 `--ro`（含只读座位）同用或用于非 codex 座位返回 64 并说明。
 
-codex 写单在 linked worktree 中自动添加 `-c sandbox_workspace_write.writable_roots=[...]`（TOML 字符串数组）。通过 `git rev-parse --git-dir` 与 `--git-common-dir` 探测，要求 git-dir 的 realpath 位于 `<common-dir>/worktrees/` 下，且 git-dir 和 objects 本身不是软链；只包含 worktree 私有 git-dir 和 `<common-dir>/objects` 的 realpath，供 `git add` 写索引及对象；不开放整个共享 `.git`，hooks/config/refs 保持不可写。普通仓库、Git 探测失败或只读单不添加。`git commit` 及其它改 refs 的操作会被沙箱拒绝，执行方不要尝试，改动留在暂存区，由主会话提交。
+`adapter="codex"` 写单在 linked worktree 中自动添加 `-c sandbox_workspace_write.writable_roots=[...]`（TOML 字符串数组）。通过 `git rev-parse --git-dir` 与 `--git-common-dir` 探测，要求 git-dir 的 realpath 位于 `<common-dir>/worktrees/` 下，且 git-dir 和 objects 本身不是软链；只包含 worktree 私有 git-dir 和 `<common-dir>/objects` 的 realpath，供 `git add` 写索引及对象；不开放整个共享 `.git`，hooks/config/refs 保持不可写。普通仓库、Git 探测失败或只读单不添加。`git commit` 及其它改 refs 的操作会被沙箱拒绝，执行方不要尝试，改动留在暂存区，由主会话提交。
 
-codex / codex-sol 的派单在 prompt 末尾、观察记录要求之前固定追加提醒（panel 也有，文本座位没有）：写单说明默认不能联网、不能监听本地端口，只能写工作目录及明确开放的 worktree Git 目录；本单用了 `--net` 则说明网络和本地端口已开放。当 `worktree_writable_roots(workdir)` 非空时，写单另加「本目录是 linked worktree，git add 可用；git commit 及其它改 refs 的操作会被沙箱拒绝，不要尝试，改动留在暂存区，由主会话提交。」普通仓库写单及只读单不加该句。验收因沙箱失败不得绕过或改测试迁就，回答须列「需主会话补跑」小节，写出命令和失败原因。写单和只读单都提醒：规则、数据字段含义的转述以原文为准，发现不符按原文理解，并在回答中指出不符之处（附 path:line）。
+`adapter="codex"` 座位的派单在 prompt 末尾、观察记录要求之前固定追加提醒（panel 也有，文本座位没有）：写单说明默认不能联网、不能监听本地端口，只能写工作目录及明确开放的 worktree Git 目录；本单用了 `--net` 则说明网络和本地端口已开放。当 `worktree_writable_roots(workdir)` 非空时，写单另加「本目录是 linked worktree，git add 可用；git commit 及其它改 refs 的操作会被沙箱拒绝，不要尝试，改动留在暂存区，由主会话提交。」普通仓库写单及只读单不加该句。验收因沙箱失败不得绕过或改测试迁就，回答须列「需主会话补跑」小节，写出命令和失败原因。写单和只读单都提醒：规则、数据字段含义的转述以原文为准，发现不符按原文理解，并在回答中指出不符之处（附 path:line）。
 
 `--allow-nested` 只在主会话的派单说明明确允许时使用；被外包的会话在沙箱里调用其他座位可能因读不到登录状态而误判认证失败、触发误熔断。
 
@@ -317,7 +317,7 @@ codex / codex-sol 的派单在 prompt 末尾、观察记录要求之前固定追
 
 ## 执行方独立 CODEX_HOME
 
-`codex` / `codex-sol` 的 `codex exec` 默认使用 `STATE/codex-home/`（通常是 `state/codex-home/`，目录权限 700）。源目录取父进程 `CODEX_HOME`，未设置时取 `~/.codex`。按需生成的 `config.toml` 权限为 600，原子写入且内容不变时不重写；只复制 `model_provider`、选中 provider 的完整 `model_providers` 表（含嵌套表）。hooks、MCP、插件、技能、项目和 shell 环境策略等配置不复制。
+`adapter="codex"` 座位的 `codex exec` 默认使用 `STATE/codex-home/`（通常是 `state/codex-home/`，目录权限 700）。源目录取父进程 `CODEX_HOME`，未设置时取 `~/.codex`。按需生成的 `config.toml` 权限为 600，原子写入且内容不变时不重写；只复制 `model_provider`、选中 provider 的完整 `model_providers` 表（含嵌套表）。hooks、MCP、插件、技能、项目和 shell 环境策略等配置不复制。
 
 源目录有 `auth.json` 时，执行方 home 中只建立指向源文件的软链，不复制凭据。启动时附加 `-c skills.include_instructions=false`，避免加载主会话技能列表；工作目录里的项目 `AGENTS.md` 仍会加载，`AIW_NESTED=1` 注入保持不变。执行方会话记录（rollout）现在落在 `state/codex-home/sessions/`（设 `AIW_STATE` 时跟随 STATE）。
 
@@ -434,6 +434,8 @@ Claude 在 aiw 引入行后引入 `CLAUDE.personal.md`；文件不存在时不�
 
 
 公开默认仅有 `codex`、`codex-sol`、`claude` 三个 CLI 座位，三条顶替链均为空。`panel_default` 为 `["codex-sol", "claude"]`，按 `self_seats` 排除主会话；`panel_free` 为空。`agent_use` 座位通过本地配置接入，并依赖本机安装的适配器，公开 agent-use 不附带这些适配器或跑腿服务。
+
+CLI 座位可选 `adapter`：缺省或 `null` 为普通 CLI；目前字符串仅允许 `"codex"`，且仅用于 `kind=cli`。本地 `"adapter": null` 可清除公开配置继承值，部分字段覆盖则继续继承。Codex 适配器要求 `argv_rw`、`argv_ro` 的第二项为 `"exec"`，各恰好含一个 `"--sandbox"`，其后为 `"read-only"` 或 `"workspace-write"`。它启用沙箱/派单提醒、内层 shell 防嵌套、linked worktree 可写根、写单 `--net`、独立 CODEX_HOME 和 token 记账；行为按实际执行座位判断。新增 `codex-high` 等别名时，在本地 `seats` 中复制公开 `codex` 座位完整配置（含 argv），保留 `"adapter": "codex"`，再调整 `effort` 等字段；座位名本身不会启用适配器。看起来是 Codex 命令却未声明 adapter 时，doctor 只警告。
 
 `map_default` 指定 map 默认座位（公开为 `codex-sol`）。座位可设正整数 `max_concurrency`，map 使用它与 `--jobs` 的较小值，降并发时提示。
 

@@ -19,6 +19,7 @@
   "seats": {
     "codex": {
       "kind": "cli",
+      "adapter": "codex",
       "label": "Codex · sol（改文件、批量改动）",
       "bin": "codex",
       "bin_env": "CODEX_BIN",
@@ -57,6 +58,7 @@
     },
     "codex-sol": {
       "kind": "cli",
+      "adapter": "codex",
       "label": "Codex · sol（只读评审、整仓分析）",
       "bin": "codex",
       "bin_env": "CODEX_BIN",

@@ -372,7 +372,7 @@ def seat_execution_contract():
         local.write_text(json.dumps(c.read_config(REPO / 'seats.local.example.json')))
         with patch.dict(os.environ, AIW_CONFIG=str(local)):
             check(c.load_seats() == example, '合法示例加载失败')
-    valid = {'model': '', 'model_args': [], 'argv_rw': ['{bin}', '{prompt}', '{workdir}', '{{literal}}'],
+    valid = {'adapter': None, 'model': '', 'model_args': [], 'argv_rw': ['{bin}', '{prompt}', '{workdir}', '{{literal}}'],
              'argv_ro': ['{bin}'], 'ro_only': False, 'free_only': True, 'free_guard': False,
              'require_no_tools': True, 'expects_credits': False}
     check(c.validate(c.merge(public, {'seats': {'codex': valid,

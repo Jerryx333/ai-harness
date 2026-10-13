@@ -168,7 +168,7 @@ def findings_daily_cap():
         f = findings_fixture(Path(td))
         # 并发调用与跨次调用都不能重置限额；answers 始终不占观察名额。
         with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
-            results = list(pool.map(lambda i: f.record([{'type': 'observation', 'observation': str(i)}]), range(8)))
+            results = list(pool.map(lambda i: f.record([{'id': str(i), 'type': 'observation', 'observation': str(i)}]), range(8)))
         check(sum(r['written'] for r in results) == 2 and sum(r['capped'] for r in results) == 6, str(results))
         check(f.record([{'type': 'answers'}, {'type': 'changes'}]) == {'written': 2, 'quarantined': 0, 'capped': 0}, '非观察受限')
         folder = f.STATE / 'findings'
@@ -413,6 +413,33 @@ def scanner_id_rules():
                   '20261012-112233-seat-12345678-abcdef01', '20261012-112233-seat-1-ABCDEF01',
                   '20261012-112233-12345678'):
         check(pattern.search(value) is None, 'ID exemption expanded: ' + value)
+
+
+def findings_record_invalid_cache():
+    for content in (None, '{broken', '[]', 'null', '{"x":1}', '{"open":"a"}',
+                    '{"open":true}', '{"open":1.5}'):
+        with tempfile.TemporaryDirectory() as td:
+            f = findings_fixture(Path(td))
+            folder = f.STATE / 'findings'; folder.mkdir(parents=True)
+            findings_append(folder, *[dict(id=rid, type='observation')
+                                     for rid in ('pending', 'unexplained', 'done')])
+            (folder / 'status.jsonl').write_text(
+                '{"id":"unexplained","status":"unexplained"}\n'
+                '{"id":"done","status":"explained"}\n')
+            cache_path = folder / 'count-cache.json'
+            if content is not None:
+                cache_path.write_text(content)
+            rows = [dict(id=rid, type='observation', observation='现象') for rid in ('one', 'two')]
+            check(f.record(rows) == dict(written=2, quarantined=0, capped=0),
+                  f'invalid cache interrupted batch: {content}')
+            records = list(f._rows(folder / 'records.jsonl'))
+            check([r['id'] for r in records] == ['pending', 'unexplained', 'done', 'one', 'two'],
+                  f'batch records missing: {content}')
+            statuses = {r['id']: r['status'] for r in f._rows(folder / 'status.jsonl')}
+            actual = sum(r['type'] == 'observation' and statuses.get(r['id']) in (None, 'unexplained')
+                         for r in records)
+            check(json.loads(cache_path.read_text())['open'] == actual == 4,
+                  f'cache did not recount existing records exactly once: {content}')
 
 
 CASES = {name: value for name, value in globals().copy().items() if name.startswith(("findings_", "scanner_")) and callable(value) and value.__module__ == __name__}

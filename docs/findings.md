@@ -8,7 +8,7 @@
 
 ## 配置
 
-在配置的 findings 段设置：collect、hint 缺省 false；max_items=5、daily_cap=300、field_max=300、trigger_count=100、trigger_days=3。collect 决定追加记录块与解析；hint 决定钩子提示。数值必须是合法整数，daily_cap 可为零，其余须为正数。残留的已删除配置键静默忽略。
+在配置的 findings 段设置：`findings.config()` 的代码缺省值为 collect、hint=false；公开 `seats.json` 开启 collect 与 hint，本地配置可关闭；max_items=5、daily_cap=300、field_max=300、trigger_count=100、trigger_days=3。collect 决定追加记录块与解析；hint 决定钩子提示。数值必须是合法整数，daily_cap 可为零，其余须为正数。残留的已删除配置键静默忽略。
 worker 收集不含会诊、map、无附件文本单；`--no-findings` 可跳过单次收集。记录失败只警告，不影响执行结果。
 
 ## 状态文件

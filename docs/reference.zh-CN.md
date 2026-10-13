@@ -61,7 +61,7 @@ aiw triage apply <decisions.json>
 aiw triage abort
 ```
 
-`--no-findings` 跳过本单收集。配置如下，collect / hint 缺省 false，残留的已删除键静默忽略：
+`--no-findings` 跳过本单收集。配置如下，`findings.config()` 的代码缺省值为 collect / hint=false；公开 `seats.json` 开启 collect 与 hint，本地配置可关闭。残留的已删除键静默忽略：
 
 | 键 | 示例值 | 含义 |
 | --- | --- | --- |

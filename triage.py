@@ -314,6 +314,9 @@ def apply(data):
         return 64
     path, lock = current
     batch = read(path.parent / 'batch.json')
+    if not isinstance(batch, dict):
+        print('本批 batch.json 缺失或损坏，请先 aiw triage abort 再重新 start', file=sys.stderr)
+        return 2
     with (folder() / 'records.lock').open('a') as guard:
         fcntl.flock(guard, fcntl.LOCK_EX)
         require_lock(lock)

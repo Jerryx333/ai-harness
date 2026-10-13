@@ -173,4 +173,37 @@ def triage_validate_core():
         check(t.validate(d, batch, existing={'existing': {}}) == [], 'existing hypothesis rejected')
 
 
-CASES = {case.__name__: case for case in (triage_baseline_verified, triage_local_flow, triage_validate_core)}
+def triage_apply_invalid_batch():
+    import contextlib
+    import io
+    for content in (None, '[]'):
+        for existing in (False, True):
+            with tempfile.TemporaryDirectory() as td:
+                t, f, folder, _ = triage_fixture(Path(td))
+                findings_append(folder, *[dict(id=rid, type='observation', ts=t.now().isoformat())
+                                         for rid in ('new', 'local')])
+                if existing:
+                    t.append(folder / 'status.jsonl', [dict(id='old', status='unexplained')])
+                    f._atomic_json(folder / 'hypotheses.json', {'H-old': {'id': 'H-old'}})
+                with patch.object(f, 'extract', return_value={}):
+                    check(t.main(['start']) == 0, 'start failed')
+                current, _ = t.latest()
+                batch_path = current.parent / 'batch.json'
+                if content is None:
+                    batch_path.unlink()
+                else:
+                    batch_path.write_text(content)
+                before = {str(p.relative_to(folder)): p.read_bytes()
+                          for p in folder.rglob('*') if p.is_file()}
+                with contextlib.redirect_stderr(io.StringIO()) as err:
+                    check(t.apply(triage_decisions()) == 2, 'invalid batch accepted')
+                check(err.getvalue().strip() ==
+                      '本批 batch.json 缺失或损坏，请先 aiw triage abort 再重新 start',
+                      'invalid batch diagnostic missing')
+                after = {str(p.relative_to(folder)): p.read_bytes()
+                         for p in folder.rglob('*') if p.is_file()}
+                check(after == before, 'invalid batch created or modified state files')
+
+
+CASES = {case.__name__: case for case in (triage_baseline_verified, triage_local_flow, triage_validate_core,
+                                       triage_apply_invalid_batch)}

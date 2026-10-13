@@ -305,7 +305,10 @@ def record(rows: list[dict], *, strict=False) -> dict:
                     try:
                         cache = json.loads(cache_path.read_text(encoding="utf-8"))
                     except (FileNotFoundError, ValueError):
-                        cache = {"open": 0, "last_triage": None, "oldest_open": None}
+                        cache = None
+                    if not isinstance(cache, dict) or type(cache.get("open")) is not int:
+                        recompute_count_cache()
+                        continue
                     cache["open"] += 1
                     stamp = _timestamp(row.get("ts"))
                     oldest = _timestamp(cache.get("oldest_open"))

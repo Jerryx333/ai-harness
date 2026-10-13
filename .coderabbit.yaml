@@ -1,0 +1,53 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+language: zh-CN
+reviews:
+  profile: chill
+  request_changes_workflow: false
+  high_level_summary: true
+  poem: false
+  review_status: true
+  collapse_walkthrough: true
+  sequence_diagrams: false
+  auto_review:
+    enabled: true
+    drafts: false
+    base_branches: [main]
+  path_instructions:
+    - path: "*.py"
+      instructions: >-
+        Use only the Python standard library. Launch subprocesses with argv
+        arrays, never shell=True. Read seat configuration only through
+        seats_config.load_seats(); keep rules_hash computed from the public
+        files only. Hook paths (route.py --hook, findings hints) must never
+        block user input: warn on stderr and exit 0. Keep state writes atomic
+        and under the documented locks; update docs/state-contract.md and
+        test_state_contract when state fields change.
+    - path: "seats.json"
+      instructions: >-
+        Public defaults only: codex, codex-sol and claude. Vendor text seats,
+        notification targets, findings hubs and errand paths belong in the
+        machine-local override (~/.config/aiw/seats.local.json), never here.
+        Preserve the existing 2-space formatting and key order.
+    - path: "router-rules.json"
+      instructions: >-
+        Rules may only reference public seats or commands; per-machine routing
+        belongs in router-rules.local.json. Routing is first-match, so check
+        rule order when patterns overlap.
+    - path: "{CLAUDE.md,AGENTS.harness.md}"
+      instructions: >-
+        These are shared operating rules loaded into every session. Keep them
+        generic; personal seats, machines, accounts and projects belong in the
+        user's ~/.config/aiw/*.personal.md files. Keep the two files consistent
+        with each other and with the code.
+    - path: "tests/**"
+      instructions: >-
+        Keep tests offline with no network access. Use temporary directories
+        and an isolated HOME; never read the real ~/.claude or ~/.config/aiw.
+        Do not weaken assertions to make a change pass.
+    - path: "**"
+      instructions: >-
+        Reject personal information, credentials, machine names and
+        machine-local absolute paths. Check README and docs against actual
+        code behavior.
+chat:
+  auto_reply: true

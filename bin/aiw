@@ -1,0 +1,85 @@
+#!/usr/bin/env bash
+# aiw — ai-harness 统一入口。任意项目、任意机器同一个命令。
+#   aiw <seat> <workdir> <timeout_s> <prompt_file> [--ro] [--no-fallback] [--no-findings] [--attach 文件 ...]   外包一单
+#   aiw note <workdir> <现象> [--expected 文本] [--evidence 文本] [--location 文本]
+#   aiw findings extract [--days N] | status | sync [--quiet]  抽取信号 / 查看状态 / 同步观察
+#   aiw triage start [--days N] | apply <decisions.json> | abort | issues <decisions.json>
+#   aiw track [--host 名称] [--timeout 秒] <标签> -- <命令> [参数...]  登记主会话长任务
+#   aiw errand <子命令> ...  跑腿专线（云端真实执行，需用户弹窗确认）
+#   aiw enable <seat|provider:model>  用户确认仍免费后恢复单条停用记录
+#   aiw freecheck [--install|--uninstall]  免费检查 / 每日 09:30 定时任务
+#   aiw doctor [--fingerprint] 检查各座位 CLI 安装/版本/熔断
+#   aiw panel <workdir> <timeout_s> <prompt_file> [seat ...] [--attach 文件 ...] [--free]   同时问几家，收齐独立意见
+#   aiw map <workdir> <timeout_s> <prompt_file> <文件 ...> [--seat 座位] [--jobs N]   逐文件并行派单
+#   aiw handoff --template | --path | <交接文件> [--workdir DIR] [--dry-run]
+#   aiw route "消息"            看这条消息会派给谁
+#   aiw goal init|next|verify|status <goal.json>
+#   aiw board [--all] [--session id] [--once] [--interval 2] [--recent 15]
+#     board 转发到 aiw-board
+#   aiw statusline              转发到 aiw-board statusline
+#   aiw tokens [天数=7] [--json] [--top N=10]  只读 token 测量
+#   aiw weekly [days] [--json]  本机周报
+#   aiw snapshot               写本机脱敏快照到 snapshots/<host>.json（用于两台机器查漂移）
+#   aiw gc [天数] [--dry-run]   清理旧 runs/panels/maps（默认 30 天）
+#   aiw sync                   git pull --ff-only（拿另一台机器改的规则；本地有改动时会失败，不会改写历史）
+set -euo pipefail
+# 解析软链，找到仓库目录（兼容 macOS 自带 bash 3.2，不用 readlink -f）
+src="${BASH_SOURCE[0]}"
+while [ -L "$src" ]; do
+  dir="$(cd -P "$(dirname "$src")" && pwd)"
+  src="$(readlink "$src")"
+  case "$src" in /*) ;; *) src="${dir}/${src}" ;; esac
+done
+H="$(cd -P "$(dirname "$src")/.." && pwd)"
+PY="${AI_HARNESS_PYTHON:-python3}"
+
+cmd="${1:-help}"
+case "$cmd" in
+  note) shift; exec "$PY" "${H}/findings.py" note "$@" ;;
+  findings) shift; exec "$PY" "${H}/findings.py" "$@" ;;
+  triage) shift; exec "$PY" "${H}/triage.py" "$@" ;;
+  track) shift; exec "$PY" "${H}/track.py" "$@" ;;
+  errand)
+    shift
+    if [ "${AIW_NESTED:-}" = 1 ]; then
+      echo '已在被外包的会话里，不得发起跑腿任务（aiw errand）' >&2
+      exit 64
+    fi
+    ERRAND_HOME="$(PYTHONPATH="$H${PYTHONPATH:+:$PYTHONPATH}" "$PY" -c 'from ai_worker import errand_home; print(errand_home() or "")')"
+    if [ -z "$ERRAND_HOME" ]; then
+      echo '未配置跑腿：设置 AGENT_USE_ERRAND_HOME 或本地配置 errand.home' >&2
+      exit 1
+    fi
+    if [ ! -f "$ERRAND_HOME/scripts/errand_use.py" ]; then
+      echo "跑腿入口不存在：$ERRAND_HOME/scripts/errand_use.py" >&2
+      exit 1
+    fi
+    exec "$PY" "$ERRAND_HOME/scripts/errand_use.py" "$@"
+    ;;
+  freecheck) shift; exec "$PY" "${H}/freecheck.py" "$@" ;;
+  enable)   shift; exec "$PY" "${H}/ai_worker.py" enable "$@" ;;
+  doctor)   shift; exec "$PY" "${H}/ai_worker.py" doctor "$@" ;;
+  handoff)  shift; exec "$PY" "${H}/handoff.py" "$@" ;;
+  route)    shift; exec "$PY" "${H}/route.py" "$@" ;;
+  panel)    shift; exec "$PY" "${H}/panel.py" "$@" ;;
+  map)      shift; exec "$PY" "${H}/map.py" "$@" ;;
+  goal)     shift; exec "$PY" "${H}/goal.py" "$@" ;;
+  board|statusline)
+    shift
+    if command -v aiw-board >/dev/null 2>&1; then
+      if [ "$cmd" = statusline ]; then
+        exec aiw-board statusline "$@"
+      fi
+      exec aiw-board "$@"
+    fi
+    echo '未安装 aiw-board（可选组件）：安装后确保 aiw-board 在 PATH 中' >&2
+    exit 127
+    ;;
+  tokens)   shift; exec "$PY" "${H}/tokens.py" "$@" ;;
+  weekly)   shift; exec "$PY" "${H}/weekly.py" "$@" ;;
+  snapshot) exec "$PY" "${H}/snapshot.py" ;;
+  gc)       shift; exec "$PY" "${H}/gc.py" "$@" ;;
+  sync)     exec git -C "${H}" pull --ff-only ;;
+  help|-h|--help) sed -n '2,/^set -euo pipefail/{ /^#/p; }' "$0" | sed 's/^# \{0,1\}//' ;;
+  *)        exec "$PY" "${H}/ai_worker.py" "$@" ;;
+esac

@@ -1,0 +1,31 @@
+{
+  "seats": {
+    "local-text": {
+      "kind": "agent_use",
+      "provider": "your-provider",
+      "model": "your-model",
+      "max_concurrency": 1,
+      "expects_credits": true
+    }
+  },
+  "fallback": {
+    "local-text": []
+  },
+  "panel_default": [
+    "codex-sol",
+    "claude",
+    "local-text"
+  ],
+  "errand": {
+    "home": "~/path/to/errand-adapter"
+  },
+  "notify": {
+    "discord_channel_id": "YOUR_CHANNEL_ID"
+  },
+  "findings": {
+    "hub": "your-owner/your-private-repo",
+    "owners": [
+      "your-owner"
+    ]
+  }
+}

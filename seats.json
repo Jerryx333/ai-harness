@@ -1,0 +1,167 @@
+{
+  "_comment": "公开座位使用 cli；fallback 定义顶替链，panel_default / panel_free 定义会诊名单，self_seats 用于去掉主会话自身。AIW_CONFIG 非空时指定本地覆盖文件，否则读取 ~/.config/aiw/seats.local.json；对象递归合并，列表整体替换，标量覆盖。agent_use 座位需通过本地配置添加，并依赖本机 agent-use 的对应适配器。",
+  "findings": {
+    "collect": true,
+    "sync": true,
+    "hint": true,
+    "hub": "",
+    "owners": [],
+    "max_items": 5,
+    "daily_cap": 300,
+    "field_max": 300,
+    "trigger_count": 100,
+    "trigger_days": 3,
+    "sync_interval": 3600
+  },
+  "notify": {
+    "discord_channel_id": ""
+  },
+  "seats": {
+    "codex": {
+      "kind": "cli",
+      "label": "Codex · sol（改文件、批量改动）",
+      "bin": "codex",
+      "bin_env": "CODEX_BIN",
+      "model": "gpt-6.1-sol",
+      "model_args": [
+        "-m",
+        "{model}",
+        "-c",
+        "model_reasoning_effort=\"{effort}\""
+      ],
+      "argv_rw": [
+        "{bin}",
+        "exec",
+        "--cd",
+        "{workdir}",
+        "--sandbox",
+        "workspace-write",
+        "--skip-git-repo-check",
+        "{prompt}"
+      ],
+      "argv_ro": [
+        "{bin}",
+        "exec",
+        "--cd",
+        "{workdir}",
+        "--sandbox",
+        "read-only",
+        "--skip-git-repo-check",
+        "{prompt}"
+      ],
+      "version_args": [
+        "--version"
+      ],
+      "login_hint": "codex 需要可用认证：官方账号跑 `codex login`；走中转站时按你的 ~/.codex/config.toml 配置",
+      "effort": "medium"
+    },
+    "codex-sol": {
+      "kind": "cli",
+      "label": "Codex · sol（只读评审、整仓分析）",
+      "bin": "codex",
+      "bin_env": "CODEX_BIN",
+      "model": "gpt-6.1-sol",
+      "model_args": [
+        "-m",
+        "{model}",
+        "-c",
+        "model_reasoning_effort=\"{effort}\""
+      ],
+      "argv_rw": [
+        "{bin}",
+        "exec",
+        "--cd",
+        "{workdir}",
+        "--sandbox",
+        "read-only",
+        "--skip-git-repo-check",
+        "{prompt}"
+      ],
+      "argv_ro": [
+        "{bin}",
+        "exec",
+        "--cd",
+        "{workdir}",
+        "--sandbox",
+        "read-only",
+        "--skip-git-repo-check",
+        "{prompt}"
+      ],
+      "version_args": [
+        "--version"
+      ],
+      "login_hint": "codex 需要可用认证：官方账号跑 `codex login`；走中转站时按你的 ~/.codex/config.toml 配置",
+      "effort": "low",
+      "ro_only": true
+    },
+    "claude": {
+      "kind": "cli",
+      "label": "Claude（只读评审、第二意见；Codex 当主会话时用）",
+      "bin": "claude",
+      "bin_env": "CLAUDE_BIN",
+      "model": "",
+      "argv_rw": [
+        "{bin}",
+        "-p",
+        "--output-format",
+        "text",
+        "--allowedTools",
+        "Read,Grep,Glob",
+        "--disallowedTools",
+        "Bash,Edit,Write,NotebookEdit,WebFetch,WebSearch",
+        "--",
+        "{prompt}"
+      ],
+      "argv_ro": [
+        "{bin}",
+        "-p",
+        "--output-format",
+        "text",
+        "--allowedTools",
+        "Read,Grep,Glob",
+        "--disallowedTools",
+        "Bash,Edit,Write,NotebookEdit,WebFetch,WebSearch",
+        "--",
+        "{prompt}"
+      ],
+      "version_args": [
+        "--version"
+      ],
+      "login_hint": "终端运行 `claude` 并 /login",
+      "ro_only": true
+    }
+  },
+  "fallback": {
+    "codex": [],
+    "codex-sol": [],
+    "claude": []
+  },
+  "substitute_limit": {
+    "codex": 12,
+    "codex-sol": 12,
+    "claude": 12
+  },
+  "breaker": {
+    "quota_minutes": 240,
+    "ratelimit_minutes": 15,
+    "auth_minutes": 720,
+    "not_installed_minutes": 60,
+    "unavailable_minutes": 30,
+    "verify_minutes": 30
+  },
+  "panel_default": [
+    "codex-sol",
+    "claude"
+  ],
+  "panel_free": [],
+  "self_seats": {
+    "claude": [
+      "claude"
+    ],
+    "codex": [
+      "codex",
+      "codex-sol"
+    ]
+  },
+  "map_default": "codex-sol"
+}

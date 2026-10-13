@@ -1,0 +1,146 @@
+"""Public defaults plus one optional, machine-local override (standard library only)."""
+import copy
+import hashlib
+import json
+import os
+from pathlib import Path
+
+HERE = Path(__file__).resolve().parent
+
+
+class ConfigError(Exception):
+    """An unusable configuration; never silently fall back from a local error."""
+
+
+def local_config_path():
+    explicit = os.environ.get('AIW_CONFIG')
+    if explicit:
+        return Path(explicit).expanduser()
+    path = Path.home() / '.config/aiw/seats.local.json'
+    return path if path.exists() or path.is_symlink() else None
+
+
+def read_config(path):
+    try:
+        data = json.loads(path.read_text(encoding='utf-8'))
+        if not isinstance(data, dict):
+            raise ValueError('顶层必须是对象')
+        return data
+    except (OSError, ValueError) as exc:
+        raise ConfigError(f'{path}: {str(exc).replace(chr(10), " ")}') from exc
+
+
+def load_public(repo=None):
+    return read_config((Path(repo) if repo is not None else HERE) / 'seats.json')
+
+
+def merge(public, local):
+    if isinstance(public, dict) and isinstance(local, dict):
+        result = copy.deepcopy(public)
+        for key, value in local.items():
+            result[key] = merge(result[key], value) if key in result else copy.deepcopy(value)
+        return result
+    return copy.deepcopy(local)
+
+
+def validate(merged) -> list[str]:
+    """Return all structural and seat-reference errors without mutating config."""
+    if not isinstance(merged, dict):
+        return ['配置类型错误：顶层必须是对象']
+    errors = []
+
+    def error(path, expected):
+        errors.append(f'配置类型错误：{path} 必须是{expected}')
+
+    def strings(value, path):
+        if not isinstance(value, list) or not all(isinstance(v, str) for v in value):
+            error(path, '字符串列表')
+            return False
+        return True
+
+    def concurrency(value, path):
+        if type(value) is not int or value <= 0:
+            error(path, '正整数')
+
+    for key in ('seats', 'fallback', 'self_seats', 'substitute_limit'):
+        if not isinstance(merged.get(key), dict):
+            error(key, '对象')
+    for key in ('notify', 'findings', 'errand'):
+        if key in merged and not isinstance(merged[key], dict):
+            error(key, '对象')
+    seats = merged.get('seats')
+    seats = seats if isinstance(seats, dict) else {}
+    for name, seat in seats.items():
+        path = f'seats.{name}'
+        if not isinstance(seat, dict):
+            error(path, '对象')
+            continue
+        kind = seat.get('kind')
+        if kind not in ('agent_use', 'cli'):
+            errors.append(f'{path}.kind 必须是 agent_use 或 cli')
+        required = ('provider',) if kind == 'agent_use' else ('bin',) if kind == 'cli' else ()
+        for key in required:
+            if not isinstance(seat.get(key), str) or not seat[key].strip():
+                error(f'{path}.{key}', '非空字符串')
+        if kind == 'cli':
+            for key in ('argv_rw', 'argv_ro'):
+                strings(seat.get(key), f'{path}.{key}')
+        if 'expects_credits' in seat and type(seat['expects_credits']) is not bool:
+            error(f'{path}.expects_credits', '布尔值')
+        if 'max_concurrency' in seat:
+            concurrency(seat['max_concurrency'], f'{path}.max_concurrency')
+    refs = []
+    for key in ('fallback', 'self_seats'):
+        values = merged.get(key)
+        if isinstance(values, dict):
+            for name, entries in values.items():
+                if key == 'fallback':
+                    refs.append((key, name))
+                if strings(entries, f'{key}.{name}'):
+                    refs.extend((f'{key}.{name}', entry) for entry in entries)
+    for key in ('panel_default', 'panel_free'):
+        if strings(merged.get(key), key):
+            refs.extend((key, entry) for entry in merged[key])
+    limits = merged.get('substitute_limit')
+    if isinstance(limits, dict):
+        refs.extend(('substitute_limit', name) for name in limits)
+    if 'map_default' in merged:
+        if not isinstance(merged['map_default'], str):
+            error('map_default', '字符串')
+        else:
+            refs.append(('map_default', merged['map_default']))
+    for path, name in refs:
+        if name not in seats:
+            errors.append(f'引用悬空：{path} → {name}')
+    if 'max_concurrency' in merged:
+        concurrency(merged['max_concurrency'], 'max_concurrency')
+    return errors
+
+
+def load_seats(repo=None, *, tolerate_public=False):
+    # Read the override first: a broken public file must not hide local errors.
+    path = local_config_path()
+    local = read_config(path) if path is not None else {}
+    try:
+        public = load_public(repo)
+    except ConfigError:
+        if not tolerate_public:
+            raise
+        public = {}
+    merged = merge(public, local)
+    errors = validate(merged)
+    if errors:
+        raise ConfigError(f"{path or (Path(repo) if repo is not None else HERE) / 'seats.json'}: " + "; ".join(errors))
+    return merged
+
+
+def effective_hash(merged):
+    keys = ('seats', 'fallback', 'panel_default', 'panel_free', 'self_seats', 'map_default',
+            'substitute_limit', 'breaker')
+    data = {key: copy.deepcopy(merged[key]) for key in keys if key in merged}
+    if isinstance(data.get('seats'), dict):
+        for seat in data['seats'].values():
+            if isinstance(seat, dict):
+                for key in ('label', 'login_hint', 'tools_note'):
+                    seat.pop(key, None)
+    return hashlib.sha1(json.dumps(data, sort_keys=True, separators=(',', ':')).encode()).hexdigest()[:12]

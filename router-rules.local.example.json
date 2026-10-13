@@ -1,0 +1,12 @@
+{
+  "rules": [
+    {
+      "id": "draft",
+      "seat": "local-text",
+      "patterns": [
+        "起草|润色"
+      ],
+      "instruction": "使用 aiw local-text <workdir> 600 <prompt文件> --ro；产物由主会话验收。"
+    }
+  ]
+}

@@ -1,0 +1,11 @@
+# 每台机器私有：账本、熔断、日计数、派单日志。不同步。
+state/
+__pycache__/
+*.pyc
+.DS_Store
+.provider
+snapshots/
+
+.tmp-baseline/
+.tmp-profile/
+tests/.durations.json

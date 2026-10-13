@@ -390,12 +390,33 @@ def _timestamp(value):
         return None
 
 
-def _overlap(start, end, include_hub=True):
+def _overlap(start, end, include_hub=True, sources=None):
     folder = STATE / "findings"
     groups = collections.defaultdict(list)
     seen = set()
     for path in [folder / "records.jsonl", *(sorted((folder / "hub/raw").glob("*/*.jsonl")) if include_hub else [])]:
-        for row in _rows(path):
+        source = dict(name=str(path.relative_to(STATE)), exists=path.exists(), rows=0, bad=0)
+        if sources is not None:
+            sources.append(source)
+        # Count raw input before signal filtering and ID deduplication.
+        def records():
+            if not path.exists():
+                return
+            with path.open(encoding="utf-8") as stream:
+                for line in stream:
+                    if not line.strip():
+                        continue
+                    try:
+                        row = json.loads(line)
+                        if not isinstance(row, dict) or _timestamp(row.get('ts')) is None:
+                            raise ValueError('invalid record')
+                    except (ValueError, TypeError):
+                        source['bad'] += 1
+                        continue
+                    if start <= _timestamp(row['ts']) <= end:
+                        source['rows'] += 1
+                    yield normalize_record(row)
+        for row in records() if sources is not None else _rows(path):
             stamp = _timestamp(row.get("ts"))
             if (row.get("type") != "changes" or not stamp or not start <= stamp <= end
                     or not row.get("id") or row["id"] in seen):
@@ -424,13 +445,17 @@ def _overlap(start, end, include_hub=True):
     return signals
 
 
-def _rule_churn(start, end, harness):
-    if not _git(str(harness), "rev-parse", "--show-toplevel"):
+def _rule_churn(start, end, harness, sources=None):
+    source = dict(name='git 历史', exists=bool(_git(str(harness), "rev-parse", "--show-toplevel")), rows=0, bad=0)
+    if sources is not None:
+        sources.append(source)
+    if not source['exists']:
         return [], "规则振荡：跳过（aiw 目录不是 git 仓库）"
     signals = []
     for file in ("CLAUDE.md", "AGENTS.harness.md", "router-rules.json", "seats.json"):
         commits = _git(str(harness), "log", "--since=" + start.isoformat(),
                        "--until=" + end.isoformat(), "--format=%H", "--", file) or ""
+        source['rows'] += len(commits.splitlines())
         sections = collections.defaultdict(list)
         for sha in commits.splitlines():
             diff = _git(str(harness), "show", "-U0", "--format=", sha, "--", file) or ""
@@ -455,7 +480,10 @@ def _rule_churn(start, end, harness):
     return signals, None
 
 
-def _repeated_instruction(start, end):
+def _repeated_instruction(start, end, sources=None):
+    source = dict(name='runs', exists=(STATE / 'runs').exists(), rows=0, bad=0)
+    if sources is not None:
+        sources.append(source)
     seen = set()
     lines = collections.defaultdict(list)
     for path in sorted((STATE / "runs").glob("*/task.txt")):
@@ -465,6 +493,7 @@ def _repeated_instruction(start, end):
             continue
         if not start <= stamp <= end:
             continue
+        source["rows"] += 1
         prompt = path.read_text(encoding="utf-8")
         for marker in ("\n\n---\n以下是调用方附上的文件", "---\n【aiw 观察记录】"):
             prompt = prompt.split(marker, 1)[0]
@@ -482,17 +511,34 @@ def _repeated_instruction(start, end):
 def extract(days=14, harness=None, include_hub=True):
     end = dt.datetime.now().astimezone()
     start = end - dt.timedelta(days=days)
-    churn, skipped = _rule_churn(start, end, HERE if harness is None else harness)
+    sources, reasons = [], []
+    churn, skipped = _rule_churn(start, end, HERE if harness is None else harness, sources)
     hub_skipped = False
     if include_hub:
         with hub_read() as hub:
             hub_skipped = hub is None
-            overlap = _overlap(start, end, hub is not None)
+            sources.append(dict(name='findings/hub', exists=(STATE / 'findings/hub').exists(), rows=0, bad=0))
+            overlap = _overlap(start, end, hub is not None, sources)
     else:
-        overlap = _overlap(start, end, False)
+        sources.append(dict(name='findings/hub', exists=(STATE / 'findings/hub').exists(), rows=0, bad=0))
+        overlap = _overlap(start, end, False, sources)
     data = {"generated": end.isoformat(timespec="seconds"), "days": days,
             "host": socket.gethostname().split(".")[0], "overlap": overlap, "hub_skipped": hub_skipped,
-            "rule_churn": churn, "repeated_instruction": _repeated_instruction(start, end)}
+            "rule_churn": churn, "repeated_instruction": _repeated_instruction(start, end, sources)}
+    if hub_skipped or not include_hub:
+        reasons.append('hub 被跳过')
+    if skipped:
+        reasons.append(skipped)
+    for source in sources:
+        if not source['exists']:
+            reasons.append(f"{source['name']} 不存在")
+        if source['bad']:
+            reasons.append(f"{source['name']} 有 {source['bad']} 行解析失败")
+    total = sum(source['rows'] for source in sources)
+    if not total:
+        reasons.append('窗口内未读到有效行')
+    data['coverage'] = dict(sources=sources, level='无数据' if not total else '部分' if reasons else '完整',
+                            reasons=reasons)
     folder = STATE / "findings"
     folder.mkdir(parents=True, exist_ok=True)
     temporary = None
@@ -509,6 +555,10 @@ def extract(days=14, harness=None, include_hub=True):
             temporary.unlink(missing_ok=True)
     print(f"最近 {days} 天：文件重叠 overlap={len(data['overlap'])}，"
           f"规则振荡 rule_churn={len(churn)}，重复手写指令 repeated_instruction={len(data['repeated_instruction'])}")
+    coverage = data['coverage']
+    detail = '（' + '；'.join(coverage['reasons']) + '）' if coverage['reasons'] else ''
+    print(f"数据覆盖：{coverage['level']}{detail}")
+    print('覆盖只说明读到多少，不代表结论可信度')
     if hub_skipped:
         print("hub.lock 超时：跳过 hub，仅抽取本机记录")
     if skipped:

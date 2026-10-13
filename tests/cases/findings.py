@@ -1317,6 +1317,38 @@ def scanner_id_rules():
 
 
 
+def findings_extract_coverage():
+    import contextlib
+    import datetime as dt
+    import io
+    from unittest.mock import patch
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td); f = findings_fixture(root)
+        folder = f.STATE / 'findings'; folder.mkdir(parents=True)
+        records = folder / 'records.jsonl'
+        records.write_text(json.dumps(dict(id='local', type='answers',
+                          ts=(dt.datetime.now().astimezone() - dt.timedelta(minutes=1)).isoformat())) + '\n')
+        @contextlib.contextmanager
+        def skipped_hub():
+            yield None
+        with patch.object(f, 'hub_read', skipped_hub), contextlib.redirect_stdout(io.StringIO()) as output:
+            data = f.extract(harness=f.HERE)
+        coverage = data['coverage']
+        check(coverage['level'] == '部分' and any('hub 被跳过' == r for r in coverage['reasons']), str(data))
+        check(any('规则振荡' in r for r in coverage['reasons']), str(coverage))
+        local = next(s for s in coverage['sources'] if s['name'] == 'findings/records.jsonl')
+        check(local == dict(name='findings/records.jsonl', exists=True, rows=1, bad=0), str(local))
+        check(json.loads((folder / 'signals.json').read_text())['coverage'] == coverage, 'coverage not persisted')
+        check(output.getvalue().splitlines()[1].startswith('数据覆盖：部分') and
+              output.getvalue().count('覆盖只说明读到多少，不代表结论可信度') == 1, output.getvalue())
+        with records.open('a') as stream:
+            stream.write('{broken\n')
+        with patch.object(f, 'hub_read', skipped_hub), contextlib.redirect_stdout(io.StringIO()):
+            data = f.extract(harness=f.HERE)
+        check(any('有 1 行解析失败' in r for r in data['coverage']['reasons']), str(data))
+        check(data['overlap'] == [] and data['rule_churn'] == [] and data['repeated_instruction'] == [], str(data))
+
+
 CASES = {case.__name__: case for case in (
     findings_hook_hint,
     findings_parse_strip,
@@ -1334,6 +1366,7 @@ CASES = {case.__name__: case for case in (
     findings_changes_record,
     findings_note,
     findings_extract,
+    findings_extract_coverage,
     findings_status,
     findings_sync,
     findings_sync_failure_keeps_offset,

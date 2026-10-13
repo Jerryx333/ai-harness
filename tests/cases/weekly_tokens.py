@@ -172,7 +172,7 @@ def tokens_report():
         for expected in ('主会话 3 轮', 'ctx 中位 200000', '轮次 33.33%', '固定 50.00%', '增长 50.00%',
                          '600020 1 3 2000', 'codex rollout: input 1000 · cached 700 · output 20'):
             check(expected in text.stdout, text.stdout)
-        check(sentinel not in result.stdout + result.stderr + text.stdout + text.stderr and sid not in result.stdout + text.stdout, 'privacy leak')
+        check(sentinel not in result.stdout + result.stderr + text.stdout + text.stderr and sid not in json.dumps({k: v for k, v in d.items() if k != 'coverage'}) + '\n'.join(line for line in text.stdout.splitlines() if not line.startswith('数据覆盖：')), 'privacy leak')
         limited = json.loads(sh(cmd + ['--json', '--top', '1'], env=env).stdout)
         check(len(limited['sessions']) == 1 and limited['totals'] == d['totals'], str(limited))
         duplicate = assistant('updated', 100)
@@ -188,7 +188,7 @@ def tokens_report():
         empty = t / 'empty'; empty.mkdir()
         env.update(AIW_CLAUDE_PROJECTS=str(empty), AIW_STATE=str(empty))
         result = sh(cmd, env=env)
-        check(result.returncode == 0 and result.stdout.strip() == '无数据', result.stdout)
+        check(result.returncode == 0 and result.stdout.strip() == '数据覆盖：无数据（seat-ledger.jsonl 不存在；窗口内未读到有效行）\n覆盖只说明读到多少，不代表结论可信度\n无数据', result.stdout)
 
 
 
@@ -225,7 +225,7 @@ def weekly_json():
         r = sh(command + ['--json'], env=env)
         check(r.returncode == 0 and '有 1 行解析不了' in r.stderr, repr(r))
         data = json.loads(r.stdout)
-        check(set(data) == {'host', 'days', 'since', 'generated_at', 'calls', 'router', 'kinds', 'efforts', 'seats', 'repos', 'substituted_ok', 'substitute_limits'}, str(data))
+        check(set(data) == {'host', 'days', 'since', 'generated_at', 'calls', 'router', 'kinds', 'efforts', 'seats', 'repos', 'substituted_ok', 'substitute_limits', 'coverage'}, str(data))
         check(data['host'] == socket.gethostname() and data['days'] == 7 and data['calls'] == 9, str(data))
         since, generated = (dt.datetime.fromisoformat(data[k]) for k in ('since', 'generated_at'))
         check(since.tzinfo is not None and generated.tzinfo is not None and generated - since == dt.timedelta(days=7), str(data))
@@ -379,10 +379,105 @@ def weekly_mixed_ledger():
 
 
 
+def tokens_coverage():
+    import datetime as dt
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        projects = root / 'projects'
+        state = root / 'state'; state.mkdir()
+        (state / 'seat-ledger.jsonl').write_text('')
+        env = dict(os.environ, AIW_CLAUDE_PROJECTS=str(projects), AIW_STATE=str(state))
+        cmd = [sys.executable, str(REPO / 'tokens.py')]
+        def read():
+            result = sh(cmd + ['--json'], env=env)
+            check(result.returncode == 0, result.stderr)
+            data = json.loads(result.stdout)
+            coverage = data['coverage']
+            check(len(coverage['sources']) == 2, str(coverage))
+            check(data['malformed_lines'] == sum(s['bad'] for s in coverage['sources']), str(data))
+            if not data['malformed_lines']:
+                check(not result.stderr, result.stderr)
+            return coverage
+        coverage = read()
+        check(coverage['level'] == '无数据' and any(str(projects) in r and '不存在' in r for r in coverage['reasons']), str(coverage))
+        text = sh(cmd, env=env)
+        check('数据覆盖：无数据' in text.stdout and text.stdout.count('覆盖只说明读到多少，不代表结论可信度') == 1, text.stdout)
+        project = projects / 'project'; project.mkdir(parents=True)
+        now = dt.datetime.now().astimezone()
+        row = dict(type='assistant', timestamp=(now - dt.timedelta(minutes=1)).isoformat(),
+                   message=dict(id='m', usage=dict(input_tokens=10, output_tokens=2)))
+        transcript = project / 'session.jsonl'
+        ignored = '{"type":"summary","summary":"x"}\n' + json.dumps(dict(type='user', message=dict(content='x'))) + '\n'
+        transcript.write_text(ignored + json.dumps(row) + '\n')
+        coverage = read()
+        check(coverage['level'] == '完整' and not coverage['reasons'], str(coverage))
+        check(coverage['sources'][0] == dict(name=str(projects), exists=True, rows=1, bad=0,
+                                          files=1, files_with_rows=1), str(coverage))
+        check(coverage['sources'][1] == dict(name='seat-ledger.jsonl', exists=True, rows=0, bad=0), str(coverage))
+        (project / 'ignored.jsonl').write_text(ignored + '{broken\n')
+        old = dict(row, timestamp=(now - dt.timedelta(days=30)).isoformat())
+        (project / 'old.jsonl').write_text(json.dumps(old) + '\n')
+        subagents = project / 'session' / 'subagents'; subagents.mkdir(parents=True)
+        (subagents / 'agent-one.jsonl').write_text(json.dumps(row) + '\n')
+        coverage = read()
+        check(coverage['level'] == '完整' and coverage['sources'][0] ==
+              dict(name=str(projects), exists=True, rows=2, bad=0, files=4, files_with_rows=2), str(coverage))
+        # Main's prefilter also accepts other types mentioning assistant; no extra type filter.
+        selected = dict(type='summary', summary='assistant', timestamp=row['timestamp'])
+        with transcript.open('a') as stream:
+            stream.write(json.dumps(selected) + '\n')
+            stream.write('{"type":"assistant",broken\n')
+            stream.write('{"type":"summary","summary":"tool_result"}\n')
+        coverage = read()
+        check(coverage['level'] == '部分' and any('解析失败' in r for r in coverage['reasons']), str(coverage))
+        check(coverage['sources'][0] == dict(name=str(projects), exists=True, rows=3, bad=2,
+                                          files=4, files_with_rows=2), str(coverage))
+        (subagents / 'agent-one.jsonl').unlink()
+        transcript.write_text(json.dumps(old) + '\n')
+        check(read()['level'] == '无数据', 'old rows count as coverage')
+
+
+def weekly_coverage():
+    import datetime as dt
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        env = dict(os.environ, AIW_STATE=str(root))
+        cmd = [sys.executable, str(REPO / 'weekly.py')]
+        def read():
+            result = sh(cmd + ['--json'], env=env)
+            check(result.returncode == 0, result.stderr)
+            data = json.loads(result.stdout)
+            check({'coverage', 'host', 'days', 'since', 'generated_at', 'calls', 'router', 'kinds',
+                   'efforts', 'seats', 'repos', 'substituted_ok', 'substitute_limits'} == set(data), str(data))
+            return data['coverage']
+        coverage = read()
+        check(coverage['level'] == '无数据' and any('seat-ledger.jsonl 不存在' == r for r in coverage['reasons']), str(coverage))
+        row = dict(ts=(dt.datetime.now().astimezone() - dt.timedelta(minutes=1)).isoformat(),
+                   seat='codex', actual='codex', rc=0, kind='ok', secs=1)
+        ledger = root / 'seat-ledger.jsonl'
+        ledger.write_text(json.dumps(row) + '\n')
+        (root / 'router-log.jsonl').write_text('')
+        coverage = read()
+        check(coverage['level'] == '完整' and coverage['sources'][0]['rows'] == 1, str(coverage))
+        with ledger.open('a') as stream:
+            stream.write('{broken\n')
+        coverage = read()
+        check(coverage['level'] == '部分' and coverage['sources'][0]['bad'] == 1
+              and any('解析失败' in r for r in coverage['reasons']), str(coverage))
+        text = sh(cmd, env=env)
+        check('数据覆盖：部分' in text.stdout and text.stdout.count('覆盖只说明读到多少，不代表结论可信度') == 1, text.stdout)
+        # Findings are read only in text mode, and missing inputs must be visible.
+        check('findings/records.jsonl 不存在' in text.stdout, text.stdout)
+        ledger.write_text(''); (root / 'router-log.jsonl').write_text('')
+        check(read()['level'] == '无数据', 'collector was not reset')
+
+
 CASES = {case.__name__: case for case in (
     codex_tokens_rollout,
     codex_tokens_fallback,
     tokens_report,
+    tokens_coverage,
+    weekly_coverage,
     weekly_repo_section,
     weekly_json,
     weekly_tokens,

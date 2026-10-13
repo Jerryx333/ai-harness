@@ -45,9 +45,14 @@ def report(days, top):
     main, children = defaultdict(list), defaultdict(list)
     projects, images, dispatch_counts, codex = {}, Counter(), Counter(), Counter()
     latest, bad = {}, 0
+    root_source = dict(name=str(root), exists=root.exists(), rows=0, bad=0,
+                       files=0, files_with_rows=0)
+    sources = [root_source]
     # Only known transcript layouts; never load entire files into memory.
     for pattern, child in (('*/*.jsonl', False), ('*/*/subagents/agent-*.jsonl', True)):
         for path in root.glob(pattern):
+            root_source['files'] += 1
+            rows_before = root_source['rows']
             parent = path.parents[1].name if child else path.stem
             project = path.parents[2].name if child else path.parent.name
             with path.open(encoding='utf-8', errors='replace') as stream:
@@ -81,8 +86,11 @@ def report(days, top):
                                 for block in content:
                                     if isinstance(block, dict) and block.get('type') == 'tool_result' and isinstance(block.get('content'), list):
                                         images[key] += sum(isinstance(b, dict) and b.get('type') == 'image' for b in block['content'])
+                        root_source['rows'] += 1
                     except (ValueError, KeyError, TypeError, AttributeError):
                         bad += 1
+                        root_source['bad'] += 1
+            root_source['files_with_rows'] += root_source['rows'] > rows_before
     for key, is_child, turn, values, project in latest.values():
         if not any(values):
             continue
@@ -94,6 +102,8 @@ def report(days, top):
     rollout = {seat: dict(input=0, cached=0, output=0) for seat in ('codex', 'codex-sol')}
     linked, calls = 0, 0
     ledger = STATE / 'seat-ledger.jsonl'
+    ledger_source = dict(name='seat-ledger.jsonl', exists=ledger.exists(), rows=0, bad=0)
+    sources.append(ledger_source)
     if ledger.exists():
         with ledger.open(encoding='utf-8', errors='replace') as stream:
             for line in stream:
@@ -109,6 +119,7 @@ def report(days, top):
                     values = {f: usage.get(f, 0) for f in ('input', 'cached', 'output')} if measured else {}
                     if any(not isinstance(v, int) or isinstance(v, bool) or v < 0 for v in values.values()):
                         raise ValueError('invalid ledger usage')
+                    ledger_source['rows'] += 1
                     calls += 1
                     actual[seat] += 1
                     sid = row.get('session')
@@ -122,6 +133,18 @@ def report(days, top):
                             codex[sid] += values['input']
                 except (ValueError, KeyError, TypeError, AttributeError):
                     bad += 1
+                    ledger_source['bad'] += 1
+    reasons = []
+    for source in sources:
+        if not source['exists']:
+            reasons.append(f"{source['name']} 不存在")
+        if source['bad']:
+            reasons.append(f"{source['name']} 有 {source['bad']} 行解析失败")
+    valid_rows = sum(source['rows'] for source in sources)
+    if not valid_rows:
+        reasons.append('窗口内未读到有效行')
+    coverage = dict(sources=sources, level='无数据' if not root_source['exists'] or not valid_rows
+                    else '部分' if reasons else '完整', reasons=reasons)
     turns = [t for session in main.values() for t in session]
     context = summary(turns)
     ctx_total = sum(t[1] for t in turns)
@@ -147,13 +170,17 @@ def report(days, top):
         sessions=sessions[:top], subagents=dict(rounds=sum(r['rounds'] for r in sub), tokens=sub_tokens,
         share=ratio(sub_tokens, total + sub_tokens), parents=sub),
         dispatch=dict(count=calls, by_actual=dict(sorted(actual.items())), rollout=rollout,
-                      with_session=linked, session_share=ratio(linked, calls)), malformed_lines=bad)
+                      with_session=linked, session_share=ratio(linked, calls)), malformed_lines=bad, coverage=coverage)
     if bad:
         print(f'⚠ 转录和账本有 {bad} 行解析不了，未计入统计', file=sys.stderr)
     return result
 
 
 def print_report(d):
+    coverage = d['coverage']
+    detail = '（' + '；'.join(coverage['reasons']) + '）' if coverage['reasons'] else ''
+    print(f"数据覆盖：{coverage['level']}{detail}")
+    print('覆盖只说明读到多少，不代表结论可信度')
     if not d['context']['rounds'] and not d['subagents']['rounds'] and not d['dispatch']['count']:
         print('无数据')
         return

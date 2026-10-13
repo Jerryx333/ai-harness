@@ -21,9 +21,26 @@ from env_compat import getenv
 STATE = Path(getenv("AIW_STATE", Path(__file__).resolve().parent / "state"))
 
 
-def rows(name: str, since: dt.datetime):
+def coverage_summary(sources, reasons=()):
+    reasons = list(dict.fromkeys(reasons))
+    for source in sources:
+        if not source['exists']:
+            reasons.append(f"{source['name']} 不存在")
+        if source['bad']:
+            reasons.append(f"{source['name']} 有 {source['bad']} 行解析失败")
+    total = sum(source['rows'] for source in sources)
+    if not total:
+        reasons.append('窗口内未读到有效行')
+    return dict(sources=sources, level='无数据' if not total else '部分' if reasons else '完整',
+                reasons=list(dict.fromkeys(reasons)))
+
+
+def rows(name: str, since: dt.datetime, sources=None):
     p = STATE / name
-    if not p.exists():
+    source = dict(name=name, exists=p.exists(), rows=0, bad=0)
+    if sources is not None:
+        sources.append(source)
+    if not source['exists']:
         return []
     out, bad = [], 0
     for line in p.read_text(encoding="utf-8").splitlines():
@@ -36,23 +53,28 @@ def rows(name: str, since: dt.datetime):
                 ts = ts.astimezone()  # 老格式没时区，按本机时区算，不丢行
             if ts >= since:
                 out.append(r)
-        except (ValueError, KeyError, TypeError):
+        except (ValueError, KeyError, TypeError, AttributeError):
             bad += 1
+    source.update(rows=len(out), bad=bad)
     if bad:
         print(f"⚠ {name} 有 {bad} 行解析不了，未计入统计", file=sys.stderr)
     return out
 
 
-def findings_section(since: dt.datetime):
+def findings_section(since: dt.datetime, sources=None, reasons=None):
     """Windowed raw counts and current local snapshots; never sync or mutate state."""
     folder = STATE / "findings"
     print("\n## 改进缓冲区")
     import findings
-    records = rows("findings/records.jsonl", since)
+    records = rows("findings/records.jsonl", since, sources)
     seen = {r.get("id") for r in records if r.get("id")}
     with findings.hub_read() as hub:
+        if sources is not None:
+            sources.append(dict(name='findings/hub', exists=(folder / 'hub').exists(), rows=0, bad=0))
+        if hub is None and reasons is not None:
+            reasons.append('hub 被跳过')
         for path in sorted(hub.glob("raw/*/*.jsonl")) if hub is not None else []:
-            for row in rows(str(path), since):
+            for row in rows(str(path.relative_to(STATE)), since, sources):
                 if row.get("id") not in seen:
                     records.append(row)
                     if row.get("id"):
@@ -84,15 +106,25 @@ def findings_section(since: dt.datetime):
         empty = sum(str(r.get(key) or "").strip() in ("", "无") for r in answers)
         ratio = f"{empty}/{len(answers)}（{100 * empty / len(answers):.1f}%）" if answers else "无数据"
         print(f"- {key}: {ratio}")
-    quarantine = rows("findings/quarantine.jsonl", since)
+    quarantine = rows("findings/quarantine.jsonl", since, sources)
     count = len(quarantine) if (folder / "quarantine.jsonl").exists() else "无数据"
     print(f"- quarantine（窗口内）: {count}")
 
     def snapshot(name):
+        path = folder / name
+        source = dict(name='findings/' + name, exists=path.exists(), rows=0, bad=0)
+        if sources is not None:
+            sources.append(source)
         try:
-            value = json.loads((folder / name).read_text(encoding="utf-8"))
-            return value if isinstance(value, dict) else {}
+            value = json.loads(path.read_text(encoding="utf-8"))
+            if not isinstance(value, dict):
+                raise ValueError('invalid snapshot')
+            # Current snapshots have no windowed rows.
+            return value
+        except FileNotFoundError:
+            return {}
         except (OSError, ValueError):
+            source['bad'] = 1
             return {}
 
     sync = snapshot("sync.json")
@@ -105,6 +137,8 @@ def findings_section(since: dt.datetime):
     print("### 假设状态（当前）")
     import findings
     with findings.hub_read() as hub:
+        if hub is None and reasons is not None:
+            reasons.append('hub 被跳过')
         hypotheses = snapshot("hub/state/hypotheses.json") if hub is not None and hub.is_dir() else {}
     statuses = Counter(h.get("status") or "未记录" for h in hypotheses.values() if isinstance(h, dict))
     for status, count in sorted(statuses.items()):
@@ -161,8 +195,9 @@ def report(days):
     generated = dt.datetime.now().astimezone()
     since = generated - dt.timedelta(days=days)
     from ai_worker import substitute_limits
-    led = rows("seat-ledger.jsonl", since)
-    rl = rows("router-log.jsonl", since)
+    coverage_sources = []
+    led = rows("seat-ledger.jsonl", since, coverage_sources)
+    rl = rows("router-log.jsonl", since, coverage_sources)
     calls = [r for r in led if r.get("rc") is not None]
     attempts = [r for r in calls if not r.get("freecheck") and not r["kind"].startswith("skipped_")]
     seat_groups, repo_groups = {}, {}
@@ -192,7 +227,7 @@ def report(days):
                         sorted(Counter((r["seat"], r["effort"]) for r in calls if r.get("effort") is not None).items())],
             "seats": seats, "repos": repos,
             "substituted_ok": sum(bool(r.get("substituted")) and r["kind"] == "ok" for r in calls),
-            "substitute_limits": substitute_limits()}
+            "substitute_limits": substitute_limits(), "coverage": coverage_summary(coverage_sources)}
     text_data = {"calls": calls,
                  "seat_counts": sorted(Counter((r.get("host"), r["seat"], r["actual"]) for r in calls).items()),
                  "ok_secs": [r["secs"] for r in calls if r["kind"] == "ok"],
@@ -201,9 +236,20 @@ def report(days):
 
 
 def print_report(data, text_data):
+    import contextlib
+    import io
+    sources = list(data['coverage']['sources'])
+    reasons = []
+    with contextlib.redirect_stdout(io.StringIO()) as section:
+        findings_section(dt.datetime.fromisoformat(data['since']), sources, reasons)
+    data['coverage'] = coverage_summary(sources, reasons)
     print(f"顶替上限（每日，仅成功顶替计数）：{data['substitute_limits']}")
     generated = dt.datetime.fromisoformat(data["generated_at"])
     print(f"# aiw 周报  {data['host']}  最近 {data['days']} 天  ({generated.date()})\n")
+    coverage = data['coverage']
+    detail = '（' + '；'.join(coverage['reasons']) + '）' if coverage['reasons'] else ''
+    print(f"数据覆盖：{coverage['level']}{detail}")
+    print('覆盖只说明读到多少，不代表结论可信度')
     router = data["router"]
     print(f"外包调用 {data['calls']} 次；派单判定 {router['total']} 条，命中 {router['hit']}，逃生口 {router['escape']}\n")
     print("## 按座位（请求座位 → 实际执行方）")
@@ -241,7 +287,7 @@ def print_report(data, text_data):
     print("\n## 派单规则命中")
     for k, n in text_data["rule_counts"]:
         print(f"- {k}: {n}")
-    findings_section(dt.datetime.fromisoformat(data["since"]))
+    print(section.getvalue(), end="")
 
 
 def main() -> int:

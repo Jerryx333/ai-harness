@@ -79,6 +79,8 @@ triage 的 `project_issues` 可将自有项目缺陷转交到 PRIVATE 且 issues
 | trigger_days | 3 | 有待处理记录且距上次评审达到此天数时提示 |
 | sync_interval | 3600 | 后台同步尝试间隔，单位秒 |
 
+`aiw findings extract` 的 stdout 汇总后展示「数据覆盖：」，`signals.json` 同时保存 `coverage`。来源包括本机 records、hub 原始记录、规则 git 历史及 runs 指令；行数按窗口内有效记录、各规则文件的提交数和 task 文件数计数，去重和信号阈值不会降低输入计数。hub 被跳过或规则历史跳过会写入 reasons，不能把空信号解释为没有发生。
+
 collect、sync、hint 三个开关独立；未配置的开关默认 false，owners 默认空列表，hub 需显式配置；数值项默认值如表所示。`aiw weekly [days]` 的文本模式展示窗口内观察、回答比例以及同步和评审状态；`aiw gc` 保留整个 findings 目录。记录协议、状态文件和评审方法见 [docs/findings.md](findings.md)。
 
 ## 跑腿专线
@@ -453,6 +455,8 @@ agent-use 的 `status.json` 必须声明整数 `protocol_version: 1`。缺失或
 
 转录根目录为 `AIW_CLAUDE_PROJECTS`（直接指向 projects），否则取 `${CLAUDE_CONFIG_DIR:-~/.claude}/projects`；账本为 `${AIW_STATE}/seat-ledger.jsonl`，默认是当前 aiw 仓库的 state 目录，与 weekly 相同。按时间窗口内助手 message.id 去重，缺 id 用 uuid；跳过全零 usage，损坏行跳过并在 stderr 汇报数量。时间无时区的旧格式按本机时区解释。
 
-命令逐行读取，不写文件、不缓存，不输出消息正文、完整 session id 或完整路径；只展示数字、截短 session id 和项目名。项目名仍是本地元数据，分享报告前可自行检查。JSON 包含 totals、weighted、context、concentration、sessions、subagents、dispatch 等对应数字，占比为 0–1。
+命令逐行读取，不写文件、不缓存，不输出消息正文；统计项只展示数字、截短 session id 和项目名。coverage 会列出转录根目录及文件相对路径（文件名可能含完整 session id）。项目名仍是本地元数据，分享报告前可自行检查。JSON 包含 totals、weighted、context、concentration、sessions、subagents、dispatch 等对应数字，占比为 0–1。新增 `coverage`，`sources` 每项包含 `name/exists/rows/bad`；根目录项另有 `files`（扫描文件数）和 `files_with_rows`（窗口内至少一条有效记录的文件数），根目录自身不是记录文件，rows/bad 为 0。有效行在助手去重和全零 usage 过滤前计数；账本按窗口内 rc 非 null 的有效行计数。根目录不存在时 coverage 为「无数据」，即使账本仍能读到数据。
 
-`aiw weekly` 的 token 小节展示 codex/codex-sol 派单的 rollout 合计及覆盖率，同时区分 stderr 兜底、tokens=null 和旧记录；Claude 主会话用量通过 `aiw tokens` 测量。「按仓库」小节按 repo、workdir、未记录分组展示成功率、超时和中位数；`--json` 输出派单统计 JSON，token 和改进缓冲区小节仅在文本模式输出。
+三个报告的 coverage 均含 `sources`、`level` 和 `reasons`：所有来源不存在或窗口内有效行合计为 0 时为「无数据」；否则有预期来源缺失、解析失败或被跳过时为「部分」，其余为「完整」。reasons 记录缺失、坏行、跳过或窗口无有效行的原因。文本打印「数据覆盖：」及固定说明「覆盖只说明读到多少，不代表结论可信度」，无数据时也会打印；没有读到与没有发生须分别理解。
+
+`aiw weekly` 的 token 小节展示 codex/codex-sol 派单的 rollout 合计及覆盖率，同时区分 stderr 兜底、tokens=null 和旧记录；Claude 主会话用量通过 `aiw tokens` 测量。「按仓库」小节按 repo、workdir、未记录分组展示成功率、超时和中位数；`--json` 输出派单统计 JSON，token 和改进缓冲区小节仅在文本模式输出。JSON 顶层新增 `coverage`，统计 seat-ledger.jsonl 和 router-log.jsonl 的窗口内有效行与坏行，原有字段保留；文本 coverage 还覆盖读取的 findings 本机记录、quarantine、hub 和当前状态快照（快照没有窗口内行数，rows 为 0），hub 未读时 reasons 会说明跳过。

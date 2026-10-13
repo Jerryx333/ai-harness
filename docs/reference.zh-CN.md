@@ -455,7 +455,7 @@ agent-use 的 `status.json` 必须声明整数 `protocol_version: 1`。缺失或
 
 转录根目录为 `AIW_CLAUDE_PROJECTS`（直接指向 projects），否则取 `${CLAUDE_CONFIG_DIR:-~/.claude}/projects`；账本为 `${AIW_STATE}/seat-ledger.jsonl`，默认是当前 aiw 仓库的 state 目录，与 weekly 相同。按时间窗口内助手 message.id 去重，缺 id 用 uuid；跳过全零 usage，损坏行跳过并在 stderr 汇报数量。时间无时区的旧格式按本机时区解释。
 
-命令逐行读取，不写文件、不缓存，不输出消息正文；统计项只展示数字、截短 session id 和项目名。coverage 会列出转录根目录及文件相对路径（文件名可能含完整 session id）。项目名仍是本地元数据，分享报告前可自行检查。JSON 包含 totals、weighted、context、concentration、sessions、subagents、dispatch 等对应数字，占比为 0–1。新增 `coverage`，`sources` 每项包含 `name/exists/rows/bad`；根目录项另有 `files`（扫描文件数）和 `files_with_rows`（窗口内至少一条有效记录的文件数），根目录自身不是记录文件，rows/bad 为 0。有效行在助手去重和全零 usage 过滤前计数；账本按窗口内 rc 非 null 的有效行计数。根目录不存在时 coverage 为「无数据」，即使账本仍能读到数据。
+命令逐行读取，不写文件、不缓存，不输出消息正文；统计项只展示数字、截短 session id 和项目名。项目名仍是本地元数据，分享报告前可自行检查。JSON 包含 totals、weighted、context、concentration、sessions、subagents、dispatch 等对应数字，占比为 0–1。`coverage.sources` 只有两项：转录（`name` 为 `transcripts`）与账本（`name` 为 `seat-ledger.jsonl`），每项包含 `name/exists/rows/bad`，不列出文件名或本机路径。转录项另有 `files`（扫描文件数）和 `files_with_rows`（窗口内至少一条有效记录的文件数）；`rows` 统计通过包含 `"assistant"` 或 `"tool_result"` 的文本预筛后、窗口内的有效行，在助手去重和全零 usage 过滤前计数；`bad` 统计通过预筛后的解析失败行，不再固定为 0。解析失败可能发生在时间戳可读取之前，因此坏行不保证属于窗口内。账本按窗口内 rc 非 null 的有效行计数。根目录不存在时 coverage 为「无数据」，即使账本仍能读到数据。
 
 三个报告的 coverage 均含 `sources`、`level` 和 `reasons`：所有来源不存在或窗口内有效行合计为 0 时为「无数据」；否则有预期来源缺失、解析失败或被跳过时为「部分」，其余为「完整」。reasons 记录缺失、坏行、跳过或窗口无有效行的原因。文本打印「数据覆盖：」及固定说明「覆盖只说明读到多少，不代表结论可信度」，无数据时也会打印；没有读到与没有发生须分别理解。
 

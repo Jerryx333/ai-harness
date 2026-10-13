@@ -6,6 +6,7 @@ from support import (
     REPO,
     check,
     fake_agent_use,
+    findings_fixture,
     json,
     latest_provider,
     os,
@@ -287,6 +288,20 @@ def test_state_contract():
             if p.poll() is None:
                 p.terminate()
                 p.communicate(timeout=10)
+
+        extract_root = t / 'extract'; extract_root.mkdir()
+        f = findings_fixture(extract_root)
+        f.extract(harness=f.HERE, include_hub=False)
+        signals = json.loads((f.STATE / 'findings/signals.json').read_text())
+        check('coverage' in signals, 'signals coverage 缺失')
+        coverage = signals['coverage']
+        check(set(coverage) == {'sources', 'level', 'reasons'}, 'signals coverage schema')
+        check(coverage['level'] in {'无数据', '部分', '完整'}, 'signals coverage level')
+        check(isinstance(coverage['sources'], list) and coverage['sources'] and
+              all({'name', 'exists', 'rows', 'bad'} <= source.keys() for source in coverage['sources']),
+              'signals coverage sources schema')
+        check(isinstance(coverage['reasons'], list) and all(isinstance(reason, str) for reason in coverage['reasons']),
+              'signals coverage reasons schema')
 
 
 

@@ -161,6 +161,8 @@ worker 在首次写 JSON 前创建或打开同名 `<pid>.lock` 并持有 `fcntl.
 | `triage/<id>/` | triage | 批次材料 batch.md / batch.json |
 | `hint.json` | 钩子 | 上次提示时间，用于节流 |
 
+`signals.json` 持久化 `coverage`，结构为 `{ "sources": [...], "level": "无数据|部分|完整", "reasons": [...] }`。`sources` 为数组，每项含 `name`（来源名称）、`exists`（布尔）、`rows`（窗口内有效输入数）、`bad`（解析失败数）。来源包括 Git 历史、本机 records、hub，以及读取的 hub records 和 runs；Git 的 rows 计入受监测文件的窗口内提交数，runs 的 rows 计入窗口内 task.txt 数，records 的 rows 在信号过滤与 ID 去重前计数，坏行不保证属于窗口内。`level` 仅取「无数据」「部分」「完整」：有效输入合计为 0 时为「无数据」，否则有缺失、解析失败或跳过原因时为「部分」，其余为「完整」。`reasons` 为字符串数组，记录来源不存在、解析失败、hub 或规则振荡被跳过、窗口内无有效行等原因；coverage 只说明读取覆盖，不代表信号可信度。`test_state_contract` 同样校验此持久化字段结构。
+
 周报对 records 与 quarantine 按天数窗口统计，其余显示当前快照；观察率以 answers 数为分母。完整协议见 [改进缓冲区设计](findings.md)。
 
 ### 本机评审补充状态

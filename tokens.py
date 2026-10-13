@@ -45,7 +45,7 @@ def report(days, top):
     main, children = defaultdict(list), defaultdict(list)
     projects, images, dispatch_counts, codex = {}, Counter(), Counter(), Counter()
     latest, bad = {}, 0
-    root_source = dict(name=str(root), exists=root.exists(), rows=0, bad=0,
+    root_source = dict(name='transcripts', exists=root.exists(), rows=0, bad=0,
                        files=0, files_with_rows=0)
     sources = [root_source]
     # Only known transcript layouts; never load entire files into memory.

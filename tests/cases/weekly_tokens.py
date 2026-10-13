@@ -172,7 +172,7 @@ def tokens_report():
         for expected in ('主会话 3 轮', 'ctx 中位 200000', '轮次 33.33%', '固定 50.00%', '增长 50.00%',
                          '600020 1 3 2000', 'codex rollout: input 1000 · cached 700 · output 20'):
             check(expected in text.stdout, text.stdout)
-        check(sentinel not in result.stdout + result.stderr + text.stdout + text.stderr and sid not in json.dumps({k: v for k, v in d.items() if k != 'coverage'}) + '\n'.join(line for line in text.stdout.splitlines() if not line.startswith('数据覆盖：')), 'privacy leak')
+        check(sentinel not in result.stdout + result.stderr + text.stdout + text.stderr and sid not in json.dumps(d) + text.stdout, 'privacy leak')
         limited = json.loads(sh(cmd + ['--json', '--top', '1'], env=env).stdout)
         check(len(limited['sessions']) == 1 and limited['totals'] == d['totals'], str(limited))
         duplicate = assistant('updated', 100)
@@ -391,6 +391,9 @@ def tokens_coverage():
         def read():
             result = sh(cmd + ['--json'], env=env)
             check(result.returncode == 0, result.stderr)
+            text = sh(cmd, env=env)
+            check(text.returncode == 0, text.stderr)
+            check(str(projects) not in result.stdout and str(projects) not in text.stdout, 'transcript root privacy leak')
             data = json.loads(result.stdout)
             coverage = data['coverage']
             check(len(coverage['sources']) == 2, str(coverage))
@@ -399,7 +402,7 @@ def tokens_coverage():
                 check(not result.stderr, result.stderr)
             return coverage
         coverage = read()
-        check(coverage['level'] == '无数据' and any(str(projects) in r and '不存在' in r for r in coverage['reasons']), str(coverage))
+        check(coverage['level'] == '无数据' and 'transcripts 不存在' in coverage['reasons'], str(coverage))
         text = sh(cmd, env=env)
         check('数据覆盖：无数据' in text.stdout and text.stdout.count('覆盖只说明读到多少，不代表结论可信度') == 1, text.stdout)
         project = projects / 'project'; project.mkdir(parents=True)
@@ -411,7 +414,7 @@ def tokens_coverage():
         transcript.write_text(ignored + json.dumps(row) + '\n')
         coverage = read()
         check(coverage['level'] == '完整' and not coverage['reasons'], str(coverage))
-        check(coverage['sources'][0] == dict(name=str(projects), exists=True, rows=1, bad=0,
+        check(coverage['sources'][0] == dict(name='transcripts', exists=True, rows=1, bad=0,
                                           files=1, files_with_rows=1), str(coverage))
         check(coverage['sources'][1] == dict(name='seat-ledger.jsonl', exists=True, rows=0, bad=0), str(coverage))
         (project / 'ignored.jsonl').write_text(ignored + '{broken\n')
@@ -421,7 +424,7 @@ def tokens_coverage():
         (subagents / 'agent-one.jsonl').write_text(json.dumps(row) + '\n')
         coverage = read()
         check(coverage['level'] == '完整' and coverage['sources'][0] ==
-              dict(name=str(projects), exists=True, rows=2, bad=0, files=4, files_with_rows=2), str(coverage))
+              dict(name='transcripts', exists=True, rows=2, bad=0, files=4, files_with_rows=2), str(coverage))
         # Main's prefilter also accepts other types mentioning assistant; no extra type filter.
         selected = dict(type='summary', summary='assistant', timestamp=row['timestamp'])
         with transcript.open('a') as stream:
@@ -430,7 +433,7 @@ def tokens_coverage():
             stream.write('{"type":"summary","summary":"tool_result"}\n')
         coverage = read()
         check(coverage['level'] == '部分' and any('解析失败' in r for r in coverage['reasons']), str(coverage))
-        check(coverage['sources'][0] == dict(name=str(projects), exists=True, rows=3, bad=2,
+        check(coverage['sources'][0] == dict(name='transcripts', exists=True, rows=3, bad=2,
                                           files=4, files_with_rows=2), str(coverage))
         (subagents / 'agent-one.jsonl').unlink()
         transcript.write_text(json.dumps(old) + '\n')

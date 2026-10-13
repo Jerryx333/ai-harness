@@ -24,7 +24,8 @@ from pathlib import Path
 
 from harness_ids import format_panel_id
 
-from ai_worker import AttachError, SEATS, build_attachments, dispatch
+from ai_worker import AttachError, SEATS, build_attachments, dispatch, resolve_role, RoleError
+from seats_config import ROLE_NAMES
 
 HERE = Path(__file__).resolve().parent
 STATE = Path(getenv("AIW_STATE", HERE / "state"))
@@ -113,7 +114,7 @@ def main() -> int:
             return dispatch(None, {})  # 复用 worker 的嵌套拒绝及退出码
         finally:
             sys.argv = argv
-    args, seat, jobs = [], SEATS.get("map_default", "codex-sol"), "3"
+    args, seat, jobs = [], SEATS.get("map_default", "draft"), "3"
     try:
         it = iter(sys.argv[1:])
         for arg in it:
@@ -135,6 +136,14 @@ def main() -> int:
         if not jobs.isascii() or not jobs.isdigit() or not 1 <= int(jobs) <= 6:
             raise ValueError("--jobs 必须为 1–6 的整数")
         jobs = int(jobs)
+        if seat in ROLE_NAMES:
+            role = seat
+            try:
+                seat = resolve_role(role)
+            except RoleError as exc:
+                print(exc, file=sys.stderr)
+                return 2
+            print(f"[ai-worker] 角色 {role} → 座位 {seat}", file=sys.stderr)
         cfg = SEATS["seats"].get(seat)
         if cfg is None:
             raise ValueError(f"未知座位：{seat}")

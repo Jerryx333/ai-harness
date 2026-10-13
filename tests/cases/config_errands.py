@@ -188,6 +188,10 @@ def local_config_contract():
                           {'a': {'x': None}, 'b': [2], 'c': 'v'}) ==
                   {'a': {'x': None, 'y': 2}, 'b': [2], 'c': 'v'}, '合并规则')
             before = c.effective_hash(merged)
+            role_override = c.merge(merged, {'roles': {'codex': {'draft': ['claude']}}})
+            check(role_override['roles']['codex']['draft'] == ['claude']
+                  and role_override['roles']['claude'] == merged['roles']['claude'], '角色覆盖合并错误')
+            check(c.effective_hash(role_override) != before, '角色未计入有效哈希')
             merged['notify'] = {'discord_channel_id': 'changed'}
             merged['seats']['codex']['login_hint'] = 'changed'
             check(before == c.effective_hash(merged), '说明/通知影响哈希')
@@ -461,8 +465,8 @@ def public_config_contract():
     import findings as f
     import freecheck
     public = c.load_public()
-    check(sorted(public['seats']) == ['claude', 'codex', 'codex-sol'], str(public['seats']))
-    check(public['panel_free'] == [] and public['map_default'] == 'codex-sol', '公开默认错误')
+    check(sorted(public['seats']) == ['claude', 'claude-write', 'codex', 'codex-sol'], str(public['seats']))
+    check(public['panel_free'] == [] and public['map_default'] == 'draft', '公开默认错误')
     with tempfile.TemporaryDirectory() as td:
         t = Path(td)
         env = dict(os.environ, AIW_CONFIG='', AIW_ROUTER_RULES='', AGENT_USE_ERRAND_HOME='', HOME=str(t))
@@ -472,6 +476,10 @@ def public_config_contract():
             state = t / ('panel-' + main)
             r = sh([str(REPO / 'bin/aiw'), 'panel', str(t), '10', 'test'],
                    env=dict(env, AIW_MAIN=main, AIW_STATE=str(state)))
+            if len(expected) < 2:
+                check(r.returncode == 1 and '会诊需要至少两家可用座位' in r.stderr, repr(r))
+                check(not (state / 'panels').exists(), '单家仍派单')
+                continue
             summary = json.loads(next((state / 'panels').glob('*/summary.json')).read_text())
             check([row['seat'] for row in summary['seats']] == expected, str(summary))
             sufficient = len(expected) >= 2

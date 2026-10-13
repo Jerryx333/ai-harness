@@ -44,8 +44,8 @@ def route_textwork():
                  '批量给所有文件加测试，并列出边界情况'],
         None: ['总结一下我们刚才的讨论', '总结一下', '想几个名字', '写个函数'],
     }
-    seats = {'draft': 'codex-sol', 'longread': 'codex-sol', 'snippet': 'codex-sol',
-             'logs': 'codex-sol', 'bulk': 'codex', 'review': 'codex-sol'}
+    seats = {'draft': 'draft', 'longread': 'draft', 'snippet': 'draft',
+             'logs': 'review', 'bulk': 'write', 'review': 'review'}
     with tempfile.TemporaryDirectory() as t:
         for main in (None, 'codex'):
             result = module.route('总结这份报告，结合我们刚才讨论的决定', Path(t), main=main)
@@ -481,7 +481,8 @@ def panel():
         p = sh(["bash", aiw, "panel", str(t), "30", str(pf)], env=dict(env, AIW_MAIN="codex"))
         d = max((t / "state" / "panels").iterdir(), key=lambda p: p.stat().st_mtime_ns)
         summ = json.loads((d / "summary.json").read_text())
-        check([x["seat"] for x in summ["seats"]] == ["workbuddy", "workbuddy-hy4", "qoder", "opencode", "claude"], f"codex 主会话会诊座位不对: {summ}")
+        check([x["seat"] for x in summ["seats"]] == ["workbuddy", "workbuddy-hy4", "opencode", "claude"], f"codex 主会话会诊座位不对: {summ}")
+        check("跳过不可用座位 qoder: 熔断：auth" in p.stderr, p.stderr)
         check("nested=1" in (d / "claude.md").read_text(), "外包出去的 claude 应带 AIW_NESTED=1")
         e2 = {k: v for k, v in env.items() if k != "AIW_MAIN"}; e2["CLAUDECODE"] = "1"
         p = sh(["bash", aiw, "panel", str(t), "30", str(pf)], env=e2)

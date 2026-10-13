@@ -209,7 +209,7 @@ MUTATIONS.extend([
      'tests': ['errand_registry_corrupt_rejected'], 'location': 'errand_names'},
     {'id': 'errand-panel', 'expect': 'errand panel 未拒绝',
      'invariant': 'errand 不进入 panel', 'file': 'panel.py',
-     'old': 'if errands.intersection(seats):', 'new': 'if False:',
+     'old': 'if errands.intersection(seats if explicit else (SEATS["panel_free"] if free else SEATS.get("panel_default", []))):', 'new': 'if False:',
      'tests': ['errand_panel_rejects'], 'location': 'main'},
     {'id': 'errand-route', 'expect': 'errand 路由未拒绝',
      'invariant': 'errand 不进入运行时 route', 'file': 'route.py',

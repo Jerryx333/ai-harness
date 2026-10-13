@@ -2,7 +2,7 @@
 
 [中文](README.md) | [English](README.en.md)
 
-Let your main Claude Code / Codex model focus on planning and checking results. Hand off routine work such as reading code, running commands and drafting summaries to Codex or cheaper models you already have available. Install it and start using it, with no service to run or dependencies to install. It works best if you use both Claude Code and Codex.
+For people who use Claude Code or Codex as their main tool and often hit usage limits or fill their context. Keep the main model focused on planning and checking results; hand off reading code, running commands and drafting summaries. You configure who gets the work: a cheaper model in the same family, other subscriptions you already have, or free models. Defaults are included, and one installed CLI is enough. No service to run and no dependencies beyond Python 3.
 
 ## What problems does it solve?
 
@@ -12,11 +12,12 @@ Let your main Claude Code / Codex model focus on planning and checking results. 
 
 ## What changes after installation?
 
-- Your main model's allowance goes further: hand off routine work and spend it on planning and checking results.
+- **Configure it around what you have.** Use any CLI for the main session. In one local file, order candidates for edits, reviews and drafts; if the first is unavailable, use the next. Any model or CLI that runs in a terminal can connect through agent-use without code changes. See [customization](docs/guide.md#customize) and [roles](docs/guide.md#roles-and-single-cli-installations).
+- Use a strong model in the main session and a cheaper one for routine work: for example, GPT-6 Astra with GPT-6.1 Sol in Codex, or Fable with Opus 5.5 in Claude ([Codex pricing](https://developers.openai.com/codex/pricing): credits per million tokens, GPT-6 Astra input 250 / output 1,250; GPT-6.1 Sol input 50 / output 250). These are examples; you can change the default configuration. All models on the same account share the allowance; assignments do not create extra allowance. Claude Pro/Max also have five-hour and weekly limits shared by claude.ai and Claude Code.
 - Less clutter in the main conversation: assigned work reads files and runs commands elsewhere. Those file contents and command output stay out of the main conversation; it receives only the results.
 - You get another review: different models can write and review code; `aiw panel` collects independent opinions from several models.
 - Keep your usual workflow: use Claude Code or Codex as usual. When work is suitable to hand off, it suggests who should take it; the main conversation decides whether to assign it.
-- If a model is unavailable, it can automatically try the next one so work can continue. By default there is only one choice per task; set the alternatives and their order in [local configuration](docs/guide.md#customize).
+- If a model is unavailable, it can automatically try the next one so work can continue. Roles first select an available seat; execution fallback chains are empty by default. Set alternatives and their order in [local configuration](docs/guide.md#customize).
 
 ## Want to connect more models? Use agent-use
 
@@ -42,13 +43,15 @@ Just want common CLIs such as Codex, Claude Code and OpenCode? [agent-use-adapte
 
 The main conversation can keep working meanwhile. For small, urgent work, doing it yourself is faster.
 
-**Will it mess up my repository?** Code-change work runs in the Codex sandbox: it can write only to the project directory (in a git worktree, also the Git directories `git add` needs) and has no network by default. When it finishes, it lists the changed files. Changes stay in your working tree for the main conversation to review before committing. Read-only work cannot change files.
+**Will it mess up my repository?** When write resolves to Codex, code-change work runs in the Codex sandbox: it can write only to the project directory (in a git worktree, also the Git directories `git add` needs) and has no network by default. When it finishes, it lists the changed files. Changes stay in your working tree for the main conversation to review before committing. With Claude only, claude-write uses restricted mode and a sandbox to edit workspace files, with no git add/commit. Read-only work cannot change files.
 
 **Does it cost money?** Codex and Claude use your own accounts and their billing. Connected free models can be marked for free-tier use only and automatically disabled when charging is detected. Detection happens after a call, so this does not guarantee zero cost.
 
 **Where does my code go?** Task instructions and attached material go to the service behind the model you assign. Models that only handle text cannot see your code by default; you must explicitly attach it. Do not send passwords, keys or private data to third-party models.
 
-**Only Claude Code, no Codex?** Installation works, but the default model for code changes (`codex`) and read-only reviews (`codex-sol`) require Codex CLI. This limits the default Claude-led workflow.
+**Can I use it with just one CLI installed?** Yes. Codex only: edit code in the main session and assign reviews/drafts to another Codex session. Claude Code only: assign edits to the Opus 5.5 `claude-write` seat (requires Claude Code ≥ 2.1.259; restricted mode plus sandbox, project-directory edits only, no git add/commit), and reviews/drafts to Opus 5.5. With one family, review opens another context in that family; it is not a cross-family review. Panels require at least two seats; add an agent-use text seat if needed. Run `aiw doctor` to see role mappings.
+
+**Can Fable cost extra?** Seats pin Opus and never automatically select Fable. On Pro, Fable is billed by usage. On Max, Fable counts toward the regular weekly limit, can use at most half of it, and consumes allowance faster than other models. See [Claude's official explanation](https://support.claude.com/en/articles/15424964-claude-fable-models-on-your-plan).
 
 **Linux?** Untested. Only macOS has been tested.
 
@@ -56,7 +59,7 @@ The main conversation can keep working meanwhile. For small, urgent work, doing 
 
 ## Five-minute start
 
-You need macOS (the only tested OS), Python 3, and logged-in Claude Code and/or Codex CLI (terminal programs). Optional: [agent-use](https://github.com/Jerryx333/agent-use) to connect more models.
+You need macOS (the only tested OS), Python 3, and logged-in Claude Code or Codex CLI (at least one). Optional: [agent-use](https://github.com/Jerryx333/agent-use) to connect more models.
 
 1. Clone and install at this exact location:
 
@@ -75,11 +78,11 @@ You need macOS (the only tested OS), Python 3, and logged-in Claude Code and/or 
 
    Configuration warnings do not change doctor's exit code. Codex may ask you to trust the new hook when it next starts.
 
-3. Try a read-only review of this checkout (requires Codex):
+3. Try a read-only review of this checkout (either installed CLI works):
 
    ```bash
    printf '%s\n' 'Read this repository. Explain its entry points with file references. Do not edit files.' > /tmp/aiw-review.txt
-   aiw codex-sol "$HOME/.claude/aiw" 900 /tmp/aiw-review.txt --ro
+   aiw review "$HOME/.claude/aiw" 900 /tmp/aiw-review.txt --ro
    ```
 
 4. Use Claude Code or Codex as usual. When work is suitable to hand off, it suggests who should take it; the main conversation plans and verifies.
@@ -91,9 +94,9 @@ You need macOS (the only tested OS), Python 3, and logged-in Claude Code and/or 
 
 | Command | Purpose and example |
 | --- | --- |
-| `aiw <seat> <dir> <seconds> <prompt> [--ro] [--net]` | Assign work: `aiw codex-sol . 900 task.txt --ro`. `--ro` requests read-only; `--net` opens the network for Codex code-change work (off by default). |
-| `aiw panel` | Ask several models the same question for independent opinions: `aiw panel . 600 task.txt --prior prior.md`. Pass your own judgment with `--prior`; then accept, reject or defer each opinion, without majority voting. A panel succeeds only when at least two models answer; with one, it still shows the result but returns 1. Output format and options: [reference manual](docs/reference.zh-CN.md#命令) (Chinese). |
-| `aiw map` | Apply one instruction per file: `aiw map . 600 task.txt src/a.py src/b.py`; defaults to `codex-sol`, up to 3 jobs. |
+| `aiw <seat> <dir> <seconds> <prompt> [--ro] [--net]` | Assign work: `aiw review . 900 task.txt --ro`. `--ro` requests read-only; `--net` opens the network for Codex code-change work (off by default). |
+| `aiw panel` | Ask several models the same question for independent opinions: `aiw panel . 600 task.txt --prior prior.md`. Pass your own judgment with `--prior`; then accept, reject or defer each opinion, without majority voting. A panel succeeds only when at least two models answer; default lists with fewer than two seats do not dispatch and return 1; an explicitly named single seat still shows its result and returns 1. Output format and options: [reference manual](docs/reference.zh-CN.md#命令) (Chinese). |
+| `aiw map` | Apply one instruction per file: `aiw map . 600 task.txt src/a.py src/b.py`; defaults to the `draft` role, up to 3 jobs. |
 | `aiw goal init / verify` | Create a checklist with `aiw goal init docs/goals/demo.json`; edit its example tasks, `verify` commands and `paths`, then run `aiw goal verify docs/goals/demo.json --full`. |
 | `aiw doctor` | Check seats and setup: `aiw doctor`; `aiw doctor --fingerprint` prints a fingerprint (version/hash summary). |
 | `aiw note` | Save an observation: `aiw note . "Check failed" --expected "Check passes" --evidence "test output"`. |

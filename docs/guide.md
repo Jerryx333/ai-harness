@@ -1,5 +1,26 @@
 # aiw usage guide
 
+## Roles and single CLI installations
+
+Use `aiw write|review|draft <workdir> <timeout> <prompt>`. Run `aiw doctor` to see which seat each role resolves to.
+
+| Main session | write candidates | review candidates | draft candidates |
+|---|---|---|---|
+| Claude | codex → claude-write | codex-sol → claude | codex-sol → claude |
+| Codex | Empty: edit files yourself | claude → codex-sol | codex-sol → claude |
+| Unknown (default) | codex → claude-write | codex-sol → claude | codex-sol → claude |
+
+Select the first existing seat whose binary is available (respecting CODEX_BIN/CLAUDE_BIN), which is not disabled and has no active auth/not_installed breaker. If none is available, return rc=2 with each candidate's reason and suggest an agent-use text seat. An empty Codex write list asks the main session to edit files itself. review/draft always run read-only, including replacements with write capability. Local roles objects merge recursively; lists replace in full. review/draft skip CLI candidates without read-only capability and report reasons; doctor also warns. Read-only CLI and agent_use text seats are eligible; role names cannot conflict with seats or built-in commands.
+
+With only Codex, the main session edits files and another Codex session reviews/drafts. With only Claude Code, claude-write edits and claude reviews/drafts. With both installed, review selects the other model family; with one, it opens another context in the same family, which is not a cross-family review.
+
+Both Claude seats pin `--model opus` rather than following the user's default. claude-write requires Claude Code 2.1.259 or later (`--restricted` since 2.1.248, `--permission-prompts` since 2.1.259; see the [CLI reference](https://code.claude.com/docs/en/cli-reference.md)). Write jobs use `--restricted --strict-mcp-config --tools Read,Grep,Glob,Edit,Write,Bash --permission-mode acceptEdits --permission-prompts none` and one settings JSON argument: `{"sandbox":{"enabled":true,"allowUnsandboxedCommands":false,"failIfUnavailable":true}}`. Restricted mode plus the sandbox allows project workspace edits, but no git add/commit; unavailable sandbox support fails the job. Read-only jobs use claude's Read/Grep/Glob allowlist.
+
+**Known claude-write limitation:** By design, the Claude Code sandbox also permits writes to per-user temporary directories outside the project, such as `$TMPDIR` and `/tmp/claude-<uid>`. Writes elsewhere outside the project, such as the home directory, are denied. These behaviors were tested on Claude Code 2.1.295 on 2026-10-13: out-of-project file tools were rejected by `--restricted`; shell `cp` to `~/` failed with `Operation not permitted`; `curl` was rejected with 403.
+
+Default panel seats exclude the main session and unavailable seats, reporting reasons on stderr. Fewer than two available seats returns rc=1 without dispatch and suggests adding an agent-use text seat. Explicit lists also filter unavailable seats and report reasons; a single explicit seat still displays its result with rc=1. map_default is draft and accepts roles; --seat still names a seat.
+
+
 Start with the [README](../README.en.md) to see what problems it solves; this guide covers installation details, how it works and customization.
 
 ## What the installer changes
@@ -17,13 +38,13 @@ Changed existing files get `.bak-YYYYMMDD-HHMMSS` backups; new/unchanged files d
 
 ## How it works
 
-aiw shares work from Claude Code or Codex: code goes to Codex, reviews to another model, drafts and summaries to optional cheap/free models. The main session plans/checks results; Codex also edits code. A **seat** is a model or CLI that takes assignments. Fallback tries another seat; circuit breakers temporarily skip unavailable seats. Not a framework or service: rule files and standard-library Python scripts.
+aiw shares work from Claude Code or Codex: code uses write, reviews use review, drafts and summaries to optional cheap/free models. The main session plans/checks results; Codex also edits code. A **seat** is a model or CLI that takes assignments. Fallback tries another seat; circuit breakers temporarily skip unavailable seats. Not a framework or service: rule files and standard-library Python scripts.
 
-`codex`/`codex-sol` need Codex CLI; `claude` needs Claude Code. A CLI runs in a terminal.
+`codex`/`codex-sol` need Codex CLI; `claude`/`claude-write` need Claude Code. A CLI runs in a terminal.
 
 - `aiw`: assign work.
 - Dispatch hooks: suggest seats inside Claude Code/Codex; do not assign automatically.
-- `aiw panel`: independent opinions (a “panel”). Exit code 0 requires at least two successful seats with output (`rc == 0` and `chars > 0`); fewer return 1. A single seat still runs and its result is displayed, but its opinion does not constitute a panel.
+- `aiw panel`: independent opinions (a “panel”). Exit code 0 requires at least two successful seats with output (`rc == 0` and `chars > 0`); fewer return 1. Default lists with fewer than two available seats do not dispatch. An explicit single seat still runs and its result is displayed, but is not a panel.
 - `aiw goal`: a task list with executable checks.
 - An improvement buffer: observations for later root-cause review.
 - `aiw doctor`: installation/configuration checks.
@@ -36,7 +57,7 @@ Main session → dispatch hook suggestion → main session runs aiw → seat
 Result → main session checks files, evidence and tests
 ```
 
-All output is a **draft for review**. On success, stderr reports the actual seat and the actual `provider` file path. The default location is the run directory; setting `AIW_PROVIDER_FILE` writes it to the specified path. Write jobs share a lock across the Git repository root and its subdirectories. Git write jobs save `baseline-status.txt` before execution and report pre-existing changes separately from files with new changes during the job. Defaults contain `codex`, `codex-sol`, and `claude`, with empty fallback chains. Add local chains to enable fallback. Text seats need `--attach file` to see code. For direct jobs, attachments go to the actual seat: CLI seats receive only a validated file list (relative path, byte count, first 12 SHA256 hex digits) and read files in the workdir; other seats receive inline text. Both modes retain the 200KB cap and safety checks. Above 30KB, direct jobs to text seats trigger one warning without rejection. Panel reads attachments once during preflight and appends inline text to the shared `prompt.md` snapshot; every seat, including CLI seats, receives the same full contents. Panel warns once when total attachments exceed 30KB, including panels with only CLI seats. Attachment contents are sent as-is to the model service behind the seat. Safety checks block credential-like files, out-of-tree paths, binaries and similar cases, but do not detect passwords, keys or private data inside file text; check before sending.
+All output is a **draft for review**. On success, stderr reports the actual seat and the actual `provider` file path. The default location is the run directory; setting `AIW_PROVIDER_FILE` writes it to the specified path. Write jobs share a lock across the Git repository root and its subdirectories. Git write jobs save `baseline-status.txt` before execution and report pre-existing changes separately from files with new changes during the job. Defaults contain `codex`, `codex-sol`, `claude`, and `claude-write`, with empty fallback chains. Add local chains to enable fallback. Text seats need `--attach file` to see code. For direct jobs, attachments go to the actual seat: CLI seats receive only a validated file list (relative path, byte count, first 12 SHA256 hex digits) and read files in the workdir; other seats receive inline text. Both modes retain the 200KB cap and safety checks. Above 30KB, direct jobs to text seats trigger one warning without rejection. Panel reads attachments once during preflight and appends inline text to the shared `prompt.md` snapshot; every seat, including CLI seats, receives the same full contents. Panel warns once when total attachments exceed 30KB, including panels with only CLI seats. Attachment contents are sent as-is to the model service behind the seat. Safety checks block credential-like files, out-of-tree paths, binaries and similar cases, but do not detect passwords, keys or private data inside file text; check before sending.
 
 ## Add more models (optional)
 
@@ -88,7 +109,7 @@ Personal rules override conflicts. Rerun `install.sh` after adding personal file
 
 Codex/Claude seats use your own accounts and their billing. `free_only` labels a seat as free-only and declares that it should not switch to paid models; automatic disabling requires `free_guard`, which disables a provider/model when reported charging is detected. These fields, along with `ro_only`, `require_no_tools` and `expects_credits`, must be booleans when present. This is detection after a call, not a guarantee of zero cost.
 
-CLI seats accept an optional `adapter`. Omitted or `null` means an ordinary CLI; the only allowed string is `"codex"`, restricted to `kind=cli`. A local `"adapter": null` clears the inherited value; partial overrides retain it. When upgrading, local overrides inherit the public configuration's adapter: switching `codex`/`codex-sol` to a non-Codex CLI or `agent_use` requires an explicit `"adapter": null`; when continuing to use Codex, keep `argv_rw`/`argv_ro` in exec form. Both `argv_rw` and `argv_ro` must have `"{bin}"` as `argv[0]`, `"exec"` as their second item and exactly one `"--sandbox"` followed by `"read-only"` or `"workspace-write"`. The Codex adapter enables sandbox/task reminders, inner shell nesting protection, linked worktree writable roots, write-job `--net`, isolated CODEX_HOME and token ledger fields, based on the actual seat. To add an alias such as `codex-high`, copy the complete public `codex` seat (including argv) into local `seats`, keep `"adapter": "codex"`, then adjust fields such as `effort`. The name alone enables no adapter behavior. Doctor warns when a command resembles Codex but has no adapter.
+CLI seats accept an optional `adapter`. Omitted or `null` means an ordinary CLI; the only allowed string is `"codex"`, restricted to `kind=cli`. A local `"adapter": null` clears the inherited value; partial overrides retain it. When upgrading, local overrides inherit the public configuration's adapter: switching `codex`/`codex-sol` to a non-Codex CLI or `agent_use` requires an explicit `"adapter": null`; when continuing to use Codex, keep `argv_rw`/`argv_ro` in exec form. Both `argv_rw` and `argv_ro` must have `"{bin}"` as `argv[0]`, `"exec"` as their second item and exactly one `"--sandbox"` followed by `"read-only"` for `argv_ro`, or `"read-only"`/`"workspace-write"` for `argv_rw`. The Codex adapter enables sandbox/task reminders, inner shell nesting protection, linked worktree writable roots, write-job `--net`, isolated CODEX_HOME and token ledger fields, based on the actual seat. To add an alias such as `codex-high`, copy the complete public `codex` seat (including argv) into local `seats`, keep `"adapter": "codex"`, then adjust fields such as `effort`. The name alone enables no adapter behavior. Doctor warns when a command resembles Codex but has no adapter.
 
 ## Multiple machines
 

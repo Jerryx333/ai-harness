@@ -2,26 +2,28 @@
 
 项目 CLAUDE.md 或 AGENTS.md 可覆盖；install.sh 引入的 `~/.config/aiw/CLAUDE.personal.md` 冲突时优先。命令参数、rc 含义、跑腿、/goal、免费座位保护等细节见 `~/.claude/aiw/docs/reference.zh-CN.md`，用到时再读。
 
-## 座位
+## 角色
 
-| 座位 | 用途 | 命令 |
+| 角色 | 用途 | 命令 |
 |---|---|---|
-| codex | 读写文件、跑命令：改动、测试、脚手架 | `aiw codex <workdir> 1200 <prompt文件>` |
-| codex-sol | 只读：整仓评审、翻日志、找代码 | `aiw codex-sol <workdir> 900 <prompt文件> --ro` |
-| 文本座位 | 起草、改写、摘要、代码草稿；材料用 `--attach` | `aiw <座位> <workdir> 600 <prompt文件> --ro` |
+| write | 改代码（Codex 主会话改文件自己做） | `aiw write <workdir> 1200 <prompt文件>` |
+| review | 只读评审、整仓分析、找代码 | `aiw review <workdir> 900 <prompt文件>` |
+| draft | 起草、改写、摘要、长材料提炼的兜底 | `aiw draft <workdir> 600 <prompt文件> --attach 文件` |
 
-座位、模型和顶替链见 `aiw doctor`。
+角色解析到哪个座位见 `aiw doctor`。review/draft 强制只读。
 
 ## 怎么派单
 
 1. 目标、方案、取舍和验收条件由主会话定，不外包。小任务简述，大任务列清单（用 `aiw goal`）。
-2. 一句话能写清验收条件的改动派 codex，主会话不改；用户说「我自己做」「直接改」时除外。
-3. 要通读或评审仓库才能回答的派 codex-sol。
-4. 长材料（约 300 行或 20KB 以上）先派文本座位压成带 path:line 的要点，主会话只回原文核对要下结论的条目。
+2. 一句话能写清验收条件的改动派 `aiw write`，主会话不改；用户说「我自己做」「直接改」时除外。
+3. 要通读或评审仓库才能回答的派 `aiw review`。
+4. 长材料（约 300 行或 20KB 以上）先派 `aiw draft` 压成带 path:line 的要点，主会话只回原文核对要下结论的条目。
 5. 要多家意见用 `aiw panel`：先用 `--prior` 写自己的判断，看完逐条标接受/驳回/暂缓，不按多数票。
 6. 每单写清目标、上下文、修改范围、约束和可执行的验收条件；涉及规则或数据语义时附原文 path:line，未核实写「待核实」。
-7. 写单的测试要起本地服务或联网时加 `--net`；验收命令不写 nice/taskpolicy（沙箱禁止调优先级），需低优先级跑的全量测试主会话自己跑。
-8. 高风险或关键架构方案实施前取独立意见；大任务完成后派 codex-sol 独立评审。
+7. Codex 写座位（adapter=codex）的测试要起本地服务或联网时加 `--net`；其他写座位联网由各自沙箱决定，claude-write 默认无网络；验收命令不写 nice/taskpolicy（沙箱禁止调优先级），需低优先级跑的全量测试主会话自己跑。
+8. 高风险或关键架构方案实施前取独立意见；大任务完成后派 `aiw review` 独立评审。
+
+两家都装时 review 会落到另一家模型；只装一家时是同一家另开上下文，不等于跨家族复核。
 
 ## 改进缓冲区
 

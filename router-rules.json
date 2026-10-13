@@ -18,8 +18,8 @@
         "复盘",
         "(怎么|如何)(优化|重构|设计)"
       ],
-      "instruction": "小任务简述方案即可，大任务才建立清单（每条带 owner、可执行 verify 和 passes:false）并记录人工阻塞。高风险方案实施前独立复核，大任务完成后独立评审；边界明确的执行任务按座位能力派单，主会话保留方案责任。",
-      "instruction_codex": "小任务简述方案即可，大任务才建立清单（每条带 owner、可执行 verify 和 passes:false）并记录人工阻塞。高风险或关键架构方案实施前、大任务（使用 /goal 或改动超过 3 个文件）完成后，必须用 `aiw claude <workdir> 900 <prompt文件> --ro` 做独立评审，不能自己评自己；改文件由你自己做，不用 aiw codex 套自己。"
+      "instruction": "小任务简述方案即可，大任务才建立清单（每条带 owner、可执行 verify 和 passes:false）并记录人工阻塞。高风险方案实施前独立复核，大任务完成后独立评审；边界明确的执行任务按座位能力派单，主会话保留方案责任。 两家都装时 review 会落到另一家模型；只装一家时是同一家另开上下文，不等于跨家族复核。",
+      "instruction_codex": "小任务简述方案即可，大任务才建立清单（每条带 owner、可执行 verify 和 passes:false）并记录人工阻塞。高风险或关键架构方案实施前、大任务（使用 /goal 或改动超过 3 个文件）完成后，必须用 `aiw review <workdir> 900 <prompt文件> --ro` 做独立评审，不能自己评自己；改文件由你自己做，不用 aiw write 套自己。 两家都装时 review 会落到另一家模型；只装一家时是同一家另开上下文，不等于跨家族复核。"
     },
     {
       "id": "panel",
@@ -32,18 +32,18 @@
     },
     {
       "id": "review",
-      "seat": "codex-sol",
+      "seat": "review",
       "patterns": [
         "(第二意见|second opinion|独立复核)",
         "(安全|漏洞|审计)(审查|检查|review)",
         "^(?!.*(日志|log|账本|ledger)).*(看看|看下|看一下|检查一下|过一下).*(对不对|有没有问题|有什么问题|行不行|靠不靠谱)"
       ],
-      "instruction": "本条判定为【第二意见/评审】：要读仓库才能判断的，用 `aiw codex-sol <workdir> 900 <prompt文件> --ro`；只评审一段方案/文本的难题，用 `aiw codex-sol <workdir> 600 <prompt文件> --ro`（prompt 里内联内容）。结论里分清模型意见和有出处的事实，模型一致不算证据。",
-      "instruction_codex": "本条判定为【第二意见/评审】（你是 Codex 主会话）：要读仓库才能判断的，用 `aiw claude <workdir> 900 <prompt文件> --ro`（不同模型家族，只读）；只评审一段方案/文本的，用 `aiw claude <workdir> 600 <prompt文件> --ro --attach 文件`。模型一致不算证据。"
+      "instruction": "本条判定为【第二意见/评审】：要读仓库才能判断的，用 `aiw review <workdir> 900 <prompt文件> --ro`；只评审一段方案/文本的难题，用 `aiw review <workdir> 600 <prompt文件> --ro`（prompt 里内联内容）。结论里分清模型意见和有出处的事实，模型一致不算证据。 两家都装时 review 会落到另一家模型；只装一家时是同一家另开上下文，不等于跨家族复核。",
+      "instruction_codex": "本条判定为【第二意见/评审】（你是 Codex 主会话）：要读仓库才能判断的，用 `aiw review <workdir> 900 <prompt文件> --ro`（只读）；只评审一段方案/文本的，用 `aiw review <workdir> 600 <prompt文件> --ro --attach 文件`。模型一致不算证据。 两家都装时 review 会落到另一家模型；只装一家时是同一家另开上下文，不等于跨家族复核。"
     },
     {
       "id": "draft",
-      "seat": "codex-sol",
+      "seat": "draft",
       "patterns": [
         "(起草|写个?初稿|草拟|润色|翻译成)",
         "(换个|另一个|别的)(模型|角度).*(看看|写)",
@@ -53,22 +53,22 @@
         "^(?!.*(批量|所有文件|全部文件|逐个文件|补测试|加测试|写测试|单元测试|重命名|迁移|刚才|上面|前面|我们(讨论|聊)|之前(说|聊|讨论))).*(起名|命名建议|起个名|取个名)",
         "^(?!.*(批量|所有文件|全部文件|逐个文件|补测试|加测试|写测试|单元测试|重命名|迁移|刚才|上面|前面|我们(讨论|聊)|之前(说|聊|讨论))).*((改写|缩写|扩写|精简|润色)(一下)?\\s*(这段|这篇|这句|文案)|(这段|这篇|这句|文案).{0,12}(改写|缩写|扩写|精简|润色))"
       ],
-      "instruction": "本条判定为【起草/换个模型视角】：把需要的上下文内联进 prompt，交给 `aiw codex-sol <workdir> 600 <prompt文件> --ro`（公开默认不顶替）。产物是待审文本，由主会话核对后再用。敏感内容（凭据、账户、私人数据）不要派出去。要把 diff、原文等材料用 `--attach` 或内联带上；只依赖本次对话上下文的（如「总结一下我们刚才聊的」）主会话自己写。",
-      "instruction_codex": "本条判定为【起草/换个模型视角】（你是 Codex 主会话）：起草、改写、摘要、翻译等纯文本活必须派 `aiw codex-sol <workdir> 600 <prompt文件> --ro [--attach 文件]`，不自己写；只有涉及凭据、账户、私人数据（不能外发）时才自己做，并在汇报说明。产物是待审文本，由主会话核对后再用。要把 diff、原文等材料用 `--attach` 或内联带上；只依赖本次对话上下文的（如「总结一下我们刚才聊的」）主会话自己写。"
+      "instruction": "本条判定为【起草/换个模型视角】：把需要的上下文内联进 prompt，交给 `aiw draft <workdir> 600 <prompt文件> --ro`（公开默认不顶替）。产物是待审文本，由主会话核对后再用。敏感内容（凭据、账户、私人数据）不要派出去。要把 diff、原文等材料用 `--attach` 或内联带上；只依赖本次对话上下文的（如「总结一下我们刚才聊的」）主会话自己写。",
+      "instruction_codex": "本条判定为【起草/换个模型视角】（你是 Codex 主会话）：起草、改写、摘要、翻译等纯文本活必须派 `aiw draft <workdir> 600 <prompt文件> --ro [--attach 文件]`，不自己写；只有涉及凭据、账户、私人数据（不能外发）时才自己做，并在汇报说明。产物是待审文本，由主会话核对后再用。要把 diff、原文等材料用 `--attach` 或内联带上；只依赖本次对话上下文的（如「总结一下我们刚才聊的」）主会话自己写。"
     },
     {
       "id": "snippet",
-      "seat": "codex-sol",
+      "seat": "draft",
       "patterns": [
         "^(?!.*(批量|所有文件|全部文件|逐个文件|补测试|加测试|写测试|单元测试|重命名|迁移|刚才|上面|前面|我们(讨论|聊)|之前(说|聊|讨论))).*(列出|列一下|想几个)\\s*([^，。！？\\n]*的)?\\s*(测试用例清单|边界情况|用例清单)",
         "^(?!.*(批量|所有文件|全部文件|逐个文件|补测试|加测试|写测试|单元测试|重命名|迁移|刚才|上面|前面|我们(讨论|聊)|之前(说|聊|讨论))).*写个\\s*(正则|SQL\\b|shell\\s*命令|小脚本示例)"
       ],
-      "instruction": "本条判定为【小段文本草稿】：只出文本草稿，交给 `aiw codex-sol <workdir> 600 <prompt文件> --ro [--attach 文件]`，公开默认不顶替；产物待主会话核对。",
-      "instruction_codex": "本条判定为【小段文本草稿】（你是 Codex 主会话，同样派 codex-sol，不自己写）：只出文本草稿，交给 `aiw codex-sol <workdir> 600 <prompt文件> --ro [--attach 文件]`，公开默认不顶替；产物待主会话核对。"
+      "instruction": "本条判定为【小段文本草稿】：只出文本草稿，交给 `aiw draft <workdir> 600 <prompt文件> --ro [--attach 文件]`，公开默认不顶替；产物待主会话核对。",
+      "instruction_codex": "本条判定为【小段文本草稿】（你是 Codex 主会话，同样派 draft，不自己写）：只出文本草稿，交给 `aiw draft <workdir> 600 <prompt文件> --ro [--attach 文件]`，公开默认不顶替；产物待主会话核对。"
     },
     {
       "id": "bulk",
-      "seat": "codex",
+      "seat": "write",
       "patterns": [
         "(批量|全部|所有文件|逐个).*(改|替换|重命名|迁移|加)",
         "脚手架",
@@ -76,30 +76,30 @@
         "(改|重写|翻译).*(文案|注释|docstring)",
         "格式化"
       ],
-      "instruction": "本条判定为【批量机械改动】：能一句话写清验收（例如 `pytest -q` 全绿）就交给 `aiw codex <workdir> 1200 <prompt文件>`（sol · medium · 可写）；主会话不要逐个文件改。agent_use 座位只出文本，需本地适配器。外包完看 stderr 的「实际执行方」行。",
-      "instruction_codex": "本条判定为【批量机械改动】（你是 Codex 主会话）：你自己能改文件，直接做，改完跑能证明完成的验收命令（例如 pytest -q）。不要再 `aiw codex` 套一层自己。"
+      "instruction": "本条判定为【批量机械改动】：能一句话写清验收（例如 `pytest -q` 全绿）就交给 `aiw write <workdir> 1200 <prompt文件>`（按 write 角色解析，可写）；主会话不要逐个文件改。agent_use 座位只出文本，需本地适配器。外包完看 stderr 的「实际执行方」行。",
+      "instruction_codex": "本条判定为【批量机械改动】（你是 Codex 主会话）：你自己能改文件，直接做，改完跑能证明完成的验收命令（例如 pytest -q）。不要再 `aiw write` 套一层自己。"
     },
     {
       "id": "longread",
-      "seat": "codex-sol",
+      "seat": "draft",
       "patterns": [
         "(通读|读完|逐条看|过一遍).*(报告|文档|日志|研究|docs/)",
         "(整理|提炼|汇总).*(事实|要点|出处)",
         "(对照|比对)(多|几)个文件",
         "^(?!.*(批量|所有文件|全部文件|逐个文件|补测试|加测试|写测试|单元测试|重命名|迁移|刚才|上面|前面|我们(讨论|聊)|之前(说|聊|讨论))).*(总结|摘要|概括|提炼)(一下)?\\s*(这篇|这份|这个文件|文档|日志|报告|网页|文章|链接|输出)"
       ],
-      "instruction": "本条判定为【长文阅读/事实提炼】：从较长材料（约 300 行或 20KB 以上）找事实时，材料能附上就先用 `aiw <文本座位> <workdir> 600 <prompt文件> --ro --attach 文件` 取得带出处（path:line）的要点清单；没有文本座位时用 `aiw codex-sol <workdir> 600 <prompt文件> --ro --attach 文件`（公开默认不顶替）。主会话先读清单，需下结论的条目再回原文核对。读代码先用 `rg -l` 或 `rg -n` 定位候选文件；候选不超过 3 个文件且合计不到 20KB 时直接读，不派单。要通读整个仓库才用 `aiw codex-sol <workdir> 900 <prompt文件> --ro`。凭据、账户、私人数据不外发，由主会话自己读。",
-      "instruction_codex": "本条判定为【长文阅读/事实提炼】（你是 Codex 主会话）：片段能内联必须派 `aiw codex-sol <workdir> 900 <prompt文件> --ro --attach 文件`（只读）；整仓通读必须交给 `aiw claude <workdir> 900 <prompt文件> --ro`。要求输出带出处（path:line）。"
+      "instruction": "本条判定为【长文阅读/事实提炼】：从较长材料（约 300 行或 20KB 以上）找事实时，材料能附上就先用 `aiw draft <workdir> 600 <prompt文件> --ro --attach 文件` 取得带出处（path:line）的要点清单；兜底用 `aiw draft <workdir> 600 <prompt文件> --ro --attach 文件`（公开默认不顶替）。主会话先读清单，需下结论的条目再回原文核对。读代码先用 `rg -l` 或 `rg -n` 定位候选文件；候选不超过 3 个文件且合计不到 20KB 时直接读，不派单。要通读整个仓库才用 `aiw draft <workdir> 900 <prompt文件> --ro`。凭据、账户、私人数据不外发，由主会话自己读。",
+      "instruction_codex": "本条判定为【长文阅读/事实提炼】（你是 Codex 主会话）：片段能内联必须派 `aiw draft <workdir> 900 <prompt文件> --ro --attach 文件`（只读）；整仓通读必须交给 `aiw review <workdir> 900 <prompt文件> --ro`。要求输出带出处（path:line）。"
     },
     {
       "id": "logs",
-      "seat": "codex-sol",
+      "seat": "review",
       "patterns": [
         "(翻|查|看).*(日志|log|账本|ledger)",
         "(为什么|啥原因).*(失败|挂了|报错)"
       ],
-      "instruction": "本条判定为【翻日志】：日志片段能用 `--attach` 带上（合计 ≤200KB）就先 `aiw codex-sol <workdir> 600 <prompt文件> --ro --attach 日志` 摘出带行号的要点；要在仓库里搜日志、跨很多文件追因果，才用 `aiw codex-sol <workdir> 600 <prompt文件> --ro`。归因只看文件里的 version/model 字段，不看文件修改时间。",
-      "instruction_codex": "本条判定为【翻日志】（你是 Codex 主会话）：你能自己读文件，但超过约 300 行的日志也先派 `aiw codex-sol <workdir> 600 <prompt文件> --ro --attach 日志` 摘出带行号的要点（附件合计 ≤200KB）；要在仓库里搜日志、跨很多文件追因果时由你自己读，按出处核对后判断原因。归因只看文件里的 version/model 字段，不看文件修改时间。"
+      "instruction": "本条判定为【翻日志】：日志片段能用 `--attach` 带上（合计 ≤200KB）就先 `aiw review <workdir> 600 <prompt文件> --ro --attach 日志` 摘出带行号的要点；要在仓库里搜日志、跨很多文件追因果，才用 `aiw review <workdir> 600 <prompt文件> --ro`。归因只看文件里的 version/model 字段，不看文件修改时间。",
+      "instruction_codex": "本条判定为【翻日志】（你是 Codex 主会话）：你能自己读文件，但超过约 300 行的日志也先派 `aiw review <workdir> 600 <prompt文件> --ro --attach 日志` 摘出带行号的要点（附件合计 ≤200KB）；要在仓库里搜日志、跨很多文件追因果时由你自己读，按出处核对后判断原因。归因只看文件里的 version/model 字段，不看文件修改时间。"
     }
   ]
 }

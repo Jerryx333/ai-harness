@@ -97,7 +97,7 @@
       "label": "Claude（只读评审、第二意见；Codex 当主会话时用）",
       "bin": "claude",
       "bin_env": "CLAUDE_BIN",
-      "model": "",
+      "model": "opus",
       "argv_rw": [
         "{bin}",
         "-p",
@@ -126,18 +126,70 @@
         "--version"
       ],
       "login_hint": "终端运行 `claude` 并 /login",
-      "ro_only": true
+      "ro_only": true,
+      "model_args": [
+        "--model",
+        "{model}"
+      ]
+    },
+    "claude-write": {
+      "kind": "cli",
+      "label": "Claude · Opus（改文件；只有 Claude Code 时用）",
+      "bin": "claude",
+      "bin_env": "CLAUDE_BIN",
+      "model": "opus",
+      "argv_rw": [
+        "{bin}",
+        "-p",
+        "--restricted",
+        "--strict-mcp-config",
+        "--tools",
+        "Read,Grep,Glob,Edit,Write,Bash",
+        "--permission-mode",
+        "acceptEdits",
+        "--permission-prompts",
+        "none",
+        "--settings",
+        "{{\"sandbox\":{{\"enabled\":true,\"allowUnsandboxedCommands\":false,\"failIfUnavailable\":true}}}}",
+        "--output-format",
+        "text",
+        "--",
+        "{prompt}"
+      ],
+      "argv_ro": [
+        "{bin}",
+        "-p",
+        "--output-format",
+        "text",
+        "--allowedTools",
+        "Read,Grep,Glob",
+        "--disallowedTools",
+        "Bash,Edit,Write,NotebookEdit,WebFetch,WebSearch",
+        "--",
+        "{prompt}"
+      ],
+      "version_args": [
+        "--version"
+      ],
+      "login_hint": "终端运行 `claude` 并 /login",
+      "ro_only": false,
+      "model_args": [
+        "--model",
+        "{model}"
+      ]
     }
   },
   "fallback": {
     "codex": [],
     "codex-sol": [],
-    "claude": []
+    "claude": [],
+    "claude-write": []
   },
   "substitute_limit": {
     "codex": 12,
     "codex-sol": 12,
-    "claude": 12
+    "claude": 12,
+    "claude-write": 12
   },
   "breaker": {
     "quota_minutes": 240,
@@ -161,5 +213,46 @@
       "codex-sol"
     ]
   },
-  "map_default": "codex-sol"
+  "map_default": "draft",
+  "roles": {
+    "claude": {
+      "write": [
+        "codex",
+        "claude-write"
+      ],
+      "review": [
+        "codex-sol",
+        "claude"
+      ],
+      "draft": [
+        "codex-sol",
+        "claude"
+      ]
+    },
+    "codex": {
+      "write": [],
+      "review": [
+        "claude",
+        "codex-sol"
+      ],
+      "draft": [
+        "codex-sol",
+        "claude"
+      ]
+    },
+    "default": {
+      "write": [
+        "codex",
+        "claude-write"
+      ],
+      "review": [
+        "codex-sol",
+        "claude"
+      ],
+      "draft": [
+        "codex-sol",
+        "claude"
+      ]
+    }
+  }
 }

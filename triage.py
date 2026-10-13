@@ -313,8 +313,12 @@ def apply(data):
     if current is None:
         return 64
     path, lock = current
-    batch = read(path.parent / 'batch.json')
-    if not isinstance(batch, dict):
+    try:
+        batch = read(path.parent / 'batch.json')
+    except ValueError:
+        batch = None
+    if not isinstance(batch, dict) or any(
+            not isinstance(batch.get(key), list) for key in ('pending', 'pool', 'records')):
         print('本批 batch.json 缺失或损坏，请先 aiw triage abort 再重新 start', file=sys.stderr)
         return 2
     with (folder() / 'records.lock').open('a') as guard:

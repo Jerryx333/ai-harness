@@ -176,7 +176,7 @@ def triage_validate_core():
 def triage_apply_invalid_batch():
     import contextlib
     import io
-    for content in (None, '[]'):
+    for content in (None, '[]', '{bad', '{"pool": [], "records": []}'):
         for existing in (False, True):
             with tempfile.TemporaryDirectory() as td:
                 t, f, folder, _ = triage_fixture(Path(td))

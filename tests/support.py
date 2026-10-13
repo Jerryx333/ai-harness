@@ -14,18 +14,7 @@ REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
 
 
-def clean_test_env(env=None):
-    # Clear ambient main-session state; explicit case settings still win.
-    result = dict(os.environ)
-    for key in ('CODEX_THREAD_ID', 'AIW_TUI_ID', 'TMUX'):
-        result.pop(key, None)
-    if env is not None:
-        result.update(env)
-    return result
-
-
 def sh(cmd, env=None, cwd=None, input=None):
-    env = clean_test_env(env)
     return subprocess.run(cmd, shell=isinstance(cmd, str), capture_output=True, text=True, env=env, cwd=cwd, input=input, timeout=120)
 
 
@@ -215,7 +204,7 @@ def check(cond: bool, msg: str):
 def worker_call(t, **extra):
     pf = t / 'prompt.md'; pf.write_text('测试')
     wd = t / 'work dir'; wd.mkdir(exist_ok=True)
-    env = dict(clean_test_env(), **extra)
+    env = dict(os.environ, **extra)
     return [sys.executable, str(REPO / 'ai_worker.py'), 'qoder', str(wd), '10', str(pf), '--ro'], env, wd
 
 
@@ -733,7 +722,7 @@ def inprocess_sh(cmd, env=None, cwd=None, input=None):
             or cmd[0] != sys.executable or (cmd[1] != '-c' and not str(cmd[1]).endswith('.py'))):
         return sh(cmd, env=env, cwd=cwd, input=input)
     out, err = io.StringIO(), io.StringIO()
-    with isolated_call(clean_test_env(env), cwd), contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+    with isolated_call(env, cwd), contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
         saved_stdin = sys.stdin
         sys.argv = [str(x) for x in cmd[1:]]
         sys.path.insert(0, str(Path.cwd() if cmd[1] == '-c' else Path(cmd[1]).resolve().parent))

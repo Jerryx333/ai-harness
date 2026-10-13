@@ -1,6 +1,6 @@
 # aiw usage guide
 
-Start with the [README](../README.md) to see what problems it solves; this guide covers installation details, how it works and customization.
+Start with the [README](../README.en.md) to see what problems it solves; this guide covers installation details, how it works and customization.
 
 ## What the installer changes
 

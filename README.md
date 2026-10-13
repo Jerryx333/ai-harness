@@ -1,106 +1,104 @@
 # aiw
 
-[English](README.md) | [中文](README.zh-CN.md)
+[中文](README.md) | [English](README.en.md)
 
-Let your main Claude Code / Codex model focus on planning and checking results. Hand off routine work such as reading code, running commands and drafting summaries to Codex or cheaper models you already have available. Install it and start using it, with no service to run or dependencies to install.
+让 Claude Code / Codex 主模型把精力留给规划和把关，把读代码、跑命令、起草摘要这类体力活交给 Codex 或更便宜、已闲置的模型。装上就能用，不用起服务、不装依赖。
 
-## What problems does it solve?
+## 解决什么问题
 
-- Your main model's allowance runs out: subscriptions have usage windows and weekly limits, so work can stop halfway through. Reading large files, digging through logs and running tests use up that allowance.
-- Your context fills up: when the main conversation fills with file contents and command output, it gets compacted, loses details and makes mistakes.
-- Your other subscriptions and free models sit idle: you have a Codex/ChatGPT subscription or free models available, but only one main conversation is doing the work.
+- 主模型额度不够用：订阅有时间窗口和周限额，活干到一半就停；读大文件、翻日志、跑测试这类活很耗额度。
+- 上下文被撑爆：主会话塞满文件内容和命令输出后会被压缩、忘细节、出错。
+- 已有的订阅和免费模型闲着：手里有 Codex/ChatGPT 订阅或免费模型，却只有一个主会话在干活。
 
-## What changes after installation?
+## 装上之后有什么不同
 
-- Your main model's allowance goes further: hand off routine work and spend it on planning and checking results.
-- The main conversation stays cleaner: assigned work reads files and runs commands elsewhere; the main conversation receives the results.
-- You get another review: different models can write and review code; `aiw panel` collects independent opinions from several models.
-- Keep your usual workflow: use Claude Code or Codex as usual. When work is suitable to hand off, it suggests who should take it; the main conversation decides whether to assign it.
-- If a model is unavailable, it can automatically try the next one so work can continue. By default there is only one choice per task; set the alternatives and their order in [local configuration](docs/guide.md#customize).
+- 主模型额度更耐用：体力活派出去，主模型把额度花在规划和验收上。
+- 主会话上下文更干净：派出去的活在别处读文件、跑命令，主会话只收结果。
+- 多一道交叉评审：改代码和评审可以由不同模型做；`aiw panel` 收集多家独立意见。
+- 不用改习惯：照常用 Claude Code 或 Codex；遇到适合派出去的活，它会提示这件事该交给谁，派不派由主会话决定。
+- 某家不可用时自动换下一家，活不会卡住；默认只有一家，换谁、按什么顺序在[本地配置](docs/guide.zh-CN.md#自定义)里定。
 
-## Want to connect more models? Use agent-use
+## 想接更多模型？用 agent-use
 
-If you have other subscriptions, local models or free models and want them to share the work, common problems are:
+手里有别家的订阅、本地模型或免费模型，想让它们也分担工作，常见的麻烦是：
 
-- **Each one works differently**, so every new connection takes its own setup. With [agent-use](https://github.com/Jerryx333/agent-use), any model you can use in a terminal connects in the same way. Add a few configuration lines; no code needed.
-- **An outage or rate limit stops the work.** agent-use automatically tries the next model in your chosen order so work can continue.
-- **Can you trust what another model returns?** Original responses and execution records are saved every time. All results are drafts for the main conversation to check before accepting them.
+- **每家用法都不一样**，接一个就得单独折腾一套。用 [agent-use](https://github.com/Jerryx333/agent-use)，任何能在终端里用的模型都按同一种方式接进来，加几行配置就行，不用写代码。
+- **某家一挂、一限流，活就卡住。** agent-use 会按你排好的顺序自动换下一家，活不会断。
+- **别的模型交回来的东西靠不靠谱？** 每次都留存原文和过程记录，结果一律当待审稿，由主会话核对后才算数。
 
-See the [setup steps](docs/guide.md#add-more-models-optional).
+接入步骤见[使用指南](docs/guide.zh-CN.md#接入更多模型可选)。
 
-## Questions you may have
+## 你可能会担心的
 
-**Will quality suffer?** All assigned work is a draft for review. The main conversation checks files, evidence and test results before accepting it.
+**质量会不会降？** 派出去的产出都是待审稿，主会话核对文件、证据和测试结果后才算数。
 
-**Does assigning work also use the main model's tokens?** Yes: writing instructions, reading results and checking them all use tokens. Very small tasks may not be worth handing off, so it only suggests assignments; it does not make them automatically. To see your actual usage, use `aiw tokens` (local Claude Code main-session usage and context breakdown) and `aiw weekly` (assignment success rates and token totals).
+**派单本身也花主模型 token 吧？** 是的：写要求、读结果、核对都要花。很小的任务不一定划算，所以只提示、不自动派。想看自己的实际用量：`aiw tokens`（本机 Claude Code 主会话用量和上下文构成）、`aiw weekly`（派单成功率和 token 汇总）。
 
-**Does it cost money?** Codex and Claude use your own accounts and their billing. Connected free models can be marked for free-tier use only and automatically disabled when charging is detected. Detection happens after a call, so this does not guarantee zero cost.
+**会不会花钱？** Codex、Claude 按你自己的账号计费。接入的免费模型可以标成只用免费档，一旦检测到收费会自动停用；但这是调用之后才检测，不保证零费用。
 
-**Where does my code go?** Task instructions and attached material go to the service behind the model you assign. Models that only handle text cannot see your code by default; you must explicitly attach it. Do not send passwords, keys or private data to third-party models.
+**代码会发到哪里？** 交给哪个模型，任务要求和附带材料就发给那个模型背后的服务。只负责写文字的模型默认看不到你的代码，要你明确附上才会发过去。密码、密钥和私人数据不要交给第三方模型。
 
-**Only Claude Code, no Codex?** Installation works, but the default model for code changes (`codex`) and read-only reviews (`codex-sol`) require Codex CLI. This limits the default Claude-led workflow.
+**只有 Claude Code、没有 Codex 能用吗？** 能安装，但默认改代码座位 `codex` 和只读评审座位 `codex-sol` 依赖 Codex CLI。默认的 Claude 主会话工作流因此会打折。
 
-**Linux?** Untested. Only macOS has been tested.
+**支持 Linux 吗？** 尚未测试。已测试 macOS。
 
-**Are the rules too forceful?** Override them with personal rules, or remove `@~/.claude/aiw/CLAUDE.md` from `~/.claude/CLAUDE.md`. To stop assignment suggestions too, remove the aiw hooks as described in [Uninstall](docs/guide.md#uninstall).
+**规则太强势怎么办？** 用个人规则覆盖，或从 `~/.claude/CLAUDE.md` 删除 `@~/.claude/aiw/CLAUDE.md`。若也不想收到派单提示，按[卸载小节](docs/guide.zh-CN.md#卸载)移除 aiw 钩子。
 
-## Five-minute start
+## 5 分钟上手
 
-You need macOS (the only tested OS), Python 3, and logged-in Claude Code and/or Codex CLI (terminal programs). Optional: [agent-use](https://github.com/Jerryx333/agent-use) to connect more models.
+需要 macOS（目前只在 macOS 测试过）、Python 3，以及已登录的 Claude Code 和/或 Codex CLI（终端程序）；可选 [agent-use](https://github.com/Jerryx333/agent-use)，用于接入更多模型。
 
-1. Clone and install at this exact location:
+1. 克隆到此固定位置，再安装：
 
    ```bash
    git clone https://github.com/Jerryx333/aiw.git ~/.claude/aiw
    ~/.claude/aiw/install.sh
    ```
 
-   See the [guide](docs/guide.md#what-the-installer-changes) for changed files and backups.
+   安装会改哪些文件、怎么备份，见[使用指南](docs/guide.zh-CN.md#安装做了什么)。
 
-2. Use each CLI's official login: `codex login`, or run `claude` and enter `/login`. Open a new terminal if PATH changed, then run:
+2. 按官方方式登录各 CLI：`codex login`；或运行 `claude`，输入 `/login`。PATH 有变化时新开终端，然后运行：
 
    ```bash
    aiw doctor
    ```
 
-   Configuration warnings do not change doctor's exit code. Codex may ask you to trust the new hook when it next starts.
+   配置警告不改变 doctor 退出码。Codex 下次启动可能要求信任新钩子。
 
-3. Try a read-only review of this checkout (requires Codex):
+3. 第一单：只读查看本仓库，需要 Codex：
 
    ```bash
-   printf '%s\n' 'Read this repository. Explain its entry points with file references. Do not edit files.' > /tmp/aiw-review.txt
+   printf '%s\n' '阅读本仓库，说明入口，并引用文件位置。不要修改文件。' > /tmp/aiw-review.txt
    aiw codex-sol "$HOME/.claude/aiw" 900 /tmp/aiw-review.txt --ro
    ```
 
-4. Use Claude Code or Codex as usual. Hooks suggest assignments; the main session plans and verifies.
+4. 之后照常用 Claude Code 或 Codex。钩子提示怎么派，主会话决定方案并验收。
 
-Upgrading from ai-harness: keep the old directory or symlink and rerun `install.sh` to migrate imports, hooks, Codex blocks and PATH. `AIW_STATE`, `AIW_PYTHON`, and `AIW_NO_CODEX` take precedence over `AI_HARNESS_STATE`, `AI_HARNESS_PYTHON`, and `AI_HARNESS_NO_CODEX`; conflicting values warn once. Run `aiw freecheck --install` separately to migrate the scheduled job.
+旧版迁移：保留旧目录或软链，重跑 `install.sh` 即可迁移引入、钩子、Codex 标记与 PATH。`AIW_STATE`、`AIW_PYTHON`、`AIW_NO_CODEX` 优先于旧 `AI_HARNESS_STATE`、`AI_HARNESS_PYTHON`、`AI_HARNESS_NO_CODEX`；冲突警告一次。定时任务另运行 `aiw freecheck --install` 迁移旧 label。
 
-## Common commands
+## 常用命令
 
-`.` is your project; `task.txt` holds instructions; timeouts are seconds. Prepare input files first.
+`.` 是项目目录，`task.txt` 是任务要求，超时单位为秒。先准备输入文件。
 
-| Command | Purpose and example |
+| 命令 | 用途与示例 |
 | --- | --- |
-| `aiw <seat> <dir> <seconds> <prompt> [--ro] [--net]` | Assign work; `--net` enables network and local ports for Codex write tasks only (default off); conflicts with `--ro` and non-Codex seats return 64. `--ro` requests read-only: `aiw codex-sol . 900 task.txt --ro`. |
-| `aiw panel` | Opinions: `aiw panel . 600 task.txt --prior prior.md`; defaults to at most 4 items and 1500 characters, each with conclusion, evidence (or “无证据”), and impact or advice; stdout includes answers (up to 3000 characters per seat, with full archives). `--full` adds no format requirement and omits each seat's answer from stdout (full answers are in `<seat>.md` in the panel directory); automatically detects the main session in Claude Code; for a Codex main session, add the `AIW_MAIN=codex` prefix; excludes the main session, possibly leaving one reviewer. Write your judgment first and pass it with `--prior`; then adjudicate each key opinion: accept / reject (with reasons) / defer (state what is pending), without majority voting. |
-| `aiw map` | Apply one instruction per file: `aiw map . 600 task.txt src/a.py src/b.py`; defaults to `codex-sol`, up to 3 jobs. |
-| `aiw goal init / verify` | Create a checklist with `aiw goal init docs/goals/demo.json`; edit its example tasks, `verify` commands and `paths`, then run `aiw goal verify docs/goals/demo.json --full`. |
-| `aiw doctor` | Check seats and setup: `aiw doctor`; `aiw doctor --fingerprint` prints a fingerprint (version/hash summary). |
-| `aiw note` | Save an observation: `aiw note . "Check failed" --expected "Check passes" --evidence "test output"`. |
-| `aiw sync` | Update this aiw checkout using `git pull --ff-only`: `aiw sync`; cannot merge divergent history. Rerun the installer to refresh installed rules/hooks. |
-| `aiw gc` | Delete old run/panel/map archives (30 days by default); preview first: `aiw gc 30 --dry-run`. |
+| `aiw <座位> <目录> <秒数> <prompt文件> [--ro] [--net]` | 派一单；`--net` 仅为 Codex 写单开放网络和本地端口，默认关闭；与 `--ro` 或非 Codex 座位同用返回 64。`--ro` 要求只读：`aiw codex-sol . 900 task.txt --ro`。 |
+| `aiw panel` | 收集独立意见：`aiw panel . 600 task.txt --prior prior.md`；默认最多 4 条、1500 字，每条写结论、证据（没有则「无证据」）、影响或建议；stdout 内联回答（每家最多显示 3000 字并给出全文路径），全文归档。`--full` 不追加格式要求，stdout 不内联各家回答（全文在会诊目录的 `<座位>.md`）；Claude Code 里自动识别主会话；Codex 主会话需加 `AIW_MAIN=codex` 前缀；排除主会话座位，默认可能只剩一家评审。先写自己的判断用 `--prior` 传入；看完逐条标接受/驳回（理由）/暂缓（写明等什么），不以多数票收敛。 |
+| `aiw map` | 对每个文件执行同一要求：`aiw map . 600 task.txt src/a.py src/b.py`；默认用 `codex-sol`，最多并发 3 单。 |
+| `aiw goal init / verify` | 用 `aiw goal init docs/goals/demo.json` 建清单；修改示例任务、`verify` 命令和 `paths`，再跑 `aiw goal verify docs/goals/demo.json --full`。 |
+| `aiw doctor` | `aiw doctor` 检查座位和安装；`aiw doctor --fingerprint` 输出一行配置指纹，即版本和哈希摘要，便于比较。 |
+| `aiw note` | 保存观察：`aiw note . "检查失败" --expected "检查通过" --evidence "测试输出"`。 |
+| `aiw sync` | `aiw sync` 用 `git pull --ff-only` 更新 aiw 仓库，不能合并分叉历史；更新已安装规则/钩子需重跑安装。 |
+| `aiw gc` | 删除旧的派单、会诊、批处理归档，默认保留 30 天；先预览：`aiw gc 30 --dry-run`。 |
 
-## More documentation
+## 更多文档
 
-- [Usage guide](docs/guide.md): installation details, how it works and customization.
-- [Reference manual](docs/reference.zh-CN.md) (Chinese): all commands and detailed rules.
-- [Improvement buffer](docs/findings.md)
-- [State contract](docs/state-contract.md)
-- [Invariants and regression checks](docs/invariants.md)
+- [使用指南](docs/guide.zh-CN.md)：安装细节、工作原理和定制。
+- [中文参考手册](docs/reference.zh-CN.md)：全部命令与细则。
+- [改进缓冲区](docs/findings.md)
+- [状态约定](docs/state-contract.md)
+- [红线与回归检查](docs/invariants.md)
 
-## Contributing
+## 参与贡献
 
-Run `python3 tests/test_harness.py` (background priority; concurrency defaults to one quarter of CPUs (minimum 1); `-j N` is capped at half of CPUs (minimum 1), `-j 1` runs serially, `--durations` lists the slowest cases) and `python3 tests/mutation_check.py`, then open a PR. Cases live in `tests/cases/`, with shared helpers in `tests/support.py`.
-
-License: [Apache-2.0](LICENSE).
+运行 `python3 tests/test_harness.py`（后台低优先级；默认并发为 CPU 数的四分之一（至少 1），`-j N` 硬上限为 CPU 数的一半（至少 1），`-j 1` 串行，`--durations` 列出最慢用例）和 `python3 tests/mutation_check.py`，改动走 PR。用例位于 `tests/cases/`，公共辅助位于 `tests/support.py`。许可证：[Apache-2.0](LICENSE)。

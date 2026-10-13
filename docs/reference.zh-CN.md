@@ -1,6 +1,6 @@
 # aiw 参考手册
 
-新手请先看 [README](../README.zh-CN.md)，安装细节见[使用指南](guide.zh-CN.md)。
+新手请先看 [README](../README.md)，安装细节见[使用指南](guide.zh-CN.md)。
 
 Claude / Codex 主会话的多模型分工层，支持本地接入其他座位。**任意项目、任意机器同一套规矩。** 思路来自 luolei 的 [我的 AI 工作流](https://ai-workflow.zuoluo.tv)。
 

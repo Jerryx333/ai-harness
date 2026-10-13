@@ -49,7 +49,7 @@ AIW_CONFIG=.tmp-baseline/dev-seats.json AIW_STATE=.tmp-baseline/dev-state python
 | [gc.py](gc.py) | 清理旧运行/会诊/批处理及 Codex 日期会话归档，支持预览。 |
 | [harness_ids.py](harness_ids.py) | 统一运行、记录与会诊 ID 的格式和识别。 |
 | [gitenv.py](gitenv.py) | 隔离调用方的 Git 定位环境变量，按工作目录访问仓库。 |
-| [env_compat.py](env_compat.py) | 读取环境变量并处理 Python 与状态路径默认值。 |
+| [env_compat.py](env_compat.py) | 读取环境变量并处理 Python、状态路径及 agent-use 默认值（`~/.local/share/agent-use`，新路径不存在时沿用已有的 `~/code/ai/agent-use`）；适配器默认在解析出的核心目录同级。 |
 | [install.sh](install.sh) | 幂等安装规则、钩子、命令软链及可选 agent-use 接入，备份已有文件。 |
 | [agent_use_setup.sh](agent_use_setup.sh) | 安装脚本与 sync 共用的生态仓库路径、Git 隔离及更新函数。 |
 | [seats.json](seats.json) | 公开座位、角色、顶替、会诊和运行策略默认值。 |

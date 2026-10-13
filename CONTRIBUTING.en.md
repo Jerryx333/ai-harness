@@ -49,7 +49,7 @@ Every root Python, Shell and configuration/rule file:
 | [gc.py](gc.py) | Clean old run/panel/batch and dated Codex session archives; support dry-run. |
 | [harness_ids.py](harness_ids.py) | Shared run, record and panel ID formatting/recognition. |
 | [gitenv.py](gitenv.py) | Isolate caller Git location variables; resolve repositories by working directory. |
-| [env_compat.py](env_compat.py) | Read environment settings and normalize Python/state-path defaults. |
+| [env_compat.py](env_compat.py) | Read environment settings and normalize Python/state-path defaults; resolve agent-use to `~/.local/share/agent-use`, retaining an existing `~/code/ai/agent-use` when the new path is absent; adapters default to a sibling of the resolved core directory. |
 | [install.sh](install.sh) | Install rules, hooks, command symlink and optional agent-use setup idempotently; back up changed files. |
 | [agent_use_setup.sh](agent_use_setup.sh) | Shared ecosystem paths, isolated Git operations and update helpers for installation/sync. |
 | [seats.json](seats.json) | Public defaults for seats, roles, fallback, panels and runtime policies. |

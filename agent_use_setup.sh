@@ -9,7 +9,7 @@ aiw_git() {
 }
 
 aiw_agent_use_paths() {
-  AU="$("$PY" -c 'import os; from pathlib import Path; print(Path(os.environ.get("AGENT_USE_HOME") or Path.home() / "code/ai/agent-use").expanduser())')"
+  AU="$(PYTHONPATH="$H${PYTHONPATH:+:$PYTHONPATH}" "$PY" -c 'from env_compat import agent_use_home; print(agent_use_home())')"
   ADAPTERS="$("$PY" - "$AU" <<'PYEOF'
 import os, sys
 from pathlib import Path

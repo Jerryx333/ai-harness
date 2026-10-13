@@ -1,5 +1,6 @@
 """Read aiw environment settings with Python and state path defaults."""
 import os
+from pathlib import Path
 
 
 def session_id():
@@ -46,3 +47,15 @@ def getenv(name, default=None):
     if name == 'AIW_STATE' and value is not None:
         return os.path.expanduser(value)
     return value
+
+
+def agent_use_home() -> Path:
+    """Use the new default, retaining an existing legacy checkout in place."""
+    explicit = os.environ.get('AGENT_USE_HOME')
+    if explicit:
+        return Path(explicit).expanduser()
+    default = Path.home() / '.local/share/agent-use'
+    legacy = Path.home() / 'code/ai/agent-use'
+    if not (default.exists() or default.is_symlink()) and (legacy.is_dir() or legacy.is_symlink()):
+        return legacy
+    return default

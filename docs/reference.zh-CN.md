@@ -38,7 +38,7 @@ aiw doctor
 
 通过插件管理 aiw 派单钩子的机器用 `~/.claude/aiw/install.sh --claude-hook=plugin`，由插件管理派单钩子，并清理 settings.json 中的重复钩子。卸载插件后，不带参数重跑即恢复（默认 `--claude-hook=settings`）。
 
-`--with-agent-use` 可与 `--claude-hook=settings|plugin` 任意组合。核心路径用 `AGENT_USE_HOME`（默认 `~/code/ai/agent-use`），适配器路径用 `AIW_ADAPTERS_HOME`（默认核心同级的 `agent-use-adapters`）；仓库地址可用 `AIW_AGENT_USE_REPO` / `AIW_ADAPTERS_REPO` 覆盖。只补充 `AIW_CONFIG` 或 `~/.config/aiw/seats.local.json` 中缺失的 `opencode` 座位和 fallback；坏 JSON 不改，注册表冲突保留原文件并提示自行合并。不选参数且核心缺失时会给出安装建议。
+`--with-agent-use` 可与 `--claude-hook=settings|plugin` 任意组合。核心路径用 `AGENT_USE_HOME`（默认 `~/.local/share/agent-use`，新路径不存在时沿用已有的 `~/code/ai/agent-use`），适配器路径用 `AIW_ADAPTERS_HOME`（默认解析出的核心目录同级的 `agent-use-adapters`）；仓库地址可用 `AIW_AGENT_USE_REPO` / `AIW_ADAPTERS_REPO` 覆盖。只补充 `AIW_CONFIG` 或 `~/.config/aiw/seats.local.json` 中缺失的 `opencode` 座位和 fallback；坏 JSON 不改，注册表冲突保留原文件并提示自行合并。不选参数且核心缺失时会给出安装建议。
 
 `install.sh` 幂等，仅对已有且发生改动的文件在改动前备份为 `.bak-年月日-时分秒`；新建或未变的文件不备份。`~/.local/bin/aiw` 软链会被替换且不备份：
 - `~/.claude/CLAUDE.md` 末尾加一行 `@~/.claude/aiw/CLAUDE.md`（原内容保留）

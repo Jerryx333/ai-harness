@@ -331,7 +331,7 @@ assert w.guard_result('qoder', r) == r
         def notices():
             return [json.loads(x) for x in (t / 'discord').read_text().splitlines()]
         r = run(FAKE_AU_QODER='credits')
-        check(r.returncode == 0 and r.stdout == 'qoder ok' and '疑似收费' in r.stderr, repr(r))
+        check(r.returncode == 0 and r.stdout == 'qoder ok\n' and '疑似收费' in r.stderr, repr(r))
         entry = disabled()['qoder:free-model-q']
         check(entry['reason'] == 'paid' and entry['evidence'] == 'credits=1.25' and len(entry['evidence']) <= 160, str(entry))
         check(len(notices()) == 1 and notices()[0]['has_token'] and notices()[0]['no_update'] == '1', str(notices()))
@@ -354,10 +354,10 @@ assert w.guard_result('qoder', r) == r
             check(r.returncode == 0, repr(r))
         check(not disabled(), 'enable 未恢复')
         r = run()
-        check(r.returncode == 0 and r.stdout == 'qoder ok', repr(r))
+        check(r.returncode == 0 and r.stdout == 'qoder ok\n', repr(r))
         for mode in ('paid', 'exhausted', 'not_free', 'payment_text', 'failedcredits'):
             r = run(FAKE_AU_QODER=mode)
-            check(r.returncode == 0 and r.stdout == 'workbuddy ok' and 'qoder:free-model-q' in disabled(), f'{mode}: {r}')
+            check(r.returncode == 0 and r.stdout == 'workbuddy ok\n' and 'qoder:free-model-q' in disabled(), f'{mode}: {r}')
             inprocess_sh([sys.executable, str(REPO / 'ai_worker.py'), 'enable', 'qoder:free-model-q'], env=env)
         for mode, kind in (('quota_text', 'quota'), ('rate_text', 'ratelimit')):
             r = run(FAKE_AU_QODER=mode)
@@ -530,7 +530,7 @@ def free_guard_model_attempts():
                 check(entry['evidence'] == f'model_attempts:{reason}@charged-free', str(entry))
                 check(r.returncode == (0 if mode == 'ok' else 1), repr(r))
                 if mode == 'ok':
-                    check(r.stdout == 'opencode ok', repr(r))
+                    check(r.stdout == 'opencode ok\n', repr(r))
                 sh([str(REPO / 'bin/aiw'), 'enable', 'opencode:charged-free'], env=env)
 
 

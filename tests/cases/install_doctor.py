@@ -23,6 +23,72 @@ from support import (
 )
 
 
+def agent_use_default_paths():
+    from unittest.mock import patch
+    from env_compat import agent_use_home
+    import ai_worker
+    import snapshot
+    with tempfile.TemporaryDirectory() as td:
+        t = Path(td)
+        default = t / '.local/share/agent-use'
+        legacy = t / 'code/ai/agent-use'
+        explicit = t / 'explicit/agent-use'
+        env = dict(os.environ, HOME=str(t))
+        env.pop('AGENT_USE_HOME', None)
+        env.pop('AIW_ADAPTERS_HOME', None)
+
+        def verify(expected, adapters=None):
+            with patch.dict(os.environ, env, clear=True):
+                check(agent_use_home() == expected, str(agent_use_home()))
+                check(ai_worker.agent_use_home() == expected, 'worker 路径不一致')
+                check(snapshot.agent_use_home() == expected, 'snapshot 路径不一致')
+            # Run outside the repository to verify module lookup in the sourced helper.
+            command = ('H="$1"; PY="$2"; source "$H/agent_use_setup.sh"; '
+                       'aiw_agent_use_paths; printf "%s\\n" "$AU" "$ADAPTERS"')
+            result = sh(['bash', '-c', command, 'paths', str(REPO), sys.executable], env=env, cwd=t)
+            check(result.returncode == 0 and result.stdout.splitlines() ==
+                  [str(expected), str(adapters or expected.parent / 'agent-use-adapters')],
+                  result.stdout + result.stderr)
+
+        verify(default)  # Neither exists.
+        env['AGENT_USE_HOME'] = ''
+        verify(default)  # Empty is also unset.
+        legacy.mkdir(parents=True)
+        verify(legacy)
+        default.mkdir(parents=True)
+        verify(default)  # Both exist; new default wins.
+        env['AGENT_USE_HOME'] = '~/explicit/agent-use'
+        verify(explicit)  # Explicit paths need not exist.
+        env['AGENT_USE_HOME'] = 'relative/agent-use'
+        verify(Path('relative/agent-use'))  # Preserve relative overrides.
+        env['AGENT_USE_HOME'] = str(explicit)
+        env['AIW_ADAPTERS_HOME'] = '~/custom-adapters'
+        verify(explicit, t / 'custom-adapters')
+        env.pop('AGENT_USE_HOME')
+        env.pop('AIW_ADAPTERS_HOME')
+        default.rmdir()
+        legacy.rmdir()
+        target = t / 'installed-core'
+        target.mkdir()
+        legacy.symlink_to(target, target_is_directory=True)
+        verify(legacy)
+        target.rmdir()  # A dangling legacy symlink is still an existing installation path.
+        verify(legacy)
+        default.symlink_to(t / 'missing-new', target_is_directory=True)
+        verify(default)
+
+
+def install_agent_use_default_location():
+    with tempfile.TemporaryDirectory() as td:
+        home, env, _, _ = ecosystem_fixture(Path(td))
+        env.pop('AGENT_USE_HOME')
+        env.pop('AIW_ADAPTERS_HOME')
+        ecosystem_install(home, env, '--with-agent-use')
+        check((home / '.local/share/agent-use/.git').is_dir(), '核心未克隆到新默认位置')
+        check((home / '.local/share/agent-use-adapters/.git').is_dir(), '适配器未克隆到默认同级位置')
+
+
+
 def doctor():
     with tempfile.TemporaryDirectory() as t:
         t = Path(t)
@@ -535,7 +601,7 @@ def doctor_fingerprint():
         with patch.dict(os.environ, HOME=str(t), AIW_CONFIG=str(t / 'absent'), AIW_ROUTER_RULES=str(t / 'absent-route'), AGENT_USE_HOME=str(repo), AGENT_USE_CONFIG=str(t / 'missing-registry')):
             data = d.fingerprint(repo, config)
             check(data['harness'] == data['agent_use'] == head, str(data))
-            default_home = t / 'code/ai/agent-use'
+            default_home = t / '.local/share/agent-use'
             default_home.parent.mkdir(parents=True)
             default_home.symlink_to(repo, target_is_directory=True)
             os.environ.pop('AGENT_USE_HOME')
@@ -1045,6 +1111,8 @@ def install_launch_failure():
 
 
 CASES = {case.__name__: case for case in (
+    agent_use_default_paths,
+    install_agent_use_default_location,
     doctor,
     doctor_config,
     install_fresh,

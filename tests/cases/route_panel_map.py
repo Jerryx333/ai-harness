@@ -213,7 +213,7 @@ def map_batch():
         check(r.returncode == 0, r.stderr)
         check(set(summary) == {'dir', 'seat', 'jobs', 'items'} and summary['dir'] == str(out.resolve()), str(summary))
         check(summary['seat'] == 'workbuddy' and summary['jobs'] == 3, str(summary))
-        check(summary['items'] == [dict(file=f, rc=0, provider='workbuddy', chars=len('workbuddy ok')) for f in files], str(summary))
+        check(summary['items'] == [dict(file=f, rc=0, provider='workbuddy', chars=len('workbuddy ok\n')) for f in files], str(summary))
         check(len(list(out.glob('[0-9][0-9]-*.md'))) == 3 and len(list(out.glob('*.provider'))) == 3, '输出文件缺失或同名覆盖')
         check((out / 'prompt.md').read_text() == pf.read_text(), 'prompt 快照不一致')
         check(not (wd / '.provider').exists(), '不应写共享 provider')
@@ -291,7 +291,7 @@ def panel_compact_context():
                           if line.startswith('会诊目录：')))
             check((d / 'prompt.md').read_text() == '只列两条' +
                   render_attachments([('code.txt', b'ATTACH_PANEL_MARKER')]), 'prompt 快照缺少附件全文')
-            check((d / 'qoder.md').read_text() == answer, '归档回答被截断')
+            check((d / 'qoder.md').read_text() == answer + '\n', '归档回答被截断')
             if full:
                 check('### qoder' not in r.stdout and '有效意见' not in r.stdout, r.stdout)
             else:
@@ -469,7 +469,7 @@ def panel():
         check(p.returncode == 0, f"默认座位都答应 rc=0: {p.stdout}{p.stderr}")
         d = max((t / "state" / "panels").iterdir(), key=lambda p: p.stat().st_mtime_ns)
         for s in ("workbuddy", "workbuddy-hy4", "qoder", "opencode"):
-            check((d / f"{s}.md").read_text() == ("workbuddy ok" if s == "workbuddy-hy4" else f"{s} ok") and (d / f"{s}.provider").read_text().strip() == s, f"{s} 产出或 provider 不对")
+            check((d / f"{s}.md").read_text() == ("workbuddy ok\n" if s == "workbuddy-hy4" else f"{s} ok\n") and (d / f"{s}.provider").read_text().strip() == s, f"{s} 产出或 provider 不对")
         check("codex ok" in (d / "codex-sol.md").read_text() and (d / "codex-sol.provider").read_text().strip() == "codex-sol", "会诊应包含 codex-sol")
         check(not (t / ".provider").exists(), "panel 不应写共享 .provider")
         # 一家挂了：不顶替，记为缺席；两家仍算会诊
@@ -524,7 +524,7 @@ def panel_opinion_threshold():
             expected = ['qoder'] if rc == 1 else seats
             check(summary['answered'] == expected and summary['required'] == 2
                   and summary['sufficient'] is (rc == 0), str(summary))
-            check('### qoder' in r.stdout and (out / 'qoder.md').read_text() == 'qoder ok',
+            check('### qoder' in r.stdout and (out / 'qoder.md').read_text() == 'qoder ok\n',
                   '单家成功意见仍应展示并归档')
             if len(seats) == 1 or disabled:
                 check('单家意见不构成会诊，返回码为 1' in r.stderr, r.stderr)

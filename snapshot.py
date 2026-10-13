@@ -17,6 +17,7 @@ import socket
 import subprocess
 from pathlib import Path
 
+from env_compat import agent_use_home
 from gitenv import repository_git_env
 
 HERE = Path(__file__).resolve().parent
@@ -64,7 +65,7 @@ def seat_shape(c: dict) -> dict:
 
 
 def agent_use_shape() -> dict:
-    home = Path(os.environ.get("AGENT_USE_HOME") or HOME / "code" / "ai" / "agent-use").expanduser()
+    home = agent_use_home()
     entry = home / "scripts" / "run_agent.py"
     head = subprocess.run(["git", "-C", str(home), "rev-parse", "--short", "HEAD"], capture_output=True, text=True, env=repository_git_env()).stdout.strip() if home.exists() else ""
     dirty = subprocess.run(["git", "-C", str(home), "status", "--porcelain"], capture_output=True, text=True, env=repository_git_env()).stdout.strip() if home.exists() else ""

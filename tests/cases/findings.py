@@ -182,7 +182,7 @@ def findings_worker_collect():
     with tempfile.TemporaryDirectory() as td:
         root = Path(td); run, work, prompt, output, harness = findings_worker_fixture(root)
         r, row, records = run()
-        check(r.returncode == 0 and r.stdout == '正文', r.stderr + repr(r.stdout))
+        check(r.returncode == 0 and r.stdout == '正文\n', r.stderr + repr(r.stdout))
         check([x['type'] for x in records] == ['answers', 'observation', 'observation'], str(records))
         check(len({x['id'] for x in records}) == 3, '重复 id')
         for x in records:
@@ -239,7 +239,7 @@ def findings_worker_malformed():
         for text in ('正文\n' + FINDINGS_BLOCK + '\n后文\n' * 4, '正文\n<<<AIW-FINDINGS\nguess: 无'):
             output.write_text(text)
             r, row, records = run()
-            check(r.returncode == 0 and r.stdout == text and not records and '格式不对' in r.stderr and
+            check(r.returncode == 0 and r.stdout == (text if text.endswith('\n') else text + '\n') and not records and '格式不对' in r.stderr and
                   'findings_n' not in row, r.stderr)
             breaker = root / 'state/breaker.json'
             check(not breaker.exists() or 'codex' not in json.loads(breaker.read_text()), '坏块触发熔断')
@@ -250,7 +250,7 @@ def findings_worker_trailing():
         run, _, _, output, _ = findings_worker_fixture(Path(td))
         output.write_text('正文\n' + FINDINGS_BLOCK + '\n派单记录')
         r, row, records = run()
-        check(r.returncode == 0 and r.stdout == '正文\n派单记录' and row['kind'] == 'ok' and
+        check(r.returncode == 0 and r.stdout == '正文\n派单记录\n' and row['kind'] == 'ok' and
               row['findings_n'] == 2 and len(records) == 3 and '格式不对' not in r.stderr,
               r.stderr + repr(r.stdout))
         check((Path(row['run_dir']) / 'output.md').read_text() == output.read_text(), '原文未保留')

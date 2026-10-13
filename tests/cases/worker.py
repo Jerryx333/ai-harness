@@ -27,6 +27,33 @@ from support import (
 )
 
 
+def worker_stdout_newline():
+    with tempfile.TemporaryDirectory() as td:
+        t = Path(td)
+        backend = t / 'fake-cli'
+        backend.write_text('#!/usr/bin/env python3\nimport os, sys\nsys.stdout.write(os.environ["CLI_BODY"])\n')
+        backend.chmod(0o755)
+        prompt = t / 'prompt.txt'
+        prompt.write_text('Return the requested text.')
+        for body in ('unique body', 'unique body\n'):
+            env = dict(os.environ, CODEX_BIN=str(backend), CLI_BODY=body,
+                       AIW_STATE=str(t / 'state'))
+            result = sh(['bash', str(REPO / 'bin/aiw'), 'codex', str(t), '10',
+                         str(prompt), '--ro', '--no-fallback', '--no-findings'], env=env)
+            check(result.returncode == 0 and result.stdout == 'unique body\n', repr(result))
+            check(result.stdout.count('unique body') == 1, '正文重复输出')
+            row = json.loads((t / 'state/seat-ledger.jsonl').read_text().splitlines()[-1])
+            check((Path(row['run_dir']) / 'output.md').read_text() == body, '归档改变了模型原文')
+        # Exercise an empty successful result directly; real empty CLI output is a failure.
+        script = ('import ai_worker as w; '
+                  'w.run_seat = lambda *a, **kw: dict(rc=0, out="", err="", kind="ok", secs=0); '
+                  'raise SystemExit(w.main())')
+        result = sh([sys.executable, '-c', script, 'codex', str(t), '10', str(prompt),
+                     '--ro', '--no-fallback', '--no-findings'], env=env, cwd=REPO)
+        check(result.returncode == 0 and result.stdout == '', repr(result))
+
+
+
 def run_dir_persist():
     with tempfile.TemporaryDirectory() as td:
         t = Path(td)
@@ -64,8 +91,8 @@ def run_dir_persist():
         check((path / "stderr.txt").read_text() == "timeout stderr\n", "超时 stderr 丢失")
         check(r.stderr.splitlines()[-1] == f"[ai-worker] 排查：{path}", r.stderr)
         r, path = run("qoder")
-        check(r.returncode == 0 and r.stdout == "qoder ok", repr(r))
-        check((path / "output.md").read_text() == r.stdout, "agent-use 全文不一致")
+        check(r.returncode == 0 and r.stdout == "qoder ok\n", repr(r))
+        check((path / "output.md").read_text() == "qoder ok", "agent-use 全文不一致")
         check(r.stderr.splitlines()[-1] == f"[ai-worker] 全文：{path}/output.md", r.stderr)
         r, path = run(mode="quota")
         check(r.returncode == 1 and (path / "output.md").read_text() == "", repr(r))
@@ -119,7 +146,7 @@ def run_dir_persist():
             "original = w.write_run_file\n"
             "w.write_run_file = lambda path, *args: False if path.name == 'output.md' else original(path, *args)\n"
             "sys.exit(w.main())\n")
-        for seat, expected in (("codex", "codex ok\n"), ("qoder", "qoder ok")):
+        for seat, expected in (("codex", "codex ok\n"), ("qoder", "qoder ok\n")):
             r = sh([sys.executable, "-c", script, str(REPO), seat, str(t), "10", str(prompt),
                     "--ro", "--no-fallback"], env=env)
             row = json.loads((t / "state/seat-ledger.jsonl").read_text().splitlines()[-1])
@@ -131,7 +158,7 @@ def run_dir_persist():
         blocked = t / "blocked-state"
         blocked.mkdir()
         (blocked / "runs").write_text("占位文件")
-        for seat, expected in (("codex", "codex ok\n"), ("qoder", "qoder ok")):
+        for seat, expected in (("codex", "codex ok\n"), ("qoder", "qoder ok\n")):
             r = inprocess_sh([sys.executable, str(REPO / "ai_worker.py"), seat, str(t), "10",
                     str(prompt), "--ro", "--no-fallback"],
                    env=dict(env, AIW_STATE=str(blocked)))
@@ -580,7 +607,7 @@ def worker_regression():
         def prov():
             return latest_provider(t / "state").read_text().strip()
 
-        p = run("qoder"); check(p.returncode == 0 and p.stdout == "qoder ok" and prov() == "qoder", f"正常: {p.stderr}")
+        p = run("qoder"); check(p.returncode == 0 and p.stdout == "qoder ok\n" and prov() == "qoder", f"正常: {p.stderr}")
         calls = [json.loads(l) for l in log.read_text().splitlines()]
         check(calls[-1] == {"order": "qoder", "model": ["qoder=free-model-q"], "options": [], "no_tools": True}, f"qoder 应单家、免费模型写死、硬禁工具: {calls[-1]}")
         # 只读文本座位不接受写任务
@@ -608,7 +635,7 @@ def worker_regression():
         (t / "state" / "breaker.json").unlink()
         # OpenCode 使用 agent-use 默认免费模型和 guarded，不能要求硬禁工具
         p = run("opencode")
-        check(p.returncode == 0 and p.stdout == "opencode ok" and prov() == "opencode", f"opencode 正常: {p.stderr}")
+        check(p.returncode == 0 and p.stdout == "opencode ok\n" and prov() == "opencode", f"opencode 正常: {p.stderr}")
         call = json.loads(log.read_text().splitlines()[-1])
         check(call == {"order": "opencode", "model": [], "options": [], "no_tools": False}, f"opencode 应单家、不传模型或硬禁工具: {call}")
         start = len(log.read_text().splitlines())
@@ -629,7 +656,7 @@ def worker_regression():
         check(p.returncode == 2 and rows[-1]["kind"] == "empty" and calls == ["opencode"]
               and not (t / "state" / "breaker.json").exists(), f"tool_use_rejected 应按 empty 返回 rc=2、不顶替或熔断: {p.stderr}")
         # doubao：无本机工具但不硬禁（不传 --require-no-tools）；风控人工验证单独熔断 verify 并打印登录提示，限流熔断 ratelimit；都顶替 workbuddy
-        p = run("doubao"); check(p.returncode == 0 and p.stdout == "doubao ok" and json.loads(log.read_text().splitlines()[-1])["no_tools"] is False, f"doubao 正常: {p.stderr}")
+        p = run("doubao"); check(p.returncode == 0 and p.stdout == "doubao ok\n" and json.loads(log.read_text().splitlines()[-1])["no_tools"] is False, f"doubao 正常: {p.stderr}")
         p = run("doubao", FAKE_AU_DOUBAO="verify"); check(p.returncode == 0 and prov() == "workbuddy" and "豆包浏览器" in p.stderr
                                                      and json.loads((t / "state" / "breaker.json").read_text())["doubao"]["reason"] == "verify", f"doubao 风控验证应熔断 verify 并顶替 workbuddy: {p.stderr}")
         (t / "state" / "breaker.json").unlink()
@@ -1034,7 +1061,7 @@ def agent_use_cwd():
         p.write_text(FAKE_AGENT_USE.replace('prov + " ok"', 'os.getcwd()'))
         cmd, env, wd = worker_call(t, AGENT_USE_HOME=str(home))
         r = sh(cmd, env=env, cwd=t)
-        check(r.returncode == 0 and r.stdout == str(wd.resolve()), f'cwd 不对: {r.stdout}{r.stderr}')
+        check(r.returncode == 0 and r.stdout == str(wd.resolve()) + "\n", f'cwd 不对: {r.stdout}{r.stderr}')
 
 
 
@@ -1430,6 +1457,7 @@ assert original_mask(signal.SIG_BLOCK, set()) == initial_mask, '退出后屏蔽�
 
 
 CASES = {case.__name__: case for case in (
+    worker_stdout_newline,
     run_dir_persist,
     write_changes_report,
     codex_sol_no_fallback,

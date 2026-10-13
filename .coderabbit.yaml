@@ -24,7 +24,7 @@ reviews:
         test_state_contract when state fields change.
     - path: "seats.json"
       instructions: >-
-        Public defaults only: codex, codex-sol and claude. Vendor text seats,
+        Public defaults only: codex, codex-sol, claude and claude-write. Vendor text seats,
         notification targets, findings hubs and errand paths belong in the
         machine-local override (~/.config/aiw/seats.local.json), never here.
         Preserve the existing 2-space formatting and key order.

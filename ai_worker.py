@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """座位层：统一调用各家模型。两种座位：
-    kind=agent_use  通过本机 agent-use 仓库的 scripts/run_agent.py 调用（qoder / workbuddy / antigravity / doubao / opencode）。
-                    只生成文本、不改文件；只接受 --ro。仓库位置：$AGENT_USE_HOME（默认 ~/code/ai/agent-use）。
+    kind=agent_use  通过本机 agent-use 仓库的 scripts/run_agent.py 调用（如 opencode 等 agent-use 适配器）。
+                    只生成文本、不改文件；只接受 --ro。仓库位置：$AGENT_USE_HOME（默认 ~/.local/share/agent-use，新路径不存在时沿用已有的 ~/code/ai/agent-use）。
     kind=cli        直接调用命令行（codex），可以写文件。
 
 用法：
@@ -28,7 +28,7 @@ import fcntl
 import hashlib
 import json
 import os
-from env_compat import getenv, session_id, write_tui_session
+from env_compat import agent_use_home, getenv, session_id, write_tui_session
 import re
 import shutil
 import shlex
@@ -1036,10 +1036,6 @@ AGENT_USE_REASON = {
     "invalid_request": "format",
     "native_capability_missing": "fatal",
 }
-
-
-def agent_use_home() -> Path:
-    return Path(os.environ.get("AGENT_USE_HOME") or Path.home() / "code" / "ai" / "agent-use").expanduser()
 
 
 class RegistryError(StateError):
@@ -2077,6 +2073,8 @@ def dispatch(inflight: Path | None, attempt: dict, *, before_execute=None) -> in
                     changes.ok = True
                     # aiw panel 并行时每家写自己的 provider 文件，避免互相覆盖
                     sys.stdout.write(r["out"])
+                    if r["out"] and not r["out"].endswith("\n"):
+                        sys.stdout.write("\n")
                     sys.stdout.flush()
                     actual_provider = provider_file or (Path(r["run_dir"]) / "provider" if r.get("run_dir") else None)
                     if actual_provider is not None:

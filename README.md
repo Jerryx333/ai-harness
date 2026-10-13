@@ -32,7 +32,7 @@
 - **某家一挂、一限流，活就卡住。** agent-use 会按你排好的顺序自动换下一家，活不会断。
 - **别的模型交回来的东西靠不靠谱？** 每次都留存原文和过程记录，结果一律当待审稿，由主会话核对后才算数。
 
-只想接 Codex、Claude Code、OpenCode 这几家常见 CLI？[agent-use-adapters](https://github.com/Jerryx333/agent-use-adapters) 已经写好适配器。安装 aiw 时加一个参数就能一起装好，还会补上 OpenCode 免费模型座位：`~/.claude/aiw/install.sh --with-agent-use`。手工接入步骤见[使用指南](docs/guide.zh-CN.md#接入更多模型可选)。
+只想接 Codex、Claude Code、OpenCode 这几家常见 CLI？[agent-use-adapters](https://github.com/Jerryx333/agent-use-adapters) 已经写好适配器。安装 aiw 时加一个参数就能一起装好，还会补上 OpenCode 免费模型座位：`~/.claude/aiw/install.sh --with-agent-use`。手工接入步骤见[使用指南](docs/guide.zh-CN.md#接入更多模型可选)。核心默认装在 `~/.local/share/agent-use`；新路径不存在时沿用已有的 `~/code/ai/agent-use`。适配器默认在解析出的核心目录同级的 `agent-use-adapters`；可用 `AGENT_USE_HOME` / `AIW_ADAPTERS_HOME` 覆盖。
 
 ```mermaid
 flowchart LR

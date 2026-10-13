@@ -32,7 +32,7 @@ If you have other subscriptions, local models or free models and want them to sh
 - **An outage or rate limit stops the work.** agent-use automatically tries the next model in your chosen order so work can continue.
 - **Can you trust what another model returns?** Original responses and execution records are saved every time. All results are drafts for the main conversation to check before accepting them.
 
-Just want common CLIs such as Codex, Claude Code and OpenCode? [agent-use-adapters](https://github.com/Jerryx333/agent-use-adapters) has ready-made adapters. Add one flag when installing aiw to set them up too, including a seat for OpenCode's free models: `~/.claude/aiw/install.sh --with-agent-use`. Manual steps are in the [guide](docs/guide.md#add-more-models-optional).
+Just want common CLIs such as Codex, Claude Code and OpenCode? [agent-use-adapters](https://github.com/Jerryx333/agent-use-adapters) has ready-made adapters. Add one flag when installing aiw to set them up too, including a seat for OpenCode's free models: `~/.claude/aiw/install.sh --with-agent-use`. Manual steps are in the [guide](docs/guide.md#add-more-models-optional). The core defaults to `~/.local/share/agent-use`; when that path is absent, an existing `~/code/ai/agent-use` is retained. Adapters default to `agent-use-adapters` beside the resolved core directory. Override these with `AGENT_USE_HOME` / `AIW_ADAPTERS_HOME`.
 
 ```mermaid
 flowchart LR

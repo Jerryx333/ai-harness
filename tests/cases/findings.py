@@ -513,6 +513,71 @@ def findings_config_local():
 CASES.update({case.__name__: case for case in (findings_local_cache_hint, findings_extract_local, findings_config_local)})
 
 
+def findings_worker_prompt_filters():
+    import importlib.util
+    from unittest.mock import patch
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        run, work, prompt, _, harness = findings_worker_fixture(root)
+        result, row, _ = run()
+        check(result.returncode == 0, result.stderr)
+        task = (Path(row['run_dir']) / 'task.txt').read_text()
+        # 日期取自真实派单，worker 改动日期文字时不能悄悄漏过。
+        prefix = task.split('\n\n', 1)[0] + '\n\n'
+        f = findings_fixture(root)
+        spec = importlib.util.spec_from_file_location('worker_prompt_filters', harness / 'ai_worker.py')
+        worker = importlib.util.module_from_spec(spec); spec.loader.exec_module(worker)
+        body = prompt.read_text()
+        check(f._handwritten_prompt(prefix + body) == body, '日期前缀未剥离')
+        check(f._handwritten_prompt(body + worker.PANEL_FORMAT) == body, '会诊格式未剥离')
+        check(f._handwritten_prompt(body + '\n\n' + f.SUFFIX) == body, '观察记录未剥离')
+        for reminder in f._TASK_REMINDERS:
+            check(f._handwritten_prompt(prefix + body + '\n\n' + reminder) == body,
+                  '历史或当前提醒未剥离')
+        for ro in (False, True):
+            for net in (False, True):
+                for linked in (False, True):
+                    with patch.object(worker, 'worktree_writable_roots', return_value=['git-dir'] if linked else []):
+                        reminders = worker.dispatch_reminders('codex', ro, str(work), net)
+                    # 单独验证每段，避免第一段截断掩盖后续文字变动。
+                    for segment in reminders.strip().splitlines():
+                        check(f._handwritten_prompt(body + '\n\n' + segment) == body,
+                              f'自动提醒未剥离: ro={ro}, net={net}, linked={linked}: {segment}')
+                    for kind in ('cli', 'agent_use'):
+                        attachments = worker.render_attachments([('data.txt', b'attachment noise')], kind)
+                        for attachment in ('', attachments):
+                            wrapped = prefix + body + attachment + reminders + '\n\n' + f.SUFFIX + worker.PANEL_FORMAT
+                            check(f._handwritten_prompt(wrapped) == body, '组合包装未剥离')
+        # 正文中的相似句子和中间段落应保留，不能按行前缀全局删除。
+        handwritten = '今天是手写的日期说明\n\n' + f._TASK_REMINDERS[-1] + '\n后面仍然是正文'
+        check(f._handwritten_prompt(handwritten) == handwritten, '误删正文')
+
+
+def findings_worker_repeated_instruction():
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        run, _, prompt, _, harness = findings_worker_fixture(root)
+        repeated = '每次修改结束以后必须运行相关的离线回归测试'
+        for i in range(6):
+            prompt.write_text(f'任务 {i}\n{repeated}')
+            flags = ('--ro', '--no-fallback') + (('--attach', 'data.txt') if i == 5 else ())
+            if i == 5:
+                (root / 'work/data.txt').write_text('附件中的重复说明不应混入手写指令统计')
+            overrides = dict(AIW_PANEL_DIR=str(root / 'panel'), AIW_PANEL_FORMAT='1') if i == 4 else {}
+            result, _, _ = run(flags=flags, **overrides)
+            check(result.returncode == 0, result.stderr)
+        check(len(list((root / 'state/runs').glob('*/task.txt'))) == 6, '未生成六个真实任务文件')
+        f = findings_fixture(root)
+        data = f.extract(harness=root / 'no-history')
+        check(len(data['repeated_instruction']) == 1 and
+              data['repeated_instruction'][0]['line'] == repeated and
+              data['repeated_instruction'][0]['count'] == 6, str(data['repeated_instruction']))
+
+
+CASES.update({case.__name__: case for case in (
+    findings_worker_prompt_filters, findings_worker_repeated_instruction)})
+
+
 def findings_extract():
     import datetime as dt
     with tempfile.TemporaryDirectory() as td:

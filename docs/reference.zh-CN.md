@@ -91,7 +91,7 @@ aiw errand stop JOB
 aiw errand list
 ```
 
-入口原样转发参数和退出码到 `$AGENT_USE_HOME/scripts/errand_use.py`，默认目录与文本入口相同（`~/code/ai/agent-use`）。本地等待超时（rc 124）不等于云端停止；用 wait 继续确认，结果可能不完整。提交结果未知时用 recover 回查，不能自动重发。额度消耗来自账户余额变化，可能包含其它会话消耗。派单记录写 `job_id`、`state`、`task_url`、`credits_used`。
+入口原样转发参数和退出码到 `<errand 根目录>/scripts/errand_use.py`。跑腿根目录按 `AGENT_USE_ERRAND_HOME` > 本地 `errand.home` 解析，支持 `~`；未配置时无跑腿供应商，`aiw errand` 明确报错。本地等待超时（rc 124）不等于云端停止；用 wait 继续确认，结果可能不完整。提交结果未知时用 recover 回查，不能自动重发。额度消耗来自账户余额变化，可能包含其它会话消耗。派单记录写 `job_id`、`state`、`task_url`、`credits_used`。
 
 errand 名单从 跑腿根目录下的 `config/errands.json` 的 providers 读取，文件不存在视为空，配置损坏明确报错。跑腿供应商不进入 seats.json；route 校验及运行、panel、worker 座位入口和顶替链拒绝跨专线引用，freecheck 跳过；`AIW_NESTED=1` 禁止调用跑腿入口，无嵌套豁免。
 

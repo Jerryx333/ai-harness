@@ -1,5 +1,24 @@
 # 红线与守护测试
 
+## 角色与单家安装
+
+使用 `aiw write|review|draft <workdir> <timeout> <prompt>`；角色解析到哪个座位见 `aiw doctor`。
+
+| 主会话身份 | write 候选顺序 | review 候选顺序 | draft 候选顺序 |
+|---|---|---|---|
+| Claude | codex → claude-write | codex-sol → claude | codex-sol → claude |
+| Codex | 空（改文件自己做） | claude → codex-sol | codex-sol → claude |
+| 未识别（default） | codex → claude-write | codex-sol → claude | codex-sol → claude |
+
+按顺序取首个存在、bin 可找到（尊重 CODEX_BIN/CLAUDE_BIN）、未停用且没有当前 auth/not_installed 熔断的座位。全部不可用返回 rc=2，列出每个候选原因，提示接入 agent-use 文本座位；Codex 主会话 write 列表为空时提示「Codex 主会话改文件请自己做」。review/draft 强制只读，包括写能力的顶替座位。`roles` 本地覆盖对象递归合并、列表整体替换；review/draft 候选只能是只读 CLI 或 agent_use 文本座位，角色名不能与座位或内置命令冲突。
+
+只装 Codex 时，主会话自己改代码，review/draft 使用另一 Codex 会话。只装 Claude Code 时，write 使用 claude-write，review/draft 使用 claude。两家都装时 review 会落到另一家模型；只装一家时是同一家另开上下文，不等于跨家族复核。
+
+claude 与 claude-write 均固定 `--model opus`，不跟随用户默认模型。claude-write 需要 Claude Code ≥ 2.1.259，写单使用 `--restricted --strict-mcp-config --tools Read,Grep,Glob,Edit,Write,Bash --permission-mode acceptEdits --permission-prompts none`，并传单个 settings JSON：`{"sandbox":{"enabled":true,"allowUnsandboxedCommands":false,"failIfUnavailable":true}}`。受限模式加沙箱，只改项目工作区文件，不能 git add/commit；沙箱不可用时失败。其只读 argv 沿用 claude 的 Read/Grep/Glob 白名单。
+
+panel 默认名单去掉主会话自身后过滤不可用座位，stderr 列原因；不足两家时不派单、rc=1，提示「会诊需要至少两家可用座位；单家安装可接入 agent-use 文本座位」。显式座位名单保留原行为。map_default 默认为 draft，也可配置角色；`--seat` 仍可点名座位。
+
+
 运行 `python3 tests/mutation_check.py` 检查全部红线，或追加表内变异 id 只检查指定项；仅使用临时副本，先验证基线再逐条变异。修改红线相关代码之前和之后都必须运行，并运行 `python3 tests/test_harness.py` 完整回归。出现“补丁失效”时，核对实现后更新 `MUTATIONS` 的精确 old/new（old 必须唯一），保持只破坏对应红线，并同步本表及守护测试，不能把语法错误当作杀死。变异必须由预期的那条断言杀死才算数；无关失败不算通过。
 
 | 不变量 | 代码位置（文件:函数） | 守护测试用例 | 变异 id |

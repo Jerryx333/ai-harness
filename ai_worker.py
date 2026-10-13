@@ -86,6 +86,66 @@ def main_agent(env=None) -> str | None:
     return None
 
 
+class RoleError(ValueError):
+    pass
+
+
+def selection_snapshot():
+    return (load_json(STATE / "disabled.json", {}), load_json(BREAKER, {}))
+
+
+def role_candidate_reason(role, seat):
+    cfg = SEATS["seats"].get(seat, {})
+    if role in ("review", "draft") and cfg.get("kind") != "agent_use" and not cfg.get("ro_only"):
+        return "非只读座位"
+    return None
+
+
+def seat_unavailable(seat, *, readonly=True, snapshot=None):
+    """Role/panel preselection; quota/rate limits still use normal dispatch."""
+    cfg = SEATS['seats'].get(seat)
+    if cfg is None:
+        return '座位不存在'
+    disabled, breakers = snapshot if snapshot is not None else selection_snapshot()
+    entry = disabled_seat(seat, disabled=disabled)
+    if entry:
+        if entry.get('disabled_by_user'):
+            return f"已被用户停用：{entry['disabled_by_user']}"
+        return '已停用（disabled）'
+    if cfg.get('kind') == 'agent_use':
+        script = agent_use_home() / 'scripts' / 'run_agent.py'
+        if not script.is_file():
+            return f'agent-use 入口不存在：{script}'
+    else:
+        binary = os.environ.get(cfg.get('bin_env', '')) or cfg['bin']
+        if shutil.which(binary) is None:
+            return f'bin 不可找到：{binary}'
+    br = breaker_open(seat, breakers=breakers)
+    if br and br.split()[0] in ('not_installed', 'auth'):
+        return f'熔断：{br}'
+    return None
+
+
+def role_candidates(role):
+    return SEATS.get('roles', {}).get(main_agent() or 'default', {}).get(role, [])
+
+
+def resolve_role(role, *, readonly=True):
+    candidates = role_candidates(role)
+    if role == 'write' and main_agent() == 'codex' and not candidates:
+        raise RoleError('Codex 主会话改文件请自己做')
+    reasons = []
+    snapshot = selection_snapshot()
+    for seat in candidates:
+        reason = role_candidate_reason(role, seat) or seat_unavailable(seat, snapshot=snapshot)
+        if reason is None:
+            return seat
+        reasons.append(f'{seat}: {reason}')
+        print(f'[ai-worker] 角色 {role} 跳过 {seat}: {reason}', file=sys.stderr)
+    raise RoleError(f'角色 {role} 无可用座位：' + ('；'.join(reasons) or '候选列表为空')
+                    + '；单家安装可接入 agent-use 文本座位')
+
+
 def child_env() -> dict:
     # 外包出去的 claude -p / codex exec 也会触发各自的派单钩子；标记嵌套，钩子见到就不再派单（防套娃）
     return dict(os.environ, AIW_NESTED="1")
@@ -543,6 +603,8 @@ def available_models(cfg):
 
 
 def disabled_seat(seat, *, disabled=None):
+    if SEATS["seats"].get(seat, {}).get("disabled"):
+        return {"config_disabled": True}
     reason = SEATS["seats"].get(seat, {}).get("disabled_by_user")
     if reason:
         return {"disabled_by_user": reason}
@@ -562,6 +624,9 @@ def disabled_seat(seat, *, disabled=None):
 
 
 def print_disabled(seat, entry):
+    if entry.get("config_disabled"):
+        print(f"⛔ {seat} 已被配置停用（disabled: true）；请修改本地配置恢复", file=sys.stderr)
+        return
     if entry.get("disabled_by_user"):
         print(f"⛔ {seat} 已被用户停用：{entry['disabled_by_user']}；恢复需用户明确决定", file=sys.stderr)
         return
@@ -746,8 +811,8 @@ def guard_result(seat, result):
     return result
 
 
-def breaker_open(seat: str) -> str | None:
-    b = load_json(BREAKER, {})
+def breaker_open(seat: str, *, breakers=None) -> str | None:
+    b = load_json(BREAKER, {}) if breakers is None else breakers
     until = b.get(seat, {}).get("until", 0)
     if until > time.time():
         return f"{b[seat]['reason']} until {dt.datetime.fromtimestamp(until).strftime('%H:%M')}"
@@ -1299,12 +1364,44 @@ def run_seat(seat: str, prompt: str, workdir: str, timeout: int, ro: bool, effor
         raise
 
 
+def readonly_argv_error(seat, argv, prompt=None):
+    """Reject write permissions before starting any CLI, including fallback calls."""
+    # Task text is data even when a local template places it before options.
+    options = [arg for arg in argv if arg != prompt]
+    if seat_adapter(seat) == "codex":
+        if (options.count("--sandbox") != 1 or
+                options[options.index("--sandbox") + 1:options.index("--sandbox") + 2] != ["read-only"]):
+            return "只读任务要求 Codex --sandbox read-only"
+        if any(a in ("-s", "--full-auto", "--dangerously-bypass-approvals-and-sandbox")
+               or a.startswith(("--sandbox=", "sandbox_mode=")) for a in options):
+            return "只读任务不得覆盖 Codex read-only 沙箱"
+    else:
+        # Claude-style options may use equals, comma lists, or multiple values.
+        allowing = False
+        for arg in options:
+            if arg == "--":
+                break
+            flag, _, value = arg.partition("=")
+            if arg.startswith("-"):
+                allowing = flag in ("--allowedTools", "--allowed-tools", "--tools")
+            if ("acceptEdits" in arg or "bypassPermissions" in arg or
+                    flag == "--dangerously-skip-permissions"):
+                return "只读任务不得使用 acceptEdits/bypassPermissions"
+            tools = value if arg.startswith("-") else arg
+            if allowing and re.search(r"(?:^|[ ,])(?:Edit|Write|Bash)(?:$|[ ,(])", tools):
+                return "只读任务不得允许 Edit/Write/Bash"
+    return None
+
+
 def _run_seat(seat: str, prompt: str, workdir: str, timeout: int, ro: bool, effort: str | None = None, fixed_model: str | None = None, net: bool = False, baseline_status: bytes | None = None) -> dict:
     if SEATS["seats"][seat].get("kind") == "agent_use":
         return run_agent_use(seat, prompt, workdir, timeout, fixed_model, baseline_status)
     argv = build_argv(seat, prompt, workdir, ro, effort, net)
     if argv is None:
         return {"rc": 127, "out": "", "err": "binary not found", "kind": "not_installed", "secs": 0}
+    violation = readonly_argv_error(seat, argv, prompt) if ro else None
+    if violation:
+        return {"rc": 64, "out": "", "err": violation, "kind": "invalid_argv", "secs": 0}
     locked = preflight(SEATS["seats"][seat])
     if locked:
         return locked
@@ -1372,6 +1469,17 @@ def _doctor() -> int:
             limitation = "；已知限制：dispatcher 默认/备选模型暂不过滤" if key.startswith("opencode:") else ""
             print(f"  ⛔ 模型 {key} 已停用 since {entry['since']} 证据 {entry['evidence']}{limitation}")
     bad = local_failures
+    print(f"角色映射（主会话 {main_agent() or 'default'}）：")
+    for role in ('write', 'review', 'draft'):
+        try:
+            chosen = resolve_role(role, readonly=True)
+            print(f"  角色 {role} → 座位 {chosen}")
+        except RoleError as exc:
+            print(f"  {exc}")
+        for candidate in role_candidates(role):
+            reason = role_candidate_reason(role, candidate) or seat_unavailable(candidate, readonly=True)
+            if reason:
+                print(f"    {candidate}: {reason}")
     configured = SEATS.get("seats", {})
     versions = {}
     for name, cfg in (configured.items() if isinstance(configured, dict) else []):
@@ -1385,7 +1493,10 @@ def _doctor() -> int:
             continue
         disabled = disabled_seat(name, disabled=disabled_entries)
         if disabled:
-            print(f"  ⛔ {name} 已停用（疑似收费）since {disabled['since']} 证据 {disabled['evidence']}")
+            if disabled.get("config_disabled"):
+                print(f"  ⛔ {name} 已被配置停用（disabled: true）")
+            else:
+                print(f"  ⛔ {name} 已停用（疑似收费）since {disabled['since']} 证据 {disabled['evidence']}")
             continue
         br = breaker_open(name)
         if cfg.get("kind") == "agent_use":
@@ -1598,12 +1709,16 @@ def main() -> int:
     liveness_lock = None
     attempt, rc = {}, 1
     publish = True
-    try:
+    def before_execute():
+        nonlocal liveness_lock, publish
         liveness_lock = acquire_liveness_lock(liveness_path)
         publish = liveness_lock is not None or not liveness_path.exists()
         if not publish:
             print("[ai-worker] 警告：锁不可用且无法删除，本次不发布 inflight", file=sys.stderr)
-        rc = dispatch(inflight if publish else None, attempt)
+        return inflight if publish else None
+
+    try:
+        rc = dispatch(inflight, attempt, before_execute=before_execute)
         return rc
     finally:
         try:
@@ -1660,7 +1775,7 @@ def record_findings(workdir, seat, actual, via, ro, prompt_id, run_dir, parsed, 
         return False
 
 
-def dispatch(inflight: Path | None, attempt: dict) -> int:
+def dispatch(inflight: Path | None, attempt: dict, *, before_execute=None) -> int:
     signal.signal(signal.SIGTERM, interrupted)
     signal.signal(signal.SIGINT, interrupted)
     if sys.argv[1:] == ["doctor", "--fingerprint"]:
@@ -1685,6 +1800,16 @@ def dispatch(inflight: Path | None, attempt: dict) -> int:
         print(__doc__, file=sys.stderr)
         return 64
     seat, workdir, timeout_s, prompt_file = args
+    if seat in ('write', 'review', 'draft'):
+        role = seat
+        try:
+            seat = resolve_role(role)
+        except RoleError as exc:
+            print(f"[ai-worker] {exc}", file=sys.stderr)
+            return 2
+        print(f"[ai-worker] 角色 {role} → 座位 {seat}", file=sys.stderr)
+        if role in ('review', 'draft'):
+            flags.add('--ro')
     reason = SEATS["seats"].get(seat, {}).get("disabled_by_user")
     if reason:
         print_disabled(seat, {"disabled_by_user": reason})
@@ -1742,9 +1867,11 @@ def dispatch(inflight: Path | None, attempt: dict) -> int:
     collect = (findings.config()["collect"] and via == "direct" and "--no-findings" not in flags
                and not (SEATS["seats"][seat].get("kind") == "agent_use" and not attach))
 
-    # codex-sol 不顶替：配置为空链，不可用时由主会话决定换别家或稍后重试。
+    # 公开默认顶替链为空，本地配置可覆盖。
     attachments_warned = os.environ.get("AIW_ATTACH_WARNING_SUPPRESS") == "1"
     chain = [seat] + ([] if "--no-fallback" in flags else SEATS["fallback"].get(seat, []))
+    if before_execute is not None:
+        inflight = before_execute()
     STATE.mkdir(parents=True, exist_ok=True)
     # 只有写任务锁目录；只读任务可以并行（aiw panel 同时问几家）
     lock_key = workdir
@@ -1766,7 +1893,7 @@ def dispatch(inflight: Path | None, attempt: dict) -> int:
 
         text_only = lambda x: SEATS["seats"][x].get("kind") == "agent_use"
         if not ro and text_only(seat):
-            print(f"[{seat}] 这个座位只生成文本、不能改文件。要它出结论请加 --ro；要改文件请用 codex。", file=sys.stderr)
+            print(f"[{seat}] 这个座位只生成文本、不能改文件。要它出结论请加 --ro；要改文件请用 `aiw write`。", file=sys.stderr)
             return 64
         provider_file = Path(os.environ["AIW_PROVIDER_FILE"]) if os.environ.get("AIW_PROVIDER_FILE") else None
         if provider_file is not None:
@@ -1901,6 +2028,9 @@ def dispatch(inflight: Path | None, attempt: dict) -> int:
                     if s != seat:
                         print(f"\n[ai-worker] 注意：{seat} 不可用，本单实际由 {s} 完成", file=sys.stderr)
                     return 0
+                if r["kind"] == "invalid_argv":
+                    print(f"[{s}] {r['err']}；拒绝执行", file=sys.stderr)
+                    return 64
                 if r["kind"] == "paid":
                     continue  # 永久停用已落盘，按不可用继续原顶替链
                 if r["kind"] == "locked":

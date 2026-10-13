@@ -7,6 +7,10 @@ import string
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
+ROLE_NAMES = frozenset(('write', 'review', 'draft'))
+BUILTIN_COMMANDS = frozenset(('note', 'findings', 'triage', 'track', 'errand', 'freecheck',
+    'enable', 'doctor', 'handoff', 'route', 'panel', 'map', 'goal', 'board', 'statusline',
+    'tokens', 'weekly', 'snapshot', 'gc', 'sync', 'help'))
 
 
 class ConfigError(Exception):
@@ -125,9 +129,9 @@ def validate(merged) -> list[str]:
                     if (not isinstance(argv, list) or argv[:1] != ['{bin}'] or argv[1:2] != ['exec']
                             or argv.count('--sandbox') != 1
                             or argv[argv.index('--sandbox') + 1:argv.index('--sandbox') + 2]
-                            not in (['read-only'], ['workspace-write'])):
+                            not in ((['read-only'],) if key == 'argv_ro' else (['read-only'], ['workspace-write']))):
                         errors.append(f'{path}.{key} 必须是 Codex exec 命令（argv[0] 为 {{bin}}，argv[1] 为 exec，'
-                                      '恰好一个 --sandbox，其后为 read-only 或 workspace-write）；'
+                                      f'恰好一个 --sandbox，其后为 {"read-only" if key == "argv_ro" else "read-only 或 workspace-write"}）；'
                                       '若该座位不再使用 Codex CLI，在本地配置中写 "adapter": null')
         if 'model' in seat and not isinstance(seat['model'], str):
             error(f'{path}.model', '字符串')
@@ -138,11 +142,31 @@ def validate(merged) -> list[str]:
         elif 'model_args' in seat:
             strings(seat['model_args'], f'{path}.model_args')
         # free_only 是展示/不换付费模型的声明；free_guard 才是执行时的收费检测保护。
-        for key in ('ro_only', 'free_only', 'free_guard', 'require_no_tools', 'expects_credits'):
+        for key in ('disabled', 'ro_only', 'free_only', 'free_guard', 'require_no_tools', 'expects_credits'):
             if key in seat and type(seat[key]) is not bool:
                 error(f'{path}.{key}', '布尔值')
         if 'max_concurrency' in seat:
             concurrency(seat['max_concurrency'], f'{path}.max_concurrency')
+    roles = merged.get('roles', {})
+    if not isinstance(roles, dict):
+        error('roles', '对象')
+        roles = {}
+    for name in ROLE_NAMES & seats.keys():
+        errors.append(f'角色名冲突：{name} 不能用作座位名；请重命名座位并更新引用')
+    for identity, mapping in roles.items():
+        if not isinstance(mapping, dict):
+            error(f'roles.{identity}', '对象')
+            continue
+        for role, candidates in mapping.items():
+            path = f'roles.{identity}.{role}'
+            if role in seats or role in BUILTIN_COMMANDS:
+                errors.append(f'角色名冲突：{role}')
+            elif role not in ROLE_NAMES:
+                errors.append(f'未知角色：{role}')
+            if strings(candidates, path):
+                for name in candidates:
+                    if name not in seats:
+                        errors.append(f'引用悬空：{path} → {name}')
     refs = []
     for key in ('fallback', 'self_seats'):
         values = merged.get(key)
@@ -162,7 +186,8 @@ def validate(merged) -> list[str]:
         if not isinstance(merged['map_default'], str):
             error('map_default', '字符串')
         else:
-            refs.append(('map_default', merged['map_default']))
+            if merged['map_default'] not in ROLE_NAMES:
+                refs.append(('map_default', merged['map_default']))
     for path, name in refs:
         if name not in seats:
             errors.append(f'引用悬空：{path} → {name}')
@@ -190,7 +215,7 @@ def load_seats(repo=None, *, tolerate_public=False):
 
 def effective_hash(merged):
     keys = ('seats', 'fallback', 'panel_default', 'panel_free', 'self_seats', 'map_default',
-            'substitute_limit', 'breaker')
+            'substitute_limit', 'breaker', 'roles')
     data = {key: copy.deepcopy(merged[key]) for key in keys if key in merged}
     if isinstance(data.get('seats'), dict):
         for seat in data['seats'].values():

@@ -30,7 +30,7 @@ from pathlib import Path
 
 import findings
 # Validate before importing worker (which also serves non-hook commands).
-from seats_config import ConfigError, load_seats
+from seats_config import ConfigError, load_seats, ROLE_NAMES, BUILTIN_COMMANDS
 try:
     load_seats(Path(__file__).resolve().parent)
     from ai_worker import errand_names, StateError
@@ -268,7 +268,7 @@ def check_seats(rules: list[dict], config: dict) -> None:
             raise RuleError(f"panel_free: {seat} 必须是 agent_use 座位")
         if seat not in config["panel_default"]:
             raise RuleError(f"panel_free: {seat} 不在 panel_default 中")
-    commands = {"map", "panel", "goal", "route", "doctor", "weekly", "snapshot", "sync", "gc", "help"}
+    commands = BUILTIN_COMMANDS | ROLE_NAMES
     for r in rules:
         check_errand_rule(r)
         if r["seat"] not in known | commands | {"main", "main-plan"}:

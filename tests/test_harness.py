@@ -19,6 +19,7 @@ from support import fake_agent_use, fake_bins, write_legacy_local
 
 
 CASE_MODULES = (
+    "roles",
     "worker",
     "worker_2",
     "route_panel_map",

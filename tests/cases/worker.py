@@ -672,7 +672,7 @@ def worker_regression():
         cf = t / "claude.args"
         p = run("claude", extra=(), FAKE_CLAUDE_ARGS=str(cf)); a = cf.read_text().splitlines()
         # --disallowedTools 吃多个值，prompt 前必须有 -- 分隔（2026-10-07 两机实测 prompt 被吞成禁用规则）
-        check(p.returncode == 0 and prov() == "claude" and a[:3] == ["-p", "--output-format", "text"] and "Read,Grep,Glob" in a and any("Bash" in x and "Edit" in x for x in a) and a[7] == "--" and a[8].startswith("今天是 ") and a[9:] == ["", pf.read_text()],
+        check(p.returncode == 0 and prov() == "claude" and a[:5] == ["--model", "opus", "-p", "--output-format", "text"] and "Read,Grep,Glob" in a and any("Bash" in x and "Edit" in x for x in a) and a[9] == "--" and a[10].startswith("今天是 ") and a[11:] == ["", pf.read_text()],
               f"claude 座位参数不对: {a} {p.stderr}")
         # claude 未登录时错误写在 stdout：应识别为 auth（提示登录），不是「其它失败」
         p = run("claude", FAKE_CLAUDE_NOLOGIN="1")

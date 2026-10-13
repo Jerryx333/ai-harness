@@ -2,7 +2,7 @@
 
 [中文](README.md) | [English](README.en.md)
 
-让 Claude Code / Codex 主模型把精力留给规划和把关，把读代码、跑命令、起草摘要这类体力活交给 Codex 或更便宜、已闲置的模型。装上就能用，不用起服务、不装依赖。最适合同时在用 Claude Code 和 Codex 的人。
+给用 Claude Code 或 Codex 当主力、常被额度卡住或上下文撑爆的人。主模型专心规划和把关，读代码、跑命令、起草摘要这类体力活派出去。派给谁由你配：同一家更省的模型、你已有的其他订阅、免费模型都行。装好有默认配置，只装一家也能用。不用起服务，除 Python 3 外不装依赖。
 
 ## 解决什么问题
 
@@ -12,11 +12,12 @@
 
 ## 装上之后有什么不同
 
-- 主模型额度更耐用：体力活派出去，主模型把额度花在规划和验收上。
+- **按你手里的东西配。** 主会话用哪个 CLI 都行；改代码、评审、起草三类活各派给谁，在一个本地配置文件里排好候选顺序，第一个不可用就用下一个；任何能在终端里跑的模型或 CLI 都能接进来（经 agent-use），不用改代码。见[自定义](docs/guide.zh-CN.md#自定义)和[角色配置](docs/guide.zh-CN.md#角色与单家安装)。
+- 主会话用强模型，体力活派给同一家更省的模型：比如 Codex 主会话用 GPT-6 Astra、派单用 GPT-6.1 Sol，或 Claude 主会话用 Fable、派单用 Opus 5.5（[Codex 定价](https://developers.openai.com/codex/pricing)：每百万 token，GPT-6 Astra 输入 250 / 输出 1,250 credits，GPT-6.1 Sol 输入 50 / 输出 250 credits）。这是举例，默认配置可改。同一账号下所有模型共用额度，派单不会多出额度。Claude Pro/Max 还有 5 小时限额和周限额，claude.ai 与 Claude Code 共用。
 - 主会话少装过程：派出去的活在别处读文件、跑命令，读过的文件和命令输出不进主会话，主会话只收结果。
 - 多一道交叉评审：改代码和评审可以由不同模型做；`aiw panel` 收集多家独立意见。
 - 不用改习惯：照常用 Claude Code 或 Codex；遇到适合派出去的活，它会提示这件事该交给谁，派不派由主会话决定。
-- 某家不可用时自动换下一家，活不会卡住；默认只有一家，换谁、按什么顺序在[本地配置](docs/guide.zh-CN.md#自定义)里定。
+- 某家不可用时自动换下一家，活不会卡住；角色先选首个可用座位；执行中的顶替链默认为空，换谁、按什么顺序在[本地配置](docs/guide.zh-CN.md#自定义)里定。
 
 ## 想接更多模型？用 agent-use
 
@@ -42,13 +43,15 @@
 
 派出去后主会话可以接着做别的；又小又急的活，自己做更快。
 
-**会不会把我的仓库改乱？** 改代码的单在 Codex 沙箱里跑：只能写项目目录（在 git worktree 里还包括 `git add` 需要的 Git 目录），默认不联网。结束时列出改了哪些文件，改动留在工作区，由主会话看过再提交。只读单不能改文件。
+**会不会把我的仓库改乱？** write 角色解析到 Codex 时在 Codex 沙箱里跑：只能写项目目录（在 git worktree 里还包括 `git add` 需要的 Git 目录），默认不联网。结束时列出改了哪些文件，改动留在工作区，由主会话看过再提交。只有 Claude 时用 claude-write 的受限模式和沙箱，只改工作区文件，不能 git add/commit。只读单不能改文件。
 
 **会不会花钱？** Codex、Claude 按你自己的账号计费。接入的免费模型可以标成只用免费档，一旦检测到收费会自动停用；但这是调用之后才检测，不保证零费用。
 
 **代码会发到哪里？** 交给哪个模型，任务要求和附带材料就发给那个模型背后的服务。只负责写文字的模型默认看不到你的代码，要你明确附上才会发过去。密码、密钥和私人数据不要交给第三方模型。
 
-**只有 Claude Code、没有 Codex 能用吗？** 能安装，但默认改代码座位 `codex` 和只读评审座位 `codex-sol` 依赖 Codex CLI。默认的 Claude 主会话工作流因此会打折。
+**只装了一家能用吗？** 能。只有 Codex：改代码主会话自己做，评审和起草派另一个 Codex 会话。只有 Claude Code：改代码派 Opus 5.5 的 `claude-write` 座位（需要 Claude Code ≥ 2.1.259；受限模式加沙箱，只能改项目目录，不能 git add/commit），评审和起草派 Opus 5.5。单家时的评审是同一家另开上下文，不是跨家族复核；会诊需要至少两家，可接 agent-use 文本座位。角色解析到哪个座位见 `aiw doctor`。
+
+**Fable 会不会多花钱？** 座位默认固定 Opus，不会自动用 Fable。Pro 计划上 Fable 按量付费；Max 上 Fable 计入常规周限额、最多占周限额一半，且消耗快于其他模型。见 [Claude 官方说明](https://support.claude.com/en/articles/15424964-claude-fable-models-on-your-plan)。
 
 **支持 Linux 吗？** 尚未测试。已测试 macOS。
 
@@ -56,7 +59,7 @@
 
 ## 5 分钟上手
 
-需要 macOS（目前只在 macOS 测试过）、Python 3，以及已登录的 Claude Code 和/或 Codex CLI（终端程序）；可选 [agent-use](https://github.com/Jerryx333/agent-use)，用于接入更多模型。
+需要 macOS（目前只在 macOS 测试过）、Python 3，以及已登录的 Claude Code 或 Codex CLI（至少一个）；可选 [agent-use](https://github.com/Jerryx333/agent-use)，用于接入更多模型。
 
 1. 克隆到此固定位置，再安装：
 
@@ -75,11 +78,11 @@
 
    配置警告不改变 doctor 退出码。Codex 下次启动可能要求信任新钩子。
 
-3. 第一单：只读查看本仓库，需要 Codex：
+3. 第一单：只读查看本仓库，任一家已安装的 CLI 都能跑：
 
    ```bash
    printf '%s\n' '阅读本仓库，说明入口，并引用文件位置。不要修改文件。' > /tmp/aiw-review.txt
-   aiw codex-sol "$HOME/.claude/aiw" 900 /tmp/aiw-review.txt --ro
+   aiw review "$HOME/.claude/aiw" 900 /tmp/aiw-review.txt --ro
    ```
 
 4. 之后照常用 Claude Code 或 Codex。遇到适合派出去的活，它会提示该交给谁，主会话决定方案并验收。
@@ -91,9 +94,9 @@
 
 | 命令 | 用途与示例 |
 | --- | --- |
-| `aiw <座位> <目录> <秒数> <prompt文件> [--ro] [--net]` | 派一单：`aiw codex-sol . 900 task.txt --ro`。`--ro` 要求只读；`--net` 给 Codex 改代码的单开放网络，默认关闭。 |
-| `aiw panel` | 同一个问题问几家，收集独立意见：`aiw panel . 600 task.txt --prior prior.md`。`--prior` 传入你自己的判断；看完逐条决定接受、驳回或暂缓，不按多数票。至少两家给出意见才算会诊成功，只有一家时照常展示结果但返回 1。输出格式和选项见[参考手册](docs/reference.zh-CN.md#命令)。 |
-| `aiw map` | 对每个文件执行同一要求：`aiw map . 600 task.txt src/a.py src/b.py`；默认用 `codex-sol`，最多并发 3 单。 |
+| `aiw <座位> <目录> <秒数> <prompt文件> [--ro] [--net]` | 派一单：`aiw review . 900 task.txt --ro`。`--ro` 要求只读；`--net` 给 Codex 改代码的单开放网络，默认关闭。 |
+| `aiw panel` | 同一个问题问几家，收集独立意见：`aiw panel . 600 task.txt --prior prior.md`。`--prior` 传入你自己的判断；看完逐条决定接受、驳回或暂缓，不按多数票。至少两家给出意见才算会诊成功，默认名单不足两家时不派单、返回 1；显式指定单家仍展示结果并返回 1。输出格式和选项见[参考手册](docs/reference.zh-CN.md#命令)。 |
+| `aiw map` | 对每个文件执行同一要求：`aiw map . 600 task.txt src/a.py src/b.py`；默认用 `draft` 角色，最多并发 3 单。 |
 | `aiw goal init / verify` | 用 `aiw goal init docs/goals/demo.json` 建清单；修改示例任务、`verify` 命令和 `paths`，再跑 `aiw goal verify docs/goals/demo.json --full`。 |
 | `aiw doctor` | `aiw doctor` 检查座位和安装；`aiw doctor --fingerprint` 输出一行配置指纹，即版本和哈希摘要，便于比较。 |
 | `aiw note` | 保存观察：`aiw note . "检查失败" --expected "检查通过" --evidence "测试输出"`。 |

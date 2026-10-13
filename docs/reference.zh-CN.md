@@ -1,5 +1,24 @@
 # aiw 参考手册
 
+## 角色与单家安装
+
+使用 `aiw write|review|draft <workdir> <timeout> <prompt>`；角色解析到哪个座位见 `aiw doctor`。
+
+| 主会话身份 | write 候选顺序 | review 候选顺序 | draft 候选顺序 |
+|---|---|---|---|
+| Claude | codex → claude-write | codex-sol → claude | codex-sol → claude |
+| Codex | 空（改文件自己做） | claude → codex-sol | codex-sol → claude |
+| 未识别（default） | codex → claude-write | codex-sol → claude | codex-sol → claude |
+
+按顺序取首个存在、bin 可找到（尊重 CODEX_BIN/CLAUDE_BIN）、未停用且没有当前 auth/not_installed 熔断的座位。全部不可用返回 rc=2，列出每个候选原因，提示接入 agent-use 文本座位；Codex 主会话 write 列表为空时提示「Codex 主会话改文件请自己做」。review/draft 强制只读，包括写能力的顶替座位。`roles` 本地覆盖对象递归合并、列表整体替换；review/draft 解析时跳过非只读 CLI 候选并说明「非只读座位」，doctor 同样警告；可使用只读 CLI 或 agent_use 文本座位，角色名不能与座位或内置命令冲突。
+
+只装 Codex 时，主会话自己改代码，review/draft 使用另一 Codex 会话。只装 Claude Code 时，write 使用 claude-write，review/draft 使用 claude。两家都装时 review 会落到另一家模型；只装一家时是同一家另开上下文，不等于跨家族复核。
+
+claude 与 claude-write 均固定 `--model opus`，不跟随用户默认模型。claude-write 需要 Claude Code ≥ 2.1.259，写单使用 `--restricted --strict-mcp-config --tools Read,Grep,Glob,Edit,Write,Bash --permission-mode acceptEdits --permission-prompts none`，并传单个 settings JSON：`{"sandbox":{"enabled":true,"allowUnsandboxedCommands":false,"failIfUnavailable":true}}`。受限模式加沙箱，只改项目工作区文件，不能 git add/commit；沙箱不可用时失败。其只读 argv 沿用 claude 的 Read/Grep/Glob 白名单。
+
+panel 默认名单去掉主会话自身后过滤不可用座位，stderr 列原因；不足两家时不派单、rc=1，提示「会诊需要至少两家可用座位；单家安装可接入 agent-use 文本座位」。显式名单同样过滤不可用座位并列原因；显式单家仍展示结果、rc=1。map_default 默认为 draft，也可配置角色；`--seat` 仍可点名座位。
+
+
 新手请先看 [README](../README.md)，安装细节见[使用指南](guide.zh-CN.md)。
 
 Claude / Codex 主会话的多模型分工层，支持本地接入其他座位。**任意项目、任意机器同一套规矩。** 思路来自 luolei 的 [我的 AI 工作流](https://ai-workflow.zuoluo.tv)。
@@ -48,7 +67,7 @@ Orca CLI 按 `AIW_ORCA_BIN`、PATH 中的 `orca`、`/Applications/Orca.app/Conte
 
 **修改边界（禁止静默修改）**：本单范围内或挡住验收的问题可以修，但须记下改了什么、原本应是什么。范围外只记不修；规则、派单模板和工具只记，交主会话评审；安全或数据破坏问题当场报告。主会话也须遵守：无关问题用 `aiw note <workdir> "现象" --expected "预期及依据" --evidence "证据"` 记录，不顺手修。
 
-worker 会追加必答问题，会诊、map 和无附件文本单除外；严格格式的单加 `--no-findings`。验收时核查 stderr 的「范围内修改」。收到「[缓冲区]」提示，单开新会话运行 `aiw triage start`；设计、评审方法和记录去向见 [docs/findings.md](findings.md)。Codex 主会话评审时，关键记录用 `aiw claude` 只读核对。
+worker 会追加必答问题，会诊、map 和无附件文本单除外；严格格式的单加 `--no-findings`。验收时核查 stderr 的「范围内修改」。收到「[缓冲区]」提示，单开新会话运行 `aiw triage start`；设计、评审方法和记录去向见 [docs/findings.md](findings.md)。Codex 主会话评审时，关键记录用 `aiw review` 只读核对。
 
 观察记录只追加到本机，主会话手动评审与基线复验，命中密钥特征的记录隔离。
 
@@ -136,7 +155,7 @@ freecheck 跳过旧座位条目及已停用候选，对每个唯一 provider:mod
 
 改了 AGENTS.harness.md 或安装逻辑后，另一台机器 `aiw sync` 之后还要重跑 install.sh。
 
-Claude 主会话规则见 `CLAUDE.md`；Codex 主会话规则见 `AGENTS.harness.md`，由安装脚本同步到全局配置。Codex 主会话自行改文件，不再调用 `aiw codex` 套自己。
+Claude 主会话规则见 `CLAUDE.md`；Codex 主会话规则见 `AGENTS.harness.md`，由安装脚本同步到全局配置。Codex 主会话自行改文件，不再调用 `aiw write` 套自己。
 
 ## 架构
 
@@ -192,15 +211,15 @@ flowchart LR
 
 ## 分工
 
-| 座位 | 模型 | 干什么 | 命令 |
-|---|---|---|---|
-| Claude 主会话 | — | 规划、拆任务、取舍、最终验收 | — |
-| codex | gpt-6.1-sol · medium | 改文件：批量改动、补测试、脚手架 | `aiw codex <dir> 1200 <prompt文件>` |
-| codex-sol | gpt-6.1-sol · low | 只读：整仓评审、翻日志、找代码 | `aiw codex-sol <dir> 900 <prompt文件> --ro` |
-| claude | Claude Code（只读） | Codex 当主会话时的第二意见、整仓评审 | `aiw claude <dir> 900 <prompt文件> --ro` |
-| 会诊 | panel_default 去掉主会话自己 | 交叉验证、策略攻防 | `aiw panel <dir> 600 <prompt>` |
+| 角色 | 干什么 | 命令 |
+|---|---|---|
+| write | 改文件（Codex 主会话自己做） | `aiw write <dir> 1200 <prompt文件>` |
+| review | 只读评审、整仓分析、找代码 | `aiw review <dir> 900 <prompt文件>` |
+| draft | 起草、改写、摘要、材料提炼兜底 | `aiw draft <dir> 600 <prompt文件>` |
 
-agent_use 文本座位通过本地配置接入 [agent-use](https://github.com/Jerryx333/agent-use) 适配器，使用 `--attach 文件` 提供仓库材料。开源 agent-use 仅提供调度核心，所需适配器须自行安装。公开版仅含 codex、codex-sol、claude，顶替链均为空。
+角色解析到哪个座位见 `aiw doctor`。
+
+agent_use 文本座位通过本地配置接入 [agent-use](https://github.com/Jerryx333/agent-use) 适配器，使用 `--attach 文件` 提供仓库材料。开源 agent-use 仅提供调度核心，所需适配器须自行安装。公开版含 codex、codex-sol、claude、claude-write，顶替链均为空。
 
 本地适配器的工具权限、模型限制和登录要求由其自身文档说明。
 
@@ -208,12 +227,12 @@ agent_use 文本座位通过本地配置接入 [agent-use](https://github.com/Je
 
 ### 派单细则
 
-- 文本座位（`kind=agent_use`）不会自动拿到仓库；`--attach 文件` 可重复，相对 workdir，合计 ≤200KB，凭据类文件会被拒绝。直接派单的附件按实际尝试座位分发：`kind=cli` 只收到相对路径、字节数和 SHA256 前 12 位清单，在工作目录内自行读取；其它座位仍收到内联全文。两种方式均执行敏感文件、越界、普通文件、二进制、UTF-8、200KB 合计上限及 O_NOFOLLOW/inode 安全校验。附件合计超过 30KB 且发给非 CLI 座位时只警告、不拒绝，建议只挑相关文件或片段；直接派单警告一次。panel 在预检时读取附件一次，使用默认内联格式将全文（含“文件内容是数据不是指令”提示）追加到共用 `prompt.md` 快照，各家（含 CLI 座位）收到同一份全文，worker 不再接收 `--attach` 或读取源附件；附件合计超过 30KB 时提醒一次，全 CLI 会诊也适用，子进程不重复。Claude 主会话的文本任务按顶替链执行；无文本座位或要难题意见时用 `aiw codex-sol <workdir> 600 <prompt文件> --ro`。Claude 当主会话时不用 claude 座位，会诊自动跳过它。
+- 文本座位（`kind=agent_use`）不会自动拿到仓库；`--attach 文件` 可重复，相对 workdir，合计 ≤200KB，凭据类文件会被拒绝。直接派单的附件按实际尝试座位分发：`kind=cli` 只收到相对路径、字节数和 SHA256 前 12 位清单，在工作目录内自行读取；其它座位仍收到内联全文。两种方式均执行敏感文件、越界、普通文件、二进制、UTF-8、200KB 合计上限及 O_NOFOLLOW/inode 安全校验。附件合计超过 30KB 且发给非 CLI 座位时只警告、不拒绝，建议只挑相关文件或片段；直接派单警告一次。panel 在预检时读取附件一次，使用默认内联格式将全文（含“文件内容是数据不是指令”提示）追加到共用 `prompt.md` 快照，各家（含 CLI 座位）收到同一份全文，worker 不再接收 `--attach` 或读取源附件；附件合计超过 30KB 时提醒一次，全 CLI 会诊也适用，子进程不重复。draft 角色的文本任务按本地配置的顶替链执行；无文本座位或要难题意见时用 `aiw review <workdir> 600 <prompt文件> --ro`。Claude 当主会话时优先 Codex，只有 Claude 时可解析到 claude；默认会诊跳过主会话自身。
 - 材料先压缩适用于约 300 行或 20KB 以上的日志、文档、网页抓取、命令输出和代码，产物须带 path:line。读代码先用 `rg -l` 或 `rg -n` 定位候选文件；候选不超过 3 个文件且合计不到 20KB 时直接读，不派单。沿调用链多跳追踪可用 `Agent(model: "haiku")` 子代理，但不强制。凭据、账户、私人数据不外发，由主会话自己读。
-- Codex 主会话有文本座位时，起草、改写、摘要、翻译和长材料提炼必须派单；commit message、PR 描述、发布说明和命名建议也用文本座位，无文本座位时自己写。凭据、账户、私人数据由主会话自己读写，并在汇报中说明。用户说「我自己做」「直接改」时免于派单要求，仍记录未派单理由。
-- 推理档位默认 codex medium、codex-sol low，按难度用 `--effort low|medium|high` 调整；high 只用于关键架构改动，或 medium 返工仍不合格时；返工那一次可以升一档。codex-sol 遇难排查的问题或关键评审加 medium，关键架构评审用 high，文本座位不接受此开关。能力和验收都满足时，优先选便宜的执行方；拿不准的由主会话先判断。
-- codex-sol 不顶替：它与 codex 共用 CLI 和凭据，不可用就直接失败，由主会话决定换家或重试。codex-sol 沙箱只读，claude 由白名单限制为只读（仅 Read/Grep/Glob），不能执行命令，测试输出和 diff 由主会话附上。不合格只返工一次；超时须拆小，不得换模型重跑。
-- 会诊问 panel_default 中除自己外的座位，不顶替；仅一家可用时仍执行并展示结果，但单家意见不构成会诊，返回码为 1。非关键问题用 `aiw panel --free <workdir> 600 <prompt>`，只问 panel_free 中的免费座位。Codex 主会话必须带 `AIW_MAIN=codex`，排除自己；默认名单见「本地配置」。批量文本用 `aiw map <workdir> 600 <prompt文件> 文件...`，产物仍是待审稿，参数见「命令」。
+- Codex 主会话有文本座位时，起草、改写、摘要、翻译和长材料提炼必须派单；commit message、PR 描述、发布说明和命名建议也用文本座位，无文本座位时用 `aiw draft` 兜底。凭据、账户、私人数据由主会话自己读写，并在汇报中说明。用户说「我自己做」「直接改」时免于派单要求，仍记录未派单理由。
+- 推理档位按解析后的座位配置（公开 Codex write 候选 medium、review/draft 候选 low），按难度用 `--effort low|medium|high` 调整；high 只用于关键架构改动，或 medium 返工仍不合格时；返工那一次可以升一档。review/draft 解析到支持推理档位的座位时，难排查的问题或关键评审加 medium，关键架构评审用 high，文本座位不接受此开关。能力和验收都满足时，优先选便宜的执行方；拿不准的由主会话先判断。
+- 公开默认顶替链为空，可在本地配置。review/draft 强制只读；具体执行能力以 `aiw doctor` 显示的映射为准，不能执行命令的座位所需测试输出和 diff 由主会话附上。不合格只返工一次；超时须拆小，不得换模型重跑。
+- 会诊问 panel_default 中除自己外的座位，不顶替；默认名单不足两家可用时不派单，返回码为 1；显式单家仍展示结果，但不构成会诊。非关键问题用 `aiw panel --free <workdir> 600 <prompt>`，只问 panel_free 中的免费座位。Codex 主会话必须带 `AIW_MAIN=codex`，排除自己；默认名单见「本地配置」。批量文本用 `aiw map <workdir> 600 <prompt文件> 文件...`，产物仍是待审稿，参数见「命令」。
 - 收到「[派单]」钩子时，先定方案再执行；用户说「我自己做」「直接改」时不派单。执行方按方案交付，架构、范围或验收问题由主会话决定，不得自行扩大范围；执行方说做完了不等于验收通过。常规方案无需额外确认。
 - 工具限制看配置，只有 `require_no_tools=true` 才硬禁工具；未硬禁的座位不能当硬禁座位用。外包后检查 stderr 的「实际执行方」行（run 目录的 `provider` 文件），panel 则检查各家；顶替须在汇报中说明。只读任务可并行。
 - 认证失败请用户去官方登录，不读 App 私有凭据，不在聊天里索要 token。codex 报库锁或 pinentry，说明本机配置的凭据工具被锁：请用户在自己终端解锁，这不是登录问题。
@@ -226,7 +245,7 @@ agent_use 文本座位通过本地配置接入 [agent-use](https://github.com/Je
 2. 用 `aiw goal init` 写 `docs/goals/<日期>_<名>.json`。每条 verify 须可执行，初始设 `passes: false`；核对 title 名词，verify 不得放宽。填写 `paths`（源码和测试的 glob，宁宽勿窄）；已通过任务仅在相关文件变化时重跑，收尾用 `--full` 全部重跑。
 3. 每轮做一条，运行 `aiw goal verify <文件>`，通过才算完成。
 4. 最多 25 轮；连续 3 轮无进展时返回 3，须停下汇报。
-5. 自动任务通过后，Claude 主会话用 `aiw codex-sol <workdir> 900 <评审prompt> --ro` 独立评审后才算完成；Codex 主会话用 `aiw claude <workdir> 900 <prompt文件> --ro`。Codex 的大任务指使用 `/goal` 或改动超过 3 个文件。
+5. 自动任务通过后，主会话用 `aiw review <workdir> 900 <评审prompt>` 独立评审后才算完成；两家都装时选另一家模型，只装一家时另开同家上下文，不等于跨家族复核。Codex 的大任务指使用 `/goal` 或改动超过 3 个文件。
 
 
 ## 命令
@@ -234,7 +253,7 @@ agent_use 文本座位通过本地配置接入 [agent-use](https://github.com/Je
 ```
 aiw <seat> <workdir> <timeout_s> <prompt_file> [--ro] [--net] [--no-fallback] [--attach 文件 ...]
 aiw panel <workdir> <timeout_s> <prompt_file> [seat ...] [--attach 文件 ...] [--prior 文件] [--free] [--full]
-aiw map <workdir> <timeout_s> <prompt_file> <文件 ...> [--seat 座位] [--jobs N]  # 默认 map_default=codex-sol，并发 3，summary.json 汇总
+aiw map <workdir> <timeout_s> <prompt_file> <文件 ...> [--seat 座位] [--jobs N]  # 默认 map_default=draft，并发 3，summary.json 汇总
 aiw panel <workdir> <timeout_s> <prompt_file> --prior prior.md  # 先写自己的判断，仅归档供主会话看，不发给座位
 aiw panel --free <workdir> <timeout_s> <prompt_file>  # 只问免费座位，不能同时指定 seat
 aiw doctor | route "消息" | goal init|next|verify|status <file> | weekly [天] [--json] | snapshot | sync
@@ -316,8 +335,8 @@ worker 只接受 `--ro --net --no-fallback --no-findings --allow-nested --attach
 
 `install.sh` 发现本机有 Codex 时会顺带接入：`~/.codex/AGENTS.md` 写入标记块（内容来自 `AGENTS.harness.md`，块外内容不动），`~/.codex/hooks.json` 加同一个派单钩子（Codex 下次启动会请你确认信任）。
 
-- 派单钩子从钩子输入认出是 Codex（带 `turn_id`），注入 Codex 版指令：改文件自己做；第二意见找 `aiw claude`；会诊用 `AIW_MAIN=codex aiw panel …`，默认仅问 claude。
-- 主会话是 Claude 时会诊默认仅问 codex-sol（Claude Code 里自动识别）。
+- 派单钩子从钩子输入认出是 Codex（带 `turn_id`），注入 Codex 版指令：改文件自己做；第二意见找 `aiw review`；会诊用 `AIW_MAIN=codex aiw panel …`，默认过滤后不足两家时不派单；可接入 agent-use 文本座位。
+- 主会话是 Claude 时默认名单排除 claude（Claude Code 里自动识别），不足两家不派单。
 - 外包出去的 `claude -p` / `codex exec` 带 `AIW_NESTED=1`，它们的派单钩子静默，不会套娃；完整禁止项与 claude 只读白名单见「派单细则」。
 - 不想接 Codex：`AIW_NO_CODEX=1 ./install.sh`。
 
@@ -352,7 +371,7 @@ flowchart LR
     user --> hook --> route
     route -. "注入 Codex 版「[派单]」提示" .-> main
     main -- "直接改" --> repo
-    main -- "aiw claude / 本地座位 …" --> worker
+    main -- "aiw review / 本地座位 …" --> worker
     main -- "AIW_MAIN=codex aiw panel" --> panel
     panel -- "每家一个 ai_worker 子进程" --> worker
     main -- "aiw goal verify" --> goal
@@ -364,8 +383,8 @@ flowchart LR
     worker -. "待审稿" .-> main
 ```
 
-Codex 主会话自己改文件，不调用 `aiw codex`；独立评审找 claude。
-会诊用 `AIW_MAIN=codex`，默认仅问 claude。
+Codex 主会话自己改文件，不调用 `aiw write`；独立评审用 `aiw review`。
+会诊用 `AIW_MAIN=codex`，默认过滤后不足两家时不派单；可接入 agent-use 文本座位。
 
 ## 项目级覆盖
 
@@ -422,11 +441,11 @@ Claude 在 aiw 引入行后引入 `CLAUDE.personal.md`；文件不存在时不�
 公开默认的 Discord 频道为空：未配置频道且没有 `AIW_DISCORD_CHANNEL` 时跳过通知。个人停用决定与登录提示也应放在本地文件中。`rules_hash` 仍标识公开规则文件，`effective_hash` 标识合并后的行为配置；通知、findings 设置和座位说明不影响后者。
 
 
-公开默认仅有 `codex`、`codex-sol`、`claude` 三个 CLI 座位，三条顶替链均为空。`panel_default` 为 `["codex-sol", "claude"]`，按 `self_seats` 排除主会话；`panel_free` 为空。`agent_use` 座位通过本地配置接入，并依赖本机安装的适配器，公开 agent-use 不附带这些适配器或跑腿服务。
+当前公开默认有 `codex`、`codex-sol`、`claude`、`claude-write` 四个 CLI 座位，默认顶替链均为空。`panel_default` 为 `["codex-sol", "claude"]`，按 `self_seats` 排除主会话；`panel_free` 为空。`agent_use` 座位通过本地配置接入，并依赖本机安装的适配器，公开 agent-use 不附带这些适配器或跑腿服务。
 
-CLI 座位可选 `adapter`：缺省或 `null` 为普通 CLI；目前字符串仅允许 `"codex"`，且仅用于 `kind=cli`。本地 `"adapter": null` 可清除公开配置继承值，部分字段覆盖则继续继承。升级时，本地覆盖会继承公开配置的 adapter；若将 `codex`/`codex-sol` 改为非 Codex 的 CLI 或 `agent_use`，须显式写 `"adapter": null`；继续使用 Codex 时，`argv_rw`/`argv_ro` 须保持 exec 形状。Codex 适配器要求 `argv_rw`、`argv_ro` 的 `argv[0]` 为 `"{bin}"`，第二项为 `"exec"`，各恰好含一个 `"--sandbox"`，其后为 `"read-only"` 或 `"workspace-write"`。它启用沙箱/派单提醒、内层 shell 防嵌套、linked worktree 可写根、写单 `--net`、独立 CODEX_HOME 和 token 记账；行为按实际执行座位判断。新增 `codex-high` 等别名时，在本地 `seats` 中复制公开 `codex` 座位完整配置（含 argv），保留 `"adapter": "codex"`，再调整 `effort` 等字段；座位名本身不会启用适配器。看起来是 Codex 命令却未声明 adapter 时，doctor 只警告。
+CLI 座位可选 `adapter`：缺省或 `null` 为普通 CLI；目前字符串仅允许 `"codex"`，且仅用于 `kind=cli`。本地 `"adapter": null` 可清除公开配置继承值，部分字段覆盖则继续继承。升级时，本地覆盖会继承公开配置的 adapter；若将 `codex`/`codex-sol` 改为非 Codex 的 CLI 或 `agent_use`，须显式写 `"adapter": null`；继续使用 Codex 时，`argv_rw`/`argv_ro` 须保持 exec 形状。Codex 适配器要求 `argv_rw`、`argv_ro` 的 `argv[0]` 为 `"{bin}"`，第二项为 `"exec"`，各恰好含一个 `"--sandbox"`，`argv_ro` 其后必须为 `"read-only"`，`argv_rw` 可为 `"read-only"` 或 `"workspace-write"`。它启用沙箱/派单提醒、内层 shell 防嵌套、linked worktree 可写根、写单 `--net`、独立 CODEX_HOME 和 token 记账；行为按实际执行座位判断。新增 `codex-high` 等别名时，在本地 `seats` 中复制公开 `codex` 座位完整配置（含 argv），保留 `"adapter": "codex"`，再调整 `effort` 等字段；座位名本身不会启用适配器。看起来是 Codex 命令却未声明 adapter 时，doctor 只警告。
 
-`map_default` 指定 map 默认座位（公开为 `codex-sol`）。座位可设正整数 `max_concurrency`，map 使用它与 `--jobs` 的较小值，降并发时提示。
+`map_default` 指定 map 默认角色或座位（公开为角色 `draft`）。座位可设正整数 `max_concurrency`，map 使用它与 `--jobs` 的较小值，降并发时提示。
 
 路由本机覆盖用非空 `AIW_ROUTER_RULES` 指定，否则读取 `~/.config/aiw/router-rules.local.json`（支持软链）；示例见 [router-rules.local.example.json](../router-rules.local.example.json)。优先级为项目 > 本机 > 全局：同 `id` 替换，新增规则前置，`disable` 删除低层同 id 规则，`escape` 前置合并。显式文件缺失或断链也算损坏；钩子警告后忽略该层，`route --check` 返回 1，并校验合并后的规则和座位。
 

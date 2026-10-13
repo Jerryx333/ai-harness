@@ -240,7 +240,7 @@ def cmd_status(p: Path) -> int:
     if human_left:
         print("\n待你处理：" + "；".join(f"{t['id']} {t['title']}" for t in human_left))
     if done == total:
-        print("\n✅ 自动任务全部通过。接下来做一次独立只读评审（Claude 主会话：aiw codex-sol <workdir> 900 <prompt文件> --ro；Codex 主会话：aiw claude …），不要直接宣告完成。宣告完成前先跑一次 aiw goal verify <文件> --full。")
+        print("\n✅ 自动任务全部通过。接下来做一次独立只读评审（aiw review <workdir> 900 <prompt文件>），不要直接宣告完成。宣告完成前先跑一次 aiw goal verify <文件> --full。")
     return 0
 
 

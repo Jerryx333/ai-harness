@@ -14,7 +14,7 @@
 不顶替（--no-fallback）：会诊要的是不同模型家族的独立视角，一家挂了就记为缺席，
 不能让另一家替它再答一遍冒充独立意见。
 返回码：0 至少两家成功且有产出（rc == 0 且 chars > 0）；1 不足两家。
-单家仍执行并展示结果，但单家意见不构成会诊，返回码为 1。
+默认名单不足两家可用时不派单；显式单家仍展示结果，但不构成会诊，返回码为 1。
 summary.json 的 sufficient 表示成功家数是否达到 required（固定为 2）。
 """
 from __future__ import annotations
@@ -97,23 +97,36 @@ def main() -> int:
     if free and seats:
         print("--free 与显式座位二选一，不能同时使用", file=sys.stderr)
         return 64
-    if not seats:
-        me = main_agent()
-        skip = set(SEATS.get("self_seats", {}).get(me, [])) if me else set()
-        defaults = SEATS["panel_free"] if free else SEATS.get("panel_default", [])
-        seats = [s for s in defaults if s not in skip]
-        if free:
-            print(f"免费会诊：{', '.join(seats)}", file=sys.stderr)
-        if me:
-            print(f"主会话是 {me}，会诊不问它自己：{', '.join(seats)}", file=sys.stderr)
+    explicit = bool(seats)
     try:
         errands = errand_names()
     except StateError as e:
         print(e, file=sys.stderr)
         return 64
-    if errands.intersection(seats):
+    if errands.intersection(seats if explicit else (SEATS["panel_free"] if free else SEATS.get("panel_default", []))):
         print("跑腿供应商不能进入 panel，请改用 aiw errand", file=sys.stderr)
         return 64
+    if not seats:
+        me = main_agent()
+        skip = set(SEATS.get("self_seats", {}).get(me, [])) if me else set()
+        defaults = SEATS["panel_free"] if free else SEATS.get("panel_default", [])
+        from ai_worker import seat_unavailable
+        seats = []
+        for seat in defaults:
+            if seat in skip:
+                continue
+            reason = seat_unavailable(seat)
+            if reason:
+                print(f"跳过不可用座位 {seat}: {reason}", file=sys.stderr)
+            else:
+                seats.append(seat)
+        if free:
+            print(f"免费会诊：{', '.join(seats)}", file=sys.stderr)
+        if me:
+            print(f"主会话是 {me}，会诊不问它自己：{', '.join(seats)}", file=sys.stderr)
+    if not explicit and len(seats) < 2:
+        print("会诊需要至少两家可用座位；单家安装可接入 agent-use 文本座位", file=sys.stderr)
+        return 1
     if len(set(seats)) != len(seats):
         print("座位重复：会诊要的是不同来源的独立意见", file=sys.stderr)
         return 64
@@ -121,11 +134,13 @@ def main() -> int:
     if unknown:
         print(f"未知座位 {unknown}；可用：{list(SEATS['seats'])}", file=sys.stderr)
         return 64
+    from ai_worker import seat_unavailable, selection_snapshot
+    snapshot = selection_snapshot()
     active = []
     for seat in seats:
-        disabled = disabled_seat(seat)
-        if disabled:
-            print_disabled(seat, disabled)
+        reason = seat_unavailable(seat, snapshot=snapshot)
+        if reason:
+            print(f"跳过不可用座位 {seat}: {reason}", file=sys.stderr)
         else:
             active.append(seat)
     seats = active

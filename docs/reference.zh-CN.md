@@ -103,6 +103,8 @@ errand 名单从 跑腿根目录下的 `config/errands.json` 的 providers 读�
 
 ## 免费座位保护与每日检查
 
+`free_only` 是展示「仅免费模型」/不换付费模型的声明；`free_guard` 是执行时收费检测保护。两者及 `ro_only`、`require_no_tools`、`expects_credits` 出现时必须是布尔值。
+
 本地 agent_use 适配器可返回 `outside_free_window`（跳过免费探测）或 `promotion_expired`（提示复核）；这些原因对任意座位生效。
 
 本地 agent_use 座位可配置 `free_guard: true`。每次 agent-use 调用后检查：

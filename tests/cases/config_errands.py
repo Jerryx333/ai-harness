@@ -318,12 +318,63 @@ def local_config_contract():
             with contextlib.redirect_stdout(stream):
                 check(d.local_config(repo) == 0, '相同公开值检查失败')
             check('防泄漏' not in stream.getvalue(), stream.getvalue())
-            explicit.write_text('{"seats":{"local-agent":{"kind":"agent_use","provider":"test"},"local-cli":{"kind":"cli","bin":"test","argv_rw":[],"argv_ro":[]}}}')
+            explicit.write_text('{"seats":{"local-agent":{"kind":"agent_use","provider":"test"},"local-cli":{"kind":"cli","bin":"test","argv_rw":["{bin}"],"argv_ro":["{bin}"]}}}')
             link = root / 'link.json'; link.symlink_to(explicit)
             with patch.dict(os.environ, AIW_CONFIG=str(link)), contextlib.redirect_stdout(io.StringIO()) as stream:
                 check(d.local_config(repo) == 0, '合法新座位失败')
                 check(str(explicit.resolve()) in stream.getvalue(), '缺少软链目标')
 
+
+
+def seat_execution_contract():
+    from unittest.mock import patch
+    import seats_config as c
+    public = c.load_public()
+    example = c.merge(public, c.read_config(REPO / 'seats.local.example.json'))
+    check(c.validate(example) == [], '公开配置合并示例不合法')
+    invalids = []
+    for key in ('argv_rw', 'argv_ro'):
+        invalids.append(({key: []}, f'seats.codex.{key}'))
+        for template in ('{unknown}', '{model}', '{effort}', '{', '}', '{0}', '{}',
+                         '{bin.x}', '{bin[0]}', '{bin!r}', '{bin:}', '{bin:>10}', '{bin:{prompt}}'):
+            invalids.append(({key: [template]}, f'seats.codex.{key}[0]'))
+    for key in ('ro_only', 'free_only', 'free_guard', 'require_no_tools', 'expects_credits'):
+        for value in ('false', 0, 1, None, [], {}):
+            invalids.append(({key: value}, f'seats.codex.{key}'))
+    for value in (None, 1, False, [], {}):
+        invalids.append(({'model': value}, 'seats.codex.model'))
+    for value in (None, '', {}, [1], []):
+        invalids.append(({'model_args': value}, 'seats.codex.model_args'))
+    for template in ('{unknown}', '{bin}', '{prompt}', '{workdir}', '{', '}', '{0}', '{}',
+                     '{model.x}', '{model[0]}', '{model!r}', '{model:}', '{model:>10}', '{model:{effort}}'):
+        invalids.append(({'model_args': [template]}, 'seats.codex.model_args[0]'))
+    with tempfile.TemporaryDirectory() as td:
+        local = Path(td) / 'local.json'
+        for fields, expected in invalids:
+            override = {'seats': {'codex': fields}}
+            errors = c.validate(c.merge(public, override))
+            check(any(expected + ' 必须是' in error for error in errors), repr((fields, errors)))
+            local.write_text(json.dumps(override))
+            with patch.dict(os.environ, AIW_CONFIG=str(local)):
+                try:
+                    c.load_seats()
+                    check(False, '非法座位配置被接受: ' + repr(fields))
+                except c.ConfigError as error:
+                    check(all(e in str(error) for e in errors), str(error))
+        # Remove rather than override the inherited public model_args.
+        missing = c.merge(public, {})
+        del missing['seats']['codex']['model_args']
+        check(any('seats.codex.model_args 必须是' in e for e in c.validate(missing)),
+              'cli model 缺 model_args 未拒绝')
+        local.write_text(json.dumps(c.read_config(REPO / 'seats.local.example.json')))
+        with patch.dict(os.environ, AIW_CONFIG=str(local)):
+            check(c.load_seats() == example, '合法示例加载失败')
+    valid = {'model': '', 'model_args': [], 'argv_rw': ['{bin}', '{prompt}', '{workdir}', '{{literal}}'],
+             'argv_ro': ['{bin}'], 'ro_only': False, 'free_only': True, 'free_guard': False,
+             'require_no_tools': True, 'expects_credits': False}
+    check(c.validate(c.merge(public, {'seats': {'codex': valid,
+          'local-agent': {'kind': 'agent_use', 'provider': 'test', 'model': 'test-model'}}})) == [],
+          '合法 cli 或 agent_use model 无 model_args 被拒绝')
 
 
 def config_structure_validation():
@@ -714,6 +765,7 @@ CASES = {case.__name__: case for case in (
     errand_worker_rejects,
     errand_freecheck_skips,
     local_config_contract,
+    seat_execution_contract,
     config_structure_validation,
     local_config_empty_defaults,
     public_config_contract,

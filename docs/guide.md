@@ -74,7 +74,7 @@ Local files live under `~/.config/aiw/`:
 
 Personal rules override conflicts. Rerun `install.sh` after adding personal files or changing Codex personal rules. Project routing goes in `.claude/router-rules.json`: project > local > public. Seat configuration recursively merges objects; lists replace whole lists.
 
-Codex/Claude seats use your own accounts and their billing. `free_only` labels a seat as free-only; automatic disabling requires `free_guard`, which disables a provider/model when reported charging is detected. This is detection after a call, not a guarantee of zero cost.
+Codex/Claude seats use your own accounts and their billing. `free_only` labels a seat as free-only and declares that it should not switch to paid models; automatic disabling requires `free_guard`, which disables a provider/model when reported charging is detected. These fields, along with `ro_only`, `require_no_tools` and `expects_credits`, must be booleans when present. This is detection after a call, not a guarantee of zero cost.
 
 ## Multiple machines
 

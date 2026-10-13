@@ -3,6 +3,7 @@ import copy
 import hashlib
 import json
 import os
+import string
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -62,6 +63,27 @@ def validate(merged) -> list[str]:
         if type(value) is not int or value <= 0:
             error(path, '正整数')
 
+    def templates(value, path, allowed, *, nonempty=False):
+        if not strings(value, path):
+            return
+        if nonempty and not value:
+            error(path, '非空字符串列表')
+        for index, template in enumerate(value):
+            try:
+                plain = []
+                for literal, field, spec, conversion in string.Formatter().parse(template):
+                    plain.append(literal.replace('{', '{{').replace('}', '}}'))
+                    if field is not None and (field not in allowed or spec or conversion is not None):
+                        raise ValueError('非法占位符')
+                    if field is not None:
+                        plain.append('{' + field + '}')
+                # parse() normalizes {model:}; accept only the plain {model} form.
+                if ''.join(plain) != template:
+                    raise ValueError('非法占位符')
+            except ValueError:
+                error(f'{path}[{index}]', '合法命令模板（占位符仅允许 ' +
+                      '、'.join('{' + key + '}' for key in allowed) + '，不允许格式或转换修饰）')
+
     for key in ('seats', 'fallback', 'self_seats', 'substitute_limit'):
         if not isinstance(merged.get(key), dict):
             error(key, '对象')
@@ -84,9 +106,20 @@ def validate(merged) -> list[str]:
                 error(f'{path}.{key}', '非空字符串')
         if kind == 'cli':
             for key in ('argv_rw', 'argv_ro'):
-                strings(seat.get(key), f'{path}.{key}')
-        if 'expects_credits' in seat and type(seat['expects_credits']) is not bool:
-            error(f'{path}.expects_credits', '布尔值')
+                # build_argv supplies only these three format keywords.
+                templates(seat.get(key), f'{path}.{key}', ('bin', 'prompt', 'workdir'), nonempty=True)
+        if 'model' in seat and not isinstance(seat['model'], str):
+            error(f'{path}.model', '字符串')
+        if kind == 'cli':
+            if 'model_args' in seat or seat.get('model'):
+                templates(seat.get('model_args'), f'{path}.model_args', ('model', 'effort'),
+                          nonempty=bool(seat.get('model')))
+        elif 'model_args' in seat:
+            strings(seat['model_args'], f'{path}.model_args')
+        # free_only 是展示/不换付费模型的声明；free_guard 才是执行时的收费检测保护。
+        for key in ('ro_only', 'free_only', 'free_guard', 'require_no_tools', 'expects_credits'):
+            if key in seat and type(seat[key]) is not bool:
+                error(f'{path}.{key}', '布尔值')
         if 'max_concurrency' in seat:
             concurrency(seat['max_concurrency'], f'{path}.max_concurrency')
     refs = []

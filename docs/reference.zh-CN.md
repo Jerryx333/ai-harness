@@ -457,6 +457,6 @@ agent-use 的 `status.json` 必须声明整数 `protocol_version: 1`。缺失或
 
 命令逐行读取，不写文件、不缓存，不输出消息正文；统计项只展示数字、截短 session id 和项目名。项目名仍是本地元数据，分享报告前可自行检查。JSON 包含 totals、weighted、context、concentration、sessions、subagents、dispatch 等对应数字，占比为 0–1。`coverage.sources` 只有两项：转录（`name` 为 `transcripts`）与账本（`name` 为 `seat-ledger.jsonl`），每项包含 `name/exists/rows/bad`，不列出文件名或本机路径。转录项另有 `files`（扫描文件数）和 `files_with_rows`（窗口内至少一条有效记录的文件数）；`rows` 统计通过包含 `"assistant"` 或 `"tool_result"` 的文本预筛后、窗口内的有效行，在助手去重和全零 usage 过滤前计数；`bad` 统计通过预筛后的解析失败行，不再固定为 0。解析失败可能发生在时间戳可读取之前，因此坏行不保证属于窗口内。账本按窗口内 rc 非 null 的有效行计数。根目录不存在时 coverage 为「无数据」，即使账本仍能读到数据。
 
-三个报告的 coverage 均含 `sources`、`level` 和 `reasons`：所有来源不存在或窗口内有效行合计为 0 时为「无数据」；否则有预期来源缺失、解析失败或被跳过时为「部分」，其余为「完整」。reasons 记录缺失、坏行、跳过或窗口无有效行的原因。文本打印「数据覆盖：」及固定说明「覆盖只说明读到多少，不代表结论可信度」，无数据时也会打印；没有读到与没有发生须分别理解。
+三个报告的 coverage 均含 `sources`、`level` 和 `reasons`：所有来源不存在或窗口内有效行合计为 0 时为「无数据」；否则有预期来源缺失、解析失败或被跳过时为「部分」，其余为「完整」。例外：tokens 的转录根目录不存在时，无论账本是否有有效行，均为「无数据」。reasons 记录缺失、坏行、跳过或窗口无有效行的原因。文本打印「数据覆盖：」及固定说明「覆盖只说明读到多少，不代表结论可信度」，无数据时也会打印；没有读到与没有发生须分别理解。
 
 `aiw weekly` 的 token 小节展示 codex/codex-sol 派单的 rollout 合计及覆盖率，同时区分 stderr 兜底、tokens=null 和旧记录；Claude 主会话用量通过 `aiw tokens` 测量。「按仓库」小节按 repo、workdir、未记录分组展示成功率、超时和中位数；`--json` 输出派单统计 JSON，token 和改进缓冲区小节仅在文本模式输出。JSON 顶层新增 `coverage`，统计 seat-ledger.jsonl 和 router-log.jsonl 的窗口内有效行与坏行，原有字段保留；文本 coverage 还覆盖读取的 findings 本机记录、quarantine、hub 和当前状态快照（快照没有窗口内行数，rows 为 0），hub 未读时 reasons 会说明跳过。

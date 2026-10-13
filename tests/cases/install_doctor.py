@@ -436,9 +436,9 @@ def install_claude_hook_mode():
 
         installed = False
 
-        def run(*args):
+        def run(*args, shell=False):
             nonlocal installed
-            if installed:
+            if installed and not shell:
                 mode = 'plugin' if args == ('--claude-hook=plugin',) else 'settings'
                 r = install_phase(home / '.claude/aiw', 3, [settings, 'test', mode], env)
             else:
@@ -463,14 +463,14 @@ def install_claude_hook_mode():
         check("aiw/route.py" in codex_hooks.decode() and "aiw:begin" in codex_agents.decode(),
               "plugin 影响了 Codex 安装")
         for args in ((), ("--claude-hook=settings",)):
-            run(*args)
+            run(*args, shell=args == ())
             hooks = json.loads(settings.read_text())["hooks"]["UserPromptSubmit"]
             check(sum("aiw/route.py" in h["command"] for g in hooks for h in g["hooks"]) == 1,
                   "默认恢复或显式 settings 失败")
         check((home / ".codex/hooks.json").read_bytes() == codex_hooks
               and (home / ".codex/AGENTS.md").read_bytes() == codex_agents, "模式切换影响 Codex")
         settings.write_text(json.dumps({"hooks": {"UserPromptSubmit": [{"hooks": [route]}]}}))
-        run("--claude-hook=plugin")
+        run("--claude-hook=plugin", shell=True)
         check(json.loads(settings.read_text()) == {"hooks": {}}, "空组或空事件键未删除")
         for raw in (b'{ "model": "opus" }\n', b'{broken'):
             settings.write_bytes(raw)

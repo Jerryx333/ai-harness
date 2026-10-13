@@ -42,7 +42,7 @@ Just want common CLIs such as Codex, Claude Code and OpenCode? [agent-use-adapte
 
 The main conversation can keep working meanwhile. For small, urgent work, doing it yourself is faster.
 
-**Will it mess up my repository?** Code-change work runs in the Codex sandbox: it can write only to the project directory and has no network by default. When it finishes, it lists the changed files. Changes stay in your working tree for the main conversation to review before committing. Read-only work cannot change files.
+**Will it mess up my repository?** Code-change work runs in the Codex sandbox: it can write only to the project directory (in a git worktree, also the Git directories `git add` needs) and has no network by default. When it finishes, it lists the changed files. Changes stay in your working tree for the main conversation to review before committing. Read-only work cannot change files.
 
 **Does it cost money?** Codex and Claude use your own accounts and their billing. Connected free models can be marked for free-tier use only and automatically disabled when charging is detected. Detection happens after a call, so this does not guarantee zero cost.
 

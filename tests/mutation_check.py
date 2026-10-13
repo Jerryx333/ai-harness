@@ -184,6 +184,10 @@ MUTATIONS = [{'id': 'transient-fallback',
 
 
 MUTATIONS.extend([
+    {'id': 'panel-opinion-threshold', 'expect': '会诊门槛应固定两家',
+     'invariant': '会诊至少两家成功且有产出，单家不能降低门槛', 'file': 'panel.py',
+     'old': 'required_opinions = 2', 'new': 'required_opinions = min(2, len(seats))',
+     'tests': ['panel_opinion_threshold'], 'location': 'main'},
     {'id': 'errand-registry', 'expect': '损坏 errand 名单未拒绝',
      'invariant': '已存在的 errand 名单必须严格校验', 'file': 'ai_worker.py',
      'old': '    if not isinstance(data, dict) or type(data.get("version")) is not int or data["version"] != 1:',

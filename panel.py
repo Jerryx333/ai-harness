@@ -13,7 +13,9 @@
 每家的输出在 state/panels/<时间>/<座位>.md，实际执行方在 <座位>.provider。
 不顶替（--no-fallback）：会诊要的是不同模型家族的独立视角，一家挂了就记为缺席，
 不能让另一家替它再答一遍冒充独立意见。
-返回码：0 至少两家有产出；1 不足两家（独立意见不够，不能当会诊结论用）。
+返回码：0 至少两家成功且有产出（rc == 0 且 chars > 0）；1 不足两家。
+单家仍执行并展示结果，但单家意见不构成会诊，返回码为 1。
+summary.json 的 sufficient 表示成功家数是否达到 required（固定为 2）。
 """
 from __future__ import annotations
 
@@ -130,9 +132,9 @@ def main() -> int:
     if not seats:
         print("会诊没有可用座位", file=sys.stderr)
         return 1
-    required_opinions = min(2, len(seats))
+    required_opinions = 2
     if len(seats) == 1:
-        print("可用座位只有 1 家，本次会诊只有单家意见；在本地配置 panel_default 中加座位可获得多家意见", file=sys.stderr)
+        print("可用座位只有 1 家，单家意见不构成会诊，返回码为 1；在本地配置 panel_default 中加座位可获得多家意见", file=sys.stderr)
     try:
         attachment_files = read_attachments(str(Path(workdir).resolve()), attach)  # 先校验一遍，坏附件不发给任何一家
     except AttachError as e:
@@ -154,7 +156,9 @@ def main() -> int:
     with cf.ThreadPoolExecutor(max_workers=len(seats)) as ex:
         results = list(ex.map(lambda s: ask(s, workdir, timeout, prompt_file, out, attach, "--full" in flags), seats))
     ok = [r for r in results if r["rc"] == 0 and r["chars"] > 0]
-    summary = {"dir": str(out), "seats": results, "answered": [r["seat"] for r in ok]}
+    sufficient = len(ok) >= required_opinions
+    summary = {"dir": str(out), "seats": results, "answered": [r["seat"] for r in ok],
+               "sufficient": sufficient, "required": required_opinions}
     (out / "summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"会诊目录：{out}")
     for r in results:
@@ -170,7 +174,7 @@ def main() -> int:
                 print(f"…（超长已截断，全文：{path}）")
     print("各家意见是待审稿：主会话逐条对照证据，分歧保留，不以多数票收敛。")
     print(ADJUDICATION)
-    if len(ok) < required_opinions:
+    if not sufficient:
         print(f"⚠ 有效意见不足 {required_opinions} 家，不能当作会诊结论。", file=sys.stderr)
         return 1
     return 0

@@ -16,6 +16,7 @@
 | goal verify 命令防篡改 | `goal.py:_verify` | `goal_verify_integrity` | `verify-sha` |
 | goal 保险丝在执行前判定 | `goal.py:_verify` | `goal_fuse_preflight` | `goal-fuse` |
 | 会诊不顶替 | `panel.py:ask` | `panel` | `panel-fallback` |
+| 会诊至少两家成功且有产出，单家不能降低门槛 | `panel.py:main` | `panel_opinion_threshold` | `panel-opinion-threshold` |
 | 写任务零变化必须提示 | `ai_worker.py:WorkChanges.__exit__` | `write_changes_report` | `write-zero` |
 | CLI output.md 必须落盘 | `ai_worker.py:run_seat` | `run_dir_persist` | `output-file` |
 | Codex 信任检查不能恒为通过 | `doctor_config.py:trust` | `doctor_config` | `codex-trust` |

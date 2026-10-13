@@ -83,7 +83,7 @@
 | 命令 | 用途与示例 |
 | --- | --- |
 | `aiw <座位> <目录> <秒数> <prompt文件> [--ro] [--net]` | 派一单；`--net` 仅为 Codex 写单开放网络和本地端口，默认关闭；与 `--ro` 或非 Codex 座位同用返回 64。`--ro` 要求只读：`aiw codex-sol . 900 task.txt --ro`。 |
-| `aiw panel` | 收集独立意见：`aiw panel . 600 task.txt --prior prior.md`；默认最多 4 条、1500 字，每条写结论、证据（没有则「无证据」）、影响或建议；stdout 内联回答（每家最多显示 3000 字并给出全文路径），全文归档。`--full` 不追加格式要求，stdout 不内联各家回答（全文在会诊目录的 `<座位>.md`）；Claude Code 里自动识别主会话；Codex 主会话需加 `AIW_MAIN=codex` 前缀；排除主会话座位，默认可能只剩一家评审。先写自己的判断用 `--prior` 传入；看完逐条标接受/驳回（理由）/暂缓（写明等什么），不以多数票收敛。 |
+| `aiw panel` | 收集独立意见：`aiw panel . 600 task.txt --prior prior.md`；默认最多 4 条、1500 字，每条写结论、证据（没有则「无证据」）、影响或建议；stdout 内联回答（每家最多显示 3000 字并给出全文路径），全文归档。`--full` 不追加格式要求，stdout 不内联各家回答（全文在会诊目录的 `<座位>.md`）；Claude Code 里自动识别主会话；Codex 主会话需加 `AIW_MAIN=codex` 前缀；排除主会话座位，默认可能只剩一家评审。返回码 0 要求至少两家成功且有产出（`rc == 0` 且 `chars > 0`），不足两家返回 1；单家仍执行并展示结果，但不构成会诊。先写自己的判断用 `--prior` 传入；看完逐条标接受/驳回（理由）/暂缓（写明等什么），不以多数票收敛。 |
 | `aiw map` | 对每个文件执行同一要求：`aiw map . 600 task.txt src/a.py src/b.py`；默认用 `codex-sol`，最多并发 3 单。 |
 | `aiw goal init / verify` | 用 `aiw goal init docs/goals/demo.json` 建清单；修改示例任务、`verify` 命令和 `paths`，再跑 `aiw goal verify docs/goals/demo.json --full`。 |
 | `aiw doctor` | `aiw doctor` 检查座位和安装；`aiw doctor --fingerprint` 输出一行配置指纹，即版本和哈希摘要，便于比较。 |

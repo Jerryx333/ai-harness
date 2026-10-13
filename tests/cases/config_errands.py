@@ -424,7 +424,9 @@ def public_config_contract():
                    env=dict(env, AIW_MAIN=main, AIW_STATE=str(state)))
             summary = json.loads(next((state / 'panels').glob('*/summary.json')).read_text())
             check([row['seat'] for row in summary['seats']] == expected, str(summary))
-            check(r.returncode == 0, repr(r))
+            sufficient = len(expected) >= 2
+            check(r.returncode == (0 if sufficient else 1), repr(r))
+            check(summary['required'] == 2 and summary['sufficient'] is sufficient, str(summary))
             check(('可用座位只有 1 家' in r.stderr) == (len(expected) == 1), r.stderr)
         decisions = t / 'decisions.json'; decisions.write_text('{}')
         for args in (['start'], ['apply', str(decisions)], ['abort'], ['issues', str(decisions)]):

@@ -373,6 +373,43 @@ def panel():
 
 
 
+def panel_opinion_threshold():
+    # 门槛固定两家：显式单家、停用过滤、失败都不能降低门槛。
+    scenarios = ((['qoder'], False, False, 1),
+                 (['qoder', 'workbuddy'], True, False, 1),
+                 (['qoder', 'workbuddy'], False, True, 1),
+                 (['qoder', 'workbuddy'], False, False, 0))
+    for seats, disabled, failed, rc in scenarios:
+        with tempfile.TemporaryDirectory() as td:
+            t = Path(td)
+            env = dict(os.environ, AIW_STATE=str(t / 'state'),
+                       AGENT_USE_HOME=str(fake_agent_use(t)))
+            if disabled:
+                (t / 'state').mkdir()
+                (t / 'state/disabled.json').write_text(json.dumps({'workbuddy': {
+                    'since': '2026-10-13', 'evidence': 'fixture', 'notified': True}}))
+            if failed:
+                env['FAKE_AU_WORKBUDDY'] = 'auth'
+            r = sh([sys.executable, str(REPO / 'panel.py'), str(t), '10',
+                    '独立评审任务', *seats], env=env)
+            check(r.returncode == rc, f'会诊门槛应固定两家: rc={r.returncode}, expected={rc}: {r.stdout}{r.stderr}')
+            out, = (t / 'state/panels').iterdir()
+            summary = json.loads((out / 'summary.json').read_text())
+            expected = ['qoder'] if rc == 1 else seats
+            check(summary['answered'] == expected and summary['required'] == 2
+                  and summary['sufficient'] is (rc == 0), str(summary))
+            check('### qoder' in r.stdout and (out / 'qoder.md').read_text() == 'qoder ok',
+                  '单家成功意见仍应展示并归档')
+            if len(seats) == 1 or disabled:
+                check('单家意见不构成会诊，返回码为 1' in r.stderr, r.stderr)
+            if disabled:
+                check([x['seat'] for x in summary['seats']] == ['qoder']
+                      and '已停用' in r.stderr, str(summary) + r.stderr)
+            if failed:
+                check(summary['seats'][1]['rc'] != 0 and '✗ workbuddy' in r.stdout,
+                      str(summary) + r.stdout)
+
+
 def panel_free():
     with tempfile.TemporaryDirectory() as td:
         t = Path(td)
@@ -676,6 +713,7 @@ CASES = {case.__name__: case for case in (
     panel_compact_context,
     panel_prior,
     panel,
+    panel_opinion_threshold,
     panel_free,
     route_seat_check,
     test_panel_sets_panel_dir,

@@ -23,7 +23,7 @@ aiw shares work from Claude Code or Codex: code goes to Codex, reviews to anothe
 
 - `aiw`: assign work.
 - Dispatch hooks: suggest seats inside Claude Code/Codex; do not assign automatically.
-- `aiw panel`: independent opinions (a “panel”).
+- `aiw panel`: independent opinions (a “panel”). Exit code 0 requires at least two successful seats with output (`rc == 0` and `chars > 0`); fewer return 1. A single seat still runs and its result is displayed, but its opinion does not constitute a panel.
 - `aiw goal`: a task list with executable checks.
 - An improvement buffer: observations for later root-cause review.
 - `aiw doctor`: installation/configuration checks.

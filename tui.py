@@ -42,10 +42,11 @@ def launch(args):
         return 127
     tui_id = uuid.uuid4().hex
     os.environ['AIW_TUI_ID'] = tui_id
+    os.environ['AIW_STATE'] = str(Path(getenv('AIW_STATE', HERE / 'state')).absolute())
     # tmux's server may predate this shell's PATH, Python and state settings.
     environment = ['/usr/bin/env', 'PATH=' + os.environ.get('PATH', ''),
                    'AIW_PYTHON=' + sys.executable,
-                   'AIW_STATE=' + str(Path(getenv('AIW_STATE', HERE / 'state')).absolute())]
+                   'AIW_STATE=' + os.environ['AIW_STATE']]
     callback = shlex.join(environment + [str(HERE / 'bin' / 'aiw'), 'tui-status', tui_id])
     options = [('status', 'on'), ('status-interval', '15'), ('status-left', ''),
                ('status-right-length', '200'), ('status-right', '#(' + callback + ')')]

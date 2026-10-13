@@ -341,6 +341,29 @@ def test_state_contract():
                 p.terminate()
                 p.communicate(timeout=10)
 
+        for claude_session, expected_session in ((None, 'codex-thread'),
+                                                  ('claude-session', 'claude-session')):
+            track_env = dict(env, CODEX_THREAD_ID='codex-thread')
+            track_env.pop('CLAUDE_CODE_SESSION_ID', None)
+            if claude_session is not None:
+                track_env['CLAUDE_CODE_SESSION_ID'] = claude_session
+            p = subprocess.Popen(['bash', str(REPO / 'bin/aiw'), 'track', 'session', '--',
+                                  sys.executable, '-c', 'import time; time.sleep(30)'],
+                                 env=track_env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            path = Path(track_env['AIW_STATE']) / 'tracks' / f'{p.pid}.json'
+            try:
+                deadline = time.monotonic() + 8
+                while not path.exists() and p.poll() is None and time.monotonic() < deadline:
+                    time.sleep(0.02)
+                check(path.exists(), 'track 未及时创建状态')
+                row = json.loads(path.read_text())
+                check(row['session'] == expected_session,
+                      f'track 会话来源错误: CLAUDE_CODE_SESSION_ID={claude_session!r}, {row}')
+            finally:
+                if p.poll() is None:
+                    p.terminate()
+                p.communicate(timeout=10)
+
         extract_root = t / 'extract'; extract_root.mkdir()
         f = findings_fixture(extract_root)
         f.extract(harness=f.HERE)

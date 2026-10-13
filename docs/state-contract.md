@@ -131,6 +131,10 @@ worker 在首次写 JSON 前创建或打开同名 `<pid>.lock` 并持有 `fcntl.
 
 直接派单成功时，默认在该次尝试的 run 目录写 `provider`，stderr 打印「实际执行方」及文件路径；`AIW_PROVIDER_FILE` 可显式指定位置，panel/map 继续使用各单的 `.provider`。已有工作区 `.provider` 不删除。Git 写单在执行前把 `git status --porcelain` 保存为 run 目录的 `baseline-status.txt`，结束报告分列开工前已有改动与本单期间新出现变化的文件，均列数量和文件。写锁使用 Git 仓库根目录的 realpath；非 Git 使用 workdir 的 realpath，锁文件不回收。`ai_worker.py` 和 `findings.py` 的 Git 调用统一经 `gitenv.repository_git_env()` 清除调用方的仓库定位变量，保留认证和普通 Git 配置环境变量。
 
+## panels/<YYYYmmdd-HHMMSS>-<pid>/
+
+`aiw panel` 按 `format_panel_id` 生成会诊目录名，保存各家共用的 `prompt.md` 快照、有 `--prior` 时归档且不发给座位的 `prior.md`、供主会话逐条填写裁决的 `adjudication.md`、各座位的 `<座位>.md`（worker 的 stdout）、有错误输出时的 `<座位>.stderr.txt` 和成功 worker 写出的 `<座位>.provider`（实际执行方）。会诊外层超时时不写该座位的 `.md` 和 `.stderr.txt`。`summary.json` 含 `dir`（会诊目录路径）、按座位顺序排列的 `seats`（每家结果含 `seat`、`rc`、`chars`、`err`；chars 为 stdout 字符数，err 为 stderr 最后一个非空行的列表，无错误输出时为空列表，外层超时时为超时提示列表且 rc=124、chars=0）、`answered`（成功家名单，成功为 rc==0 且 chars>0）、`required`（固定为 2）、`sufficient`（answered 数量 ≥ required；false 时 panel 返回 1）。子进程通过 `AIW_PANEL_DIR` 标记账本 via=panel。`aiw gc` 与 runs、maps 一样按子目录修改时间清理过期 panels，默认保留 30 天，可指定非负整数天数；跳过软链，`--dry-run` 只预览。
+
 ## maps/<YYYYmmdd-HHMMSS>-<pid>/
 
 `aiw map` 保存共用的 `prompt.md` 快照、各单的 `<两位序号>-<文件名>.md`、有错误输出时的 `.stderr.txt` 和成功 worker 写出的 `.provider`。`summary.json` 含 `dir`、`seat`、`jobs`、按输入顺序排列的 `items`（`file`、`rc`、`provider`、`chars`）；没有成功执行方时 provider 为 null。子进程通过 `AIW_MAP_DIR` 标记账本 via=map。`aiw gc` 与 runs、panels 一样清理过期 maps 子目录。

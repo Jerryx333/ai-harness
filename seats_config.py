@@ -110,7 +110,8 @@ def validate(merged) -> list[str]:
             elif adapter not in ('codex',):
                 errors.append(f'{path}.adapter 必须是 codex 或 null')
             if kind != 'cli':
-                errors.append(f'{path}.adapter 非 null 时 kind 必须是 cli')
+                errors.append(f'{path}.adapter 非 null 时 kind 必须是 cli；'
+                              '若该座位不再使用 Codex CLI，在本地配置中写 "adapter": null')
         required = ('provider',) if kind == 'agent_use' else ('bin',) if kind == 'cli' else ()
         for key in required:
             if not isinstance(seat.get(key), str) or not seat[key].strip():
@@ -126,7 +127,8 @@ def validate(merged) -> list[str]:
                             or argv[argv.index('--sandbox') + 1:argv.index('--sandbox') + 2]
                             not in (['read-only'], ['workspace-write'])):
                         errors.append(f'{path}.{key} 必须是 Codex exec 命令（argv[1] 为 exec，'
-                                      '恰好一个 --sandbox，其后为 read-only 或 workspace-write）')
+                                      '恰好一个 --sandbox，其后为 read-only 或 workspace-write）；'
+                                      '若该座位不再使用 Codex CLI，在本地配置中写 "adapter": null')
         if 'model' in seat and not isinstance(seat['model'], str):
             error(f'{path}.model', '字符串')
         if kind == 'cli':

@@ -320,6 +320,23 @@ def weekly_tokens():
         check('- codex: 无数据' in empty and '- codex-sol: 无数据' in empty, empty)
         zero = report([dict(row, tokens=dict(usage, input=0, cached=0))])
         check('缓存占比 无数据' in zero, zero)
+        missing_actual = dict(ts=row['ts'], tokens=None, rc=None)
+        check('- codex: 无数据' in report([missing_actual]), '缺 actual 的行导致崩溃')
+        missing_field = dict(usage)
+        missing_field.pop('calls')
+        malformed = [dict(usage, input=True), missing_field, dict(usage, output='100'), []]
+        bad_output = report([dict(row, tokens=usage), missing_actual] +
+                            [dict(row, tokens=tokens) for tokens in malformed])
+        bad_line = bad_output.split('## token（codex 类座位）')[1].split('- codex:')[1].split('\n')[0]
+        for expected in ('总尝试 5', 'rollout 1（覆盖率 20.0%）', '坏记录 4',
+                         '1000 / 600 / 100 / 2',
+                         '合计 input 1000、cached 600（缓存占比 60.0%）、output 100'):
+            check(expected in bad_line, bad_line)
+        bad_only = report([dict(row, tokens=tokens) for tokens in malformed])
+        check('坏记录 4 · rollout 用量无数据' in bad_only, bad_only)
+        for key in ('input', 'cached', 'output', 'calls'):
+            negative = report([dict(row, tokens=dict(usage, **{key: -1}))])
+            check('坏记录 1 · rollout 用量无数据' in negative, negative)
 
 
 

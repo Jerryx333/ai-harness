@@ -149,20 +149,31 @@ def findings_section(since: dt.datetime, sources=None, reasons=None):
 
 def tokens_section(ledger):
     print("\n## token（codex 类座位）")
-    extra = {r["actual"] for r in ledger if "tokens" in r} - {"codex", "codex-sol"}
+    extra = {r.get("actual") for r in ledger if "tokens" in r
+             and isinstance(r.get("actual"), str) and r.get("actual")} - {"codex", "codex-sol"}
     calls = [r for r in ledger if r.get("rc") is not None]
     for actual in ("codex", "codex-sol", *sorted(extra)):
         attempts = [r for r in calls if r.get("actual") == actual]
         if not attempts:
             print(f"- {actual}: 无数据")
             continue
-        rollout = [r["tokens"] for r in attempts if isinstance(r.get("tokens"), dict) and r["tokens"].get("source") == "rollout"]
+        rollout, bad = [], 0
+        for r in attempts:
+            tokens = r.get("tokens")
+            if tokens is not None and not isinstance(tokens, dict):
+                bad += 1
+            elif isinstance(tokens, dict) and tokens.get("source") == "rollout":
+                if all(type(tokens.get(key)) is int and tokens[key] >= 0
+                       for key in ("input", "cached", "output", "calls")):
+                    rollout.append(tokens)
+                else:
+                    bad += 1
         fallback = sum(isinstance(r.get("tokens"), dict) and r["tokens"].get("source") == "stderr" for r in attempts)
         nulls = Counter(r.get("tokens_null_reason") or "未记录" for r in attempts if "tokens" in r and r["tokens"] is None)
         reasons = "、".join(f"{reason} {count}" for reason, count in sorted(nulls.items())) or "无"
         old = sum("tokens" not in r for r in attempts)
         line = (f"- {actual}: 总尝试 {len(attempts)} · rollout {len(rollout)}（覆盖率 {100 * len(rollout) / len(attempts):.1f}%）"
-                f" · stderr 兜底 {fallback} · tokens=null {sum(nulls.values())}（{reasons}） · 旧记录 {old}")
+                f" · stderr 兜底 {fallback} · tokens=null {sum(nulls.values())}（{reasons}） · 旧记录 {old} · 坏记录 {bad}")
         if rollout:
             medians = " / ".join(f"{median(r[key] for r in rollout):g}" for key in ("input", "cached", "output", "calls"))
             inputs, cached, outputs = (sum(r[key] for r in rollout) for key in ("input", "cached", "output"))

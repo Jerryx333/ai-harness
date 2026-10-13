@@ -171,6 +171,23 @@ def codex_adapter_validation():
                         check(f'seats.codex.{key}' in str(e), str(e))
                     else:
                         check(False, '加载未拒绝非法 adapter argv')
+    for override, error_path in (({'argv_rw': ['{bin}', '{prompt}']}, 'seats.codex.argv_rw'),
+                                 ({'kind': 'agent_use', 'provider': 'test'}, 'seats.codex.adapter')):
+        with tempfile.TemporaryDirectory() as td:
+            local = Path(td) / 'local.json'
+            local.write_text(json.dumps({'seats': {'codex': override}}))
+            from unittest.mock import patch
+            with patch.dict(os.environ, AIW_CONFIG=str(local)):
+                try:
+                    config.load_seats(REPO)
+                except config.ConfigError as e:
+                    check(error_path in str(e) and '"adapter": null' in str(e), str(e))
+                else:
+                    check(False, '加载未拒绝不兼容的继承 adapter')
+                local.write_text(json.dumps({'seats': {'codex': dict(override, adapter=None)}}))
+                loaded = config.load_seats(REPO)['seats']['codex']
+                check(loaded['adapter'] is None and all(loaded[key] == value for key, value in override.items()),
+                      str(loaded))
     for override, expected in (({'effort': 'high'}, 'codex'), ({'adapter': None}, None)):
         merged = config.merge(public, {'seats': {'codex': override}})
         check(not config.validate(merged) and merged['seats']['codex'].get('adapter') == expected,

@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """会诊：同一个 prompt 同时发给几家（只读、不顶替），收齐各自的独立意见。
 
-    aiw panel <workdir> <timeout_s> <prompt_file|prompt文本> [seat ...] [--attach 文件 ...] [--prior 文件] [--free] [--full]
+    aiw panel <workdir> <timeout_s> <prompt_file|prompt文本> [seat ...] [--attach 文件 ...] [--prior 文件] [--free] [--full] [--text]
     --free 使用 panel_free 免费座位，同样去掉主会话自己；不能同时显式指定座位。
     --attach 预检读取一次，渲染进共用 prompt 快照，各家（含 CLI 座位）收到同一份全文；合计超过 30KB 提醒。
+    --text 逐座位传给 worker，workspace 座位禁用工具；附件保留不能假设读取其它文件的提示。
     默认要求最多 4 条、1500 字的证据清单，并在 stdout 内联回答（每家最多显示 3000 字）。
     --full 不追加格式要求，stdout 不内联各家回答（全文在会诊目录的 <座位>.md）。
     --prior 主会话事先写好的判断，只归档并展示给主会话，不发给座位。
@@ -49,10 +50,12 @@ except ConfigError as error:
     raise SystemExit(1)
 
 
-def ask(seat: str, workdir: str, timeout: str, prompt_file: str, out: Path, full: bool = False) -> dict:
+def ask(seat: str, workdir: str, timeout: str, prompt_file: str, out: Path, full: bool = False, text_mode: bool = False) -> dict:
     env = dict(os.environ, AIW_PANEL_DIR=str(out), AIW_PROVIDER_FILE=str(out / f"{seat}.provider"))
     env.update(AIW_PANEL_FORMAT="0" if full else "1", AIW_ATTACH_WARNING_SUPPRESS="1")
     argv = [sys.executable, str(HERE / "ai_worker.py"), seat, workdir, timeout, prompt_file, "--ro", "--no-fallback"]
+    if text_mode:
+        argv.append("--text")
     limit = int(timeout) + float(os.environ.get("AIW_PANEL_GRACE", "90"))
     p = subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env)
     try:
@@ -76,7 +79,7 @@ def main() -> int:
     from ai_worker import split_argv, read_attachments, render_attachments, warn_large_attachments, AttachError, agent_use_workspace, main_agent, disabled_seat, print_disabled, errand_names, StateError
     try:
         values = {}
-        args, flags, attach = split_argv(sys.argv[1:], {"--attach", "--free", "--prior", "--full"}, values=values)
+        args, flags, attach = split_argv(sys.argv[1:], {"--attach", "--free", "--prior", "--full", "--text"}, values=values)
     except AttachError as e:
         print(e, file=sys.stderr)
         return 64
@@ -163,7 +166,8 @@ def main() -> int:
     out = STATE / "panels" / format_panel_id(dt.datetime.now(), os.getpid())
     out.mkdir(parents=True, exist_ok=True)
     prompt = Path(prompt_file).read_text(encoding="utf-8") if prompt_file else text
-    (out / "prompt.md").write_text(prompt + render_attachments(attachment_files, "workspace" if any(agent_use_workspace(SEATS["seats"][s]) for s in seats) else "agent_use"), encoding="utf-8")
+    workspace_context = "--text" not in flags and all(agent_use_workspace(SEATS["seats"][s]) for s in seats)
+    (out / "prompt.md").write_text(prompt + render_attachments(attachment_files, "workspace" if workspace_context else "agent_use"), encoding="utf-8")
     if attachment_files:
         manifest = [{"path": rel, "bytes": len(data), "sha256": hashlib.sha256(data).hexdigest()}
                     for rel, data in attachment_files]
@@ -174,7 +178,7 @@ def main() -> int:
         print("## 主会话先验判断\n" + prior, flush=True)
     (out / "adjudication.md").write_text(ADJUDICATION, encoding="utf-8")
     with cf.ThreadPoolExecutor(max_workers=len(seats)) as ex:
-        results = list(ex.map(lambda s: ask(s, workdir, timeout, prompt_file, out, "--full" in flags), seats))
+        results = list(ex.map(lambda s: ask(s, workdir, timeout, prompt_file, out, "--full" in flags, "--text" in flags), seats))
     ok = [r for r in results if r["rc"] == 0 and r["chars"] > 0]
     sufficient = len(ok) >= required_opinions
     summary = {"dir": str(out), "seats": results, "answered": [r["seat"] for r in ok],

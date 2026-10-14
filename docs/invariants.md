@@ -27,6 +27,10 @@ panel 默认名单去掉主会话自身后过滤不可用座位，stderr 列原�
 | 附件不出 workdir | `ai_worker.py:build_attachments` | `attach` | `workdir` |
 | AIW_NESTED 不再派单 | `ai_worker.py:dispatch` | `nested_dispatch` | `nested` |
 | 写任务不顶替给只出文本的座位 | `ai_worker.py:dispatch` | `write_fallback_text_seat` | `write-fallback` |
+| 写单跳过只读 workspace 顶替 | `ai_worker.py:dispatch` | `workspace_write_fallback_skips_ro_only` | `write-fallback-ro-only` |
+| 混合名单保留附件范围提示 | `panel.py:main` | `workspace_panel_mixed_attachment_scope` | `panel-mixed-workspace-scope` |
+| 全 workspace 名单省略附件范围提示 | `panel.py:main` | `workspace_panel_all_workspace_attachment_scope` | `panel-all-workspace-scope` |
+| text 场景保留附件范围提示 | `panel.py:main` | `workspace_panel_text_attachment_scope` | `panel-text-workspace-scope` |
 | 只出文本的座位不接写任务 | `ai_worker.py:dispatch` | `worker_regression` | `text-write` |
 | Codex 专属行为按 adapter 而非座位名启用 | `ai_worker.py:codex_workspace_write` | `codex_adapter_alias` | `codex-adapter-name` |
 | codex-sol 不顶替 | `seats.json:fallback` | `codex_sol_no_fallback` | `sol-fallback` |

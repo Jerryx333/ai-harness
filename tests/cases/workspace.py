@@ -178,6 +178,60 @@ def workspace_fallback_skips_text():
         check(rows[-1]['actual'] == 'workspace' and rows[-1]['changed_files'] == 2, rows)
 
 
+def workspace_write_fallback_skips_ro_only():
+    with tempfile.TemporaryDirectory() as td:
+        t = Path(td); cmd, env, wd = fixture(t, FAKE_CODEX='quota', FAKE_AU_GENERIC='write')
+        local = Path(env['AIW_CONFIG']); cfg = json.loads(local.read_text())
+        cfg['seats']['workspace-ro'] = dict(cfg['seats']['workspace'], provider='readonly', ro_only=True)
+        cfg['fallback']['codex'] = ['workspace-ro', 'workspace']
+        local.write_text(json.dumps(cfg))
+        git_template(wd, {'tracked': 'initial'}); cmd[2] = 'codex'; cmd.remove('--ro')
+        r = sh(cmd + ['--no-findings'], env=env)
+        check(r.returncode == 0, r.stderr)
+        check([c['order'] for c in calls(t)] == ['generic'], '写单调用了 ro_only workspace 顶替')
+        check('[workspace-ro] 顶替跳过：只读座位不能改文件' in r.stderr, r.stderr)
+        rows = [json.loads(line) for line in (t / 'state/seat-ledger.jsonl').read_text().splitlines()]
+        check([row['actual'] for row in rows] == ['codex', 'workspace']
+              and rows[-1]['changed_files'] == 2 and rows[-1]['ro'] is False, rows)
+        # Read-only dispatch still permits the same fallback seat.
+        r = sh(cmd + ['--ro', '--no-findings'], env=env)
+        check(r.returncode == 0 and calls(t)[-1]['order'] == 'readonly'
+              and calls(t)[-1]['access'] == 'ro', r.stderr)
+
+
+def check_panel_attachment_scope(seats, text_mode=False):
+    with tempfile.TemporaryDirectory() as td:
+        t = Path(td); cmd, env, wd = fixture(t)
+        local = Path(env['AIW_CONFIG']); cfg = json.loads(local.read_text())
+        cfg['seats']['workspace2'] = dict(cfg['seats']['workspace'], provider='generic2')
+        local.write_text(json.dumps(cfg))
+        (wd / 'code.txt').write_text('repository material')
+        flags = ['--text'] if text_mode else []
+        r = sh([sys.executable, str(REPO / 'panel.py'), str(wd), '10', cmd[5],
+                *seats, '--attach', 'code.txt', '--full', *flags], env=env)
+        check(r.returncode == 0, r.stdout + r.stderr)
+        prompt = next((t / 'state/panels').glob('*/prompt.md')).read_text()
+        check('repository material' in prompt, prompt)
+        limited = text_mode or 'text' in seats or 'codex' in seats
+        check(('不要假设还能读到其它文件' in prompt) == limited, 'panel 附件范围提示错误: ' + prompt)
+        if text_mode:
+            for call in calls(t):
+                assert_text_call(call)
+
+
+def workspace_panel_mixed_attachment_scope():
+    check_panel_attachment_scope(['workspace', 'text'])
+    check_panel_attachment_scope(['workspace', 'codex'])
+
+
+def workspace_panel_all_workspace_attachment_scope():
+    check_panel_attachment_scope(['workspace', 'workspace2'])
+
+
+def workspace_panel_text_attachment_scope():
+    check_panel_attachment_scope(['workspace', 'workspace2'], text_mode=True)
+
+
 def workspace_panel_map():
     with tempfile.TemporaryDirectory() as td:
         t = Path(td); cmd, env, wd = fixture(t)
@@ -187,7 +241,7 @@ def workspace_panel_map():
         check(r.returncode == 0, r.stdout + r.stderr)
         check(all(c['access'] == ('ro' if c['order'] == 'generic' else 'none') for c in calls(t)), calls(t))
         prompt = next((t / 'state/panels').glob('*/prompt.md')).read_text()
-        check('repository material' in prompt and '不要假设还能读到其它文件' not in prompt, prompt)
+        check('repository material' in prompt and '不要假设还能读到其它文件' in prompt, prompt)
         r = sh([sys.executable, str(REPO / 'map.py'), str(wd), '10', cmd[5],
                 'code.txt', '--seat', 'workspace', '--jobs', '1'], env=env)
         check(r.returncode == 0, r.stdout + r.stderr)
@@ -302,5 +356,7 @@ def workspace_findings_execution_mode():
 CASES = {fn.__name__: fn for fn in (workspace_role_write, workspace_access_ro_rw,
     workspace_text_unchanged, workspace_draft_text, workspace_explicit_text,
     workspace_text_net_conflict, workspace_text_fallback, workspace_config_conflict, workspace_fallback_skips_text,
+    workspace_write_fallback_skips_ro_only, workspace_panel_mixed_attachment_scope,
+    workspace_panel_all_workspace_attachment_scope, workspace_panel_text_attachment_scope,
     workspace_panel_map, workspace_findings_context, workspace_sync_core_failure,
     workspace_old_agent_use_fallback, workspace_capability_cache, workspace_findings_execution_mode)}

@@ -2397,6 +2397,9 @@ def _dispatch(inflight: Path | None, attempt: dict, *, before_execute=None, stac
             outside_free_window = False
             promotion_expired = False
             for s in chain:
+                if not ro and SEATS["seats"][s].get("ro_only"):
+                    print(f"[{s}] 顶替跳过：只读座位不能改文件", file=sys.stderr)
+                    continue
                 if not ro and text_only_seat(s):
                     print(f"[{s}] 顶替跳过：文本座位不能改文件", file=sys.stderr)
                     continue  # 写任务不顶替给只能出文本的座位

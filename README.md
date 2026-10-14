@@ -47,7 +47,7 @@ flowchart LR
 
 aiw 负责把任务交给座位；agent-use 负责调用注册的 provider；agent-use-adapters 提供现成的 provider 适配器。只用内置 CLI 座位不需要后两个仓库。
 
-`kind=agent_use` 座位可选布尔字段 `workspace`，默认 false（纯文本、硬禁工具）。设为 true 时，provider 必须声明 `tool_policy=workspace`；可进入 write 候选，不能同时设 `require_no_tools: true`。未启用 `--text` 时，派单传 `--workdir <绝对路径> --access ro|rw`：`--ro`、`ro_only`、review 使用 ro，其余使用 rw。ro 只能读文件、搜索和列目录，不能编辑或跑命令；rw 开放全部内置工具并跳过确认，不套 `sandbox-exec`，文件直接改在工作目录，调用方用 diff 验收。两种模式均不加载 MCP。附件可选；直接派单给 workspace 座位文件清单，由它自行读取，panel 仍给各家同一份附件全文快照。`--net` 只打印说明、不生效，联网由供应商决定；写单复用 CLI 的 baseline、改动统计、账本与汇报。
+`kind=agent_use` 座位可选布尔字段 `workspace`，默认 false（文本派单，不传 `--workdir/--access`，但不会因此硬禁供应商工具；只有配置 `require_no_tools: true` 才传 `--require-no-tools`）。设为 true 时，provider 必须声明 `tool_policy=workspace`；可进入 write 候选，不能同时设 `require_no_tools: true`。未启用 `--text` 时，派单传 `--workdir <绝对路径> --access ro|rw`：`--ro`、`ro_only`、review 使用 ro，其余使用 rw。ro 只能读文件、搜索和列目录，不能编辑或跑命令；rw 开放全部内置工具并跳过确认，不套 `sandbox-exec`，文件直接改在工作目录，调用方用 diff 验收。两种模式均不加载 MCP。附件可选；直接派单给 workspace 座位文件清单，由它自行读取，panel 仍给各家同一份附件全文快照。`--net` 只打印说明、不生效，联网由供应商决定；写单复用 CLI 的 baseline、改动统计、账本与汇报。
 
 `--text` 隐含 `--ro`；workspace 座位改传 `--require-no-tools`，不传 `--workdir/--access`（access=none），附件改为全文；非 workspace agent_use 和 CLI 座位仅增加只读约束。draft 角色和逐文件 map 自动启用，review/write 与 panel 不自动启用；顶替链逐座位应用同一规则，`--text` 与 `--net` 同用返回 64。
 

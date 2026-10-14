@@ -987,7 +987,7 @@ def codex_dispatch_reminders():
         local = root / 'readonly-fallback.json'
         write_legacy_local(local, {'fallback': {'codex': ['codex-sol']}})
         args = root / 'fallback-args'
-        r, row, _ = run(flags=('--net',), AIW_CONFIG=str(local), FAKE_CODEX='auth_sol',
+        r, row, _ = run(flags=('--ro',), AIW_CONFIG=str(local), FAKE_CODEX='auth_sol',
                         FAKE_CODEX_AUTH_MARKER=str(root / 'auth-marker'), FAKE_CODEX_ARGS=str(args))
         check(r.returncode == 0 and row['actual'] == 'codex-sol', r.stderr + str(row))
         task = (Path(row['run_dir']) / 'task.txt').read_text()

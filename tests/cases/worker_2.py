@@ -529,6 +529,76 @@ def write_verify():
               and rows[-2]['verify']['skipped'], repr(r))
 
 
+def write_verify_interrupted():
+    import signal
+    # Cover interruption of the first command and preservation of earlier results.
+    for completed in (False, True):
+        with tempfile.TemporaryDirectory() as td:
+            t = Path(td)
+            cmd, env, wd = worker_call(t, AIW_STATE=str(t / 'state'), FAKE_CODEX='ok')
+            cmd[2] = 'codex'
+            cmd.remove('--ro')
+            cmd += ['--no-fallback', '--no-findings']
+            if completed:
+                cmd += ['--verify', 'echo completed-output']
+            cmd += ['--verify', "sh -c 'echo partial-output; touch verify-started; sleep 30'",
+                    '--verify', 'touch should-not-run']
+            proc = subprocess.Popen(cmd, env=env, stdout=subprocess.PIPE,
+                                    stderr=subprocess.PIPE, text=True)
+            try:
+                wait_until(lambda: (wd / 'verify-started').exists() or proc.poll() is not None,
+                           '验收命令未启动', timeout=30)
+                check((wd / 'verify-started').exists(), 'aiw 在验收启动前退出')
+                proc.send_signal(signal.SIGTERM)
+                out, err = proc.communicate(timeout=30)
+                check(proc.returncode == 124, repr((proc.returncode, out, err)))
+                rows = [json.loads(line) for line in (t / 'state/seat-ledger.jsonl').read_text().splitlines()]
+                check(len(rows) == 1, repr(rows))
+                row = rows[-1]
+                check(row['kind'] == 'interrupted' and row['rc'] == 124
+                      and row['verify']['interrupted'] is True
+                      and row['verify']['total'] == 2 + int(completed)
+                      and row['verify']['passed'] == int(completed), repr(row))
+                full = (Path(row['run_dir']) / 'verify.txt').read_text()
+                check('rc=124 secs=' in full and '验收中断' in full
+                      and 'partial-output' in full, full)
+                if completed:
+                    check('rc=0 secs=' in full and 'completed-output' in full, full)
+                check(not (wd / 'should-not-run').exists()
+                      and '跳过 aiw 验收' not in out, repr((out, err)))
+            finally:
+                if proc.poll() is None:
+                    proc.send_signal(signal.SIGTERM)
+                    proc.communicate(timeout=30)
+
+
+def write_verify_not_executed():
+    import fcntl
+    import hashlib
+    with tempfile.TemporaryDirectory() as td:
+        t = Path(td)
+        state = t / 'state'; state.mkdir()
+        marker = t / 'executor-called'
+        cmd, env, wd = worker_call(t, AIW_STATE=str(state), FAKE_CODEX='ok',
+                                   FAKE_CODEX_ARGS=str(marker))
+        cmd[2] = 'codex'
+        cmd.remove('--ro')
+        cmd += ['--no-fallback', '--no-findings', '--verify', 'touch should-not-run']
+        lock_path = state / ('lock-' + hashlib.sha1(str(wd.resolve()).encode()).hexdigest()[:12])
+        with lock_path.open('w') as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            r = inprocess_sh(cmd, env=env)
+        check(r.returncode == 75 and '跳过 aiw 验收' not in r.stdout, repr(r))
+        check(not marker.exists() and not (wd / 'should-not-run').exists(), repr(r))
+        # A disabled sole candidate never enters run_seat either.
+        (state / 'disabled.json').write_text(json.dumps({'codex': {'disabled_by_user': 'test'}}))
+        r = inprocess_sh(cmd, env=env)
+        check(r.returncode != 0 and '跳过 aiw 验收' not in r.stdout, repr(r))
+        check(not marker.exists() and not (wd / 'should-not-run').exists(), repr(r))
+        row = json.loads((state / 'seat-ledger.jsonl').read_text().splitlines()[-1])
+        check(row['kind'] == 'skipped_disabled', repr(row))
+
+
 def write_verify_skipped():
     with tempfile.TemporaryDirectory() as td:
         t = Path(td)
@@ -605,6 +675,8 @@ CASES = {case.__name__: case for case in (
     write_verify_skipped,
     write_verify_validation,
     write_verify_worktree,
+    write_verify_interrupted,
+    write_verify_not_executed,
     executor_watchdog,
     inflight_liveness_lock,
     test_inflight_lifecycle,

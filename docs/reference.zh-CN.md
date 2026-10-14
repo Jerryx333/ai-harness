@@ -316,7 +316,7 @@ worker 只接受 `--ro --worktree --net --no-fallback --no-findings --allow-nest
 
 写单可重复传 `--verify '<命令>'`，如 `aiw write . 1200 prompt.md --verify 'python3 -m unittest' --verify 'git diff --check'`。`--verify-timeout <秒>` 默认 600，必须为正整数，按单条命令计时；空命令、与 `--ro` 同用、只读座位或 review/draft 角色使用均返回 64，不派单。
 
-派单（含顶替链）最终 rc=0 且产出合格后，aiw 在主会话环境继承自身环境，按顺序以非 login 的 `bash -c` 运行验收，stdout/stderr 合并；不加执行方沙箱，可联网与监听端口，子进程通过 `os.nice(10)` 降优先级。某条失败或超时也继续后续命令；全部通过返回 0，有失败或超时返回 4。执行方失败、超时或产出不合格不跑验收，保留原退出码，stdout 写「执行方未成功，跳过 aiw 验收」。
+派单（含顶替链）最终 rc=0 且产出合格后，aiw 在主会话环境继承自身环境，按顺序以非 login 的 `bash -c` 运行验收，stdout/stderr 合并；不加执行方沙箱，可联网与监听端口，子进程通过 `os.nice(10)` 降优先级。某条失败或超时也继续后续命令；全部通过返回 0，有失败或超时返回 4。执行方失败、超时或产出不合格不跑验收，保留原退出码；仅当至少一个执行方实际运行过且最终未成功时，stdout 写「执行方未成功，跳过 aiw 验收」。
 
 验收在实际工作目录运行；带 `--worktree` 时为任务 worktree 中对应子目录，在 worktree 汇报和无改动清理之前运行。验收产生的未跟踪文件计为改动，因此会保留 worktree。stdout 在执行方正文之后追加精简「aiw 验收（主会话环境执行）」结果块：逐条 rc、耗时、最多 120 字符的命令，失败输出最后 40 行（单条最多 1500 字符），通过数与全文路径；完整命令、rc、耗时及输出归档到成功尝试的 `<run_dir>/verify.txt`。成功尝试账本行增加 `verify: {"total": N, "passed": M, "secs": 秒}`；跳过时记录 `{"total": N, "passed": null, "skipped": true}`。未带 `--verify` 时账本不增加字段，旧行为不变。
 

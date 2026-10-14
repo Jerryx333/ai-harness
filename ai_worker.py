@@ -312,12 +312,18 @@ def stop_group(p):
         p.communicate(timeout=5)
     except subprocess.TimeoutExpired:
         pass
+    except Exception as e:
+        print(f"警告：子进程收尾读取失败（{type(e).__name__}）", file=sys.stderr)
     finally:
         try:
             os.killpg(p.pid, signal.SIGKILL)
         except (ProcessLookupError, PermissionError):
             pass
-    return p.communicate()
+    try:
+        return p.communicate()
+    except Exception as e:
+        print(f"警告：子进程收尾读取失败（{type(e).__name__}）", file=sys.stderr)
+        return "", ""
 
 
 @contextlib.contextmanager
@@ -1131,8 +1137,16 @@ def write_run_file(path: Path, text: str, tail: int | None = None) -> bool:
         return False
 
 
+def lower_verify_priority():
+    try:
+        os.nice(10)
+    except OSError:
+        pass  # 受限环境不允许调优先级时照常跑
+
+
 def run_verification(commands, workdir, timeout, run_dir):
     results, full = [], []
+    interruption = None
     started = time.monotonic()
     for command in commands:
         begin = time.monotonic()
@@ -1140,7 +1154,7 @@ def run_verification(commands, workdir, timeout, run_dir):
             with subprocess.Popen(["bash", "-c", command], cwd=workdir,
                                   stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                   text=True, encoding="utf-8", errors="replace",
-                                  start_new_session=True, preexec_fn=lambda: os.nice(10)) as proc:
+                                  start_new_session=True, preexec_fn=lower_verify_priority) as proc:
                 try:
                     with interruptible_signals():
                         output, _ = proc.communicate(timeout=timeout)
@@ -1149,18 +1163,29 @@ def run_verification(commands, workdir, timeout, run_dir):
                     output, _ = stop_group(proc)
                     output += f"\n验收超时（{timeout}s）\n"
                     rc = 124
-                except RunInterrupted:
-                    stop_group(proc)
-                    raise
+                except RunInterrupted as e:
+                    interruption = e
+                    try:
+                        output, _ = stop_group(proc)
+                    except Exception as error:
+                        output = f"验收收尾失败：{error}\n"
+                    output += "\n验收中断\n"
+                    rc = e.code
         except (OSError, subprocess.SubprocessError) as e:
             rc, output = 1, f"验收启动失败：{e}"
         secs = time.monotonic() - begin
         results.append((command, rc, secs, output))
         full.append(f"$ {command}\nrc={rc} secs={secs:.1f}\n{output}\n")
-    summary = {"total": len(results), "passed": sum(rc == 0 for _, rc, _, _ in results),
+        if interruption is not None:
+            break
+    summary = {"total": len(commands), "passed": sum(rc == 0 for _, rc, _, _ in results),
                "secs": round(time.monotonic() - started, 1)}
     path = Path(run_dir) / "verify.txt"
     saved = write_run_file(path, "\n".join(full))
+    if interruption is not None:
+        summary["interrupted"] = True
+        interruption.result["verify"] = summary
+        raise interruption
     footer = f"结论：{summary['passed']}/{summary['total']} 通过 · 全文 {path}"
     if not saved:
         footer += "（写入失败）"
@@ -2151,7 +2176,7 @@ def dispatch(inflight: Path | None, attempt: dict, *, before_execute=None) -> in
         try:
             return _dispatch(inflight, attempt, before_execute=before_execute, stack=stack)
         finally:
-            if attempt.get("verify_requested") and not attempt.get("verify"):
+            if attempt.get("executed") and attempt.get("verify_requested") and not attempt.get("verify"):
                 print("\n## aiw 验收（主会话环境执行）\n执行方未成功，跳过 aiw 验收")
 
 
@@ -2378,6 +2403,7 @@ def _dispatch(inflight: Path | None, attempt: dict, *, before_execute=None, stac
                                 task_prompt += "\n\n" + findings.SUFFIX
                             if os.environ.get("AIW_PANEL_FORMAT") == "1" and os.environ.get("AIW_PANEL_DIR"):
                                 task_prompt += PANEL_FORMAT
+                            attempt["executed"] = True
                             r = run_seat(s, task_prompt, workdir, timeout, ro, effort_fields.get("effort"), None, net,
                                          changes.baseline_status,
                                          **({"run_dir": task_run_dir if s == seat else new_run_dir(s)} if task_run_dir is not None else {}))
@@ -2405,8 +2431,9 @@ def _dispatch(inflight: Path | None, attempt: dict, *, before_execute=None, stac
                                 parsed = None
                                 r["out"] = raw_output
                                 print(f"[ai-worker] 警告：观察记录收集失败（{type(error).__name__}）", file=sys.stderr)
+                        executed = attempt.get("executed", False)
                         attempt.clear()
-                        attempt.update(r, attempted=True)
+                        attempt.update(r, attempted=True, executed=executed)
                         success = r["kind"] == "ok"
                         verify_fields, verify_block = {}, ""
                         if verify:
@@ -2415,8 +2442,14 @@ def _dispatch(inflight: Path | None, attempt: dict, *, before_execute=None, stac
                                 if not r.get("run_dir"):
                                     r["run_dir"] = str(new_run_dir(s))
                                     attempt["run_dir"] = r["run_dir"]
-                                summary, verify_block = run_verification(
-                                    verify, workdir, verify_timeout, r["run_dir"])
+                                try:
+                                    summary, verify_block = run_verification(
+                                        verify, workdir, verify_timeout, r["run_dir"])
+                                except RunInterrupted as e:
+                                    interruption = e
+                                    r.update(kind="interrupted", rc=e.code)
+                                    attempt.update(kind=r["kind"], rc=r["rc"])
+                                    summary = e.result["verify"]
                                 verify_fields = {"verify": summary}
                                 attempt.update(verify_fields)
                             else:

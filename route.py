@@ -90,7 +90,7 @@ def context_hint(payload: dict) -> tuple[int | None, str]:
                 window *= 2
         if ctx is None:
             return None, ""
-        threshold = int(os.environ.get("AIW_HANDOFF_AT", "400000"))
+        threshold = int(os.environ.get("AIW_HANDOFF_AT", "200000"))
         step = int(os.environ.get("AIW_HANDOFF_STEP", "100000"))
         session = payload.get("session_id")
         if threshold <= 0 or step <= 0:
@@ -118,14 +118,15 @@ def context_hint(payload: dict) -> tuple[int | None, str]:
             except FileNotFoundError:
                 pass
             if bucket <= previous:
-                return ctx, ""
+                return ctx, (f"[上下文] 约 {(ctx + 5000) // 10000} 万 token。若本条是无关新事，先建议 aiw handoff 交接到新会话再做；"
+                             "同一件事继续不提，用户拒绝过不再提。")
             with tempfile.NamedTemporaryFile(mode="w", dir=directory, delete=False) as out:
                 temporary = Path(out.name)
                 out.write(str(bucket))
             temporary.replace(marker)
             temporary = None
-            return ctx, (f"[上下文] 本会话约 {(ctx + 5000) // 10000} 万 token。到任务交界时（别打断进行中的排查）问用户要不要交接；"
-                         "同意后按 aiw handoff --template 写交接文件，再运行 aiw handoff <文件>。")
+            return ctx, (f"[上下文] 约 {(ctx + 5000) // 10000} 万 token。新档位：任务交界可问交接；无关新事先建议交接到新会话再做；"
+                         "同一事继续或已拒绝不提。同意后 aiw handoff --template 写文件，再 aiw handoff <文件>。")
     except Exception:
         return ctx, ""
     finally:

@@ -49,7 +49,7 @@ aiw doctor
 
 默认不拆会话。UserPromptSubmit 钩子只看 Claude 主会话（payload 没有 `turn_id`），从 transcript 尾部读取最后一条带 usage 的 assistant 记录；上下文 token = input_tokens + cache_read_input_tokens + cache_creation_input_tokens。先读末尾 512KB，找不到再扩到最多 4MB；读取或状态异常静默跳过，不阻断用户消息，不调用模型判断。
 
-`AIW_HANDOFF_AT` 默认 `400000`，设 `0` 关闭提醒；`AIW_HANDOFF_STEP` 默认 `100000`。达到阈值后按 `ctx // step` 分桶，同一会话只在 bucket 比上次提醒更大时注入 `[上下文]`，万位四舍五入显示。提醒只建议主会话在任务交界询问用户，不打断进行中的排查；用户同意后写交接文件并启动新会话。以 `<cross-session-message` 开头（忽略开头空白）的跨会话消息不触发派单判定，也不注入 `[派单]` 或 `[缓冲区]`，上下文提醒仍正常检查。
+`AIW_HANDOFF_AT` 默认 `200000`，设 `0` 关闭提醒；门槛或步长为负数、非法值时也不提示。`AIW_HANDOFF_STEP` 默认 `100000`。达到阈值后按 `ctx // step` 分桶，同一会话只在 bucket 比上次提醒更大时发档位提醒，万位四舍五入显示；未触发档位提醒时仍发简短条件提示。每次最多注入一行 `[上下文]`，不超过 120 字符；档位提醒合并条件提示的意思，由主会话判断本条是否是与当前工作无关的新事，若是则先建议用户交接、到新会话再做；同一件事的继续不提，用户拒绝过就不再提。档位提醒也建议在任务交界询问，不打断进行中的排查；用户同意后按 `aiw handoff --template` 写交接文件，再运行 `aiw handoff <文件>`。低于门槛时不提示并删除档位标记；拿不到锁、读不到 usage 或异常时静默跳过。以 `<cross-session-message` 开头（忽略开头空白）的跨会话消息不触发派单判定，也不注入 `[派单]` 或 `[缓冲区]`，上下文提醒仍正常检查。
 
 ```bash
 aiw handoff --template
@@ -432,6 +432,7 @@ python3 tests/mutation_check.py credentials locked  # 只运行指定变异
 
 ## 变更记录
 
+- 2026-10-14 上下文交接默认门槛提前到 20 万，同档位增加由主会话判断新话题的条件提示；后台派单等完成通知，不轮询结果。
 - 2026-10-10 首次公开：公开默认只含 codex / codex-sol / claude；文本座位、路由覆盖、通知、findings 设置、跑腿均由本地配置提供。
 
 ## 本地配置

@@ -172,10 +172,11 @@ def main(argv=None):
 
     handlers = {sig: signal.signal(sig, forward) for sig in (signal.SIGINT, signal.SIGTERM)}
     # 唤醒管道：信号若被内核投给其它线程，靠它打断主线程的 select 去跑处理器。
-    wake_r, wake_w = os.pipe()
-    os.set_blocking(wake_w, False)
-    old_wakeup = signal.set_wakeup_fd(wake_w, warn_on_full_buffer=False)
+    wake_r = wake_w = old_wakeup = None
     try:
+        wake_r, wake_w = os.pipe()
+        os.set_blocking(wake_w, False)
+        old_wakeup = signal.set_wakeup_fd(wake_w, warn_on_full_buffer=False)
         lock = acquire_liveness_lock(lock_path)
         if lock is not None or not lock_path.exists():
             started = now()
@@ -235,8 +236,11 @@ def main(argv=None):
                 warn(f"删除状态失败：{error}")
         if lock is not None:
             lock.close()
-        signal.set_wakeup_fd(old_wakeup)
+        if old_wakeup is not None:
+            signal.set_wakeup_fd(old_wakeup)
         for fd in (wake_r, wake_w):
+            if fd is None:
+                continue
             try:
                 os.close(fd)
             except OSError:

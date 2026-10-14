@@ -487,6 +487,7 @@ def repository_identity_contract():
 
 
 def write_verify():
+    import shlex
     with tempfile.TemporaryDirectory() as td:
         t = Path(td)
         cmd, env, wd = worker_call(t, AIW_STATE=str(t / 'state'), FAKE_CODEX='ok')
@@ -513,6 +514,15 @@ def write_verify():
         check(r.returncode == 4 and (wd / 'later').exists(), repr(r))
         r, row = run('--verify', 'true', '--verify', 'echo good')
         check(r.returncode == 0 and '2/2 通过' in r.stdout and row['verify']['passed'] == 2, repr(r))
+        probe = shlex.join([sys.executable, '-c',
+                            'import os; print(os.getpriority(os.PRIO_PROCESS, 0))'])
+        nested = shlex.join(['bash', str(REPO / 'bin/aiw'), 'slot', '--']) + ' ' + probe
+        r, row = run('--verify', probe, '--verify', nested,
+                     AIW_SLOT_QOS='nice', AIW_SLOT_PRESSURE_CMD='/usr/bin/true')
+        check(r.returncode == 0 and row['verify']['passed'] == 2, repr(r))
+        full = (Path(row['run_dir']) / 'verify.txt').read_text()
+        check([line.strip() for line in full.splitlines() if line.strip().isdigit()]
+              == ['10', '10'], full)
         r, row = run('--verify', 'sleep 5', '--verify-timeout', '1', '--verify', 'true')
         check(r.returncode == 4 and 'rc=124' in r.stdout and '超时' in r.stdout
               and row['verify']['passed'] == 1, repr(r))

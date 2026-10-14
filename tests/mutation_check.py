@@ -308,4 +308,8 @@ def main(args):
 
 
 if __name__ == "__main__":
-    sys.exit(main(sys.argv[1:]))
+    sys.path.insert(0, str(REPO))
+    import slot  # 每个变异体都复制仓库并重跑用例，整次自检占一个全机名额
+    with slot.reservation([sys.executable, __file__, *sys.argv[1:]], label="aiw mutation_check"):
+        slot.lower_to(10)
+        sys.exit(main(sys.argv[1:]))

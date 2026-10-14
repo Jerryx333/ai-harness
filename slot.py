@@ -179,6 +179,16 @@ def reservation(command, slots=None, max_wait=900, label=""):
             lock.close()
 
 
+def lower_to(target=10):
+    try:
+        current = os.getpriority(os.PRIO_PROCESS, 0)
+        if current < target:
+            os.nice(target - current)
+        return True
+    except OSError:
+        return False
+
+
 def qos(current=False):
     mode = os.environ.get("AIW_SLOT_QOS", "nice")
     if mode == "0":
@@ -202,9 +212,13 @@ def qos(current=False):
         except (OSError, subprocess.TimeoutExpired):
             pass
     try:
-        os.nice(10)
-        warn("运行方式：nice +10")
+        already_low = os.getpriority(os.PRIO_PROCESS, 0) >= 10
     except OSError:
+        already_low = False
+    if lower_to():
+        warn("运行方式：nice +10（已是低优先级，未再降）" if already_low
+             else "运行方式：nice +10")
+    else:
         warn("运行方式：普通优先级（nice 被拒绝）")
     return []
 

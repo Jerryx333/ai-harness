@@ -71,10 +71,7 @@ def clamp_jobs(jobs):
 
 
 def lower_priority():
-    try:
-        os.nice(10)
-    except OSError:
-        pass
+    slot.lower_to()
 
 
 def run_named(names, durations):

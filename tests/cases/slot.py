@@ -1,4 +1,4 @@
-"""Isolated test-slot regressions; no shared machine slots or real QoS changes."""
+"""Isolated test-slot regressions; real nice changes only in child processes."""
 from __future__ import annotations
 
 import fcntl
@@ -159,6 +159,7 @@ def slot_qos_probe_and_fallback():
     with patch.dict(os.environ, AIW_SLOT_QOS="bg"), \
             patch.object(slot.sys, "platform", "darwin"), \
             patch.object(slot.Path, "is_file", return_value=True), \
+            patch.object(slot.os, "getpriority", return_value=0), \
             patch.object(slot.os, "nice") as nice, \
             patch.object(slot.subprocess, "run") as probe:
         probe.return_value = subprocess.CompletedProcess([], 0, b"", b"")
@@ -197,6 +198,7 @@ def slot_qos_default():
         check(result.returncode == 0 and "未知" in result.stderr and "nice" in result.stderr,
               result.stderr)
         with patch.dict(os.environ, f.env, clear=True), \
+                patch.object(slot.os, "getpriority", return_value=0) as priority, \
                 patch.object(slot.os, "nice") as nice, \
                 patch.object(slot.subprocess, "run") as probe:
             for mode in (None, "nice", "unknown"):
@@ -216,6 +218,30 @@ def slot_qos_default():
             with redirect_stderr(io.StringIO()) as error:
                 slot.qos(current=True)
             check("普通优先级（nice 被拒绝）" in error.getvalue(), error.getvalue())
+            for value in (10, 15):
+                priority.return_value = value
+                nice.reset_mock()
+                with redirect_stderr(io.StringIO()) as error:
+                    slot.qos()
+                nice.assert_not_called()
+                check("已是低优先级，未再降" in error.getvalue(), error.getvalue())
+            priority.side_effect = PermissionError("sandbox")
+            check(slot.lower_to() is False, "读取优先级失败应返回 False")
+
+
+def slot_nice_no_stacking():
+    with Fixture() as f:
+        code = ("import os,sys; current=os.getpriority(os.PRIO_PROCESS,0); "
+                "os.nice(10-current) if current < 10 else None; "
+                "assert os.getpriority(os.PRIO_PROCESS,0) == 10; "
+                "os.execvp('bash', ['bash', *sys.argv[1:]])")
+        result = subprocess.run(
+            [sys.executable, "-c", code, str(REPO / "bin/aiw"), "slot", "--",
+             sys.executable, "-c", "import os; print(os.getpriority(os.PRIO_PROCESS,0))"],
+            env=dict(f.env, AIW_SLOT_QOS="nice"), capture_output=True, text=True, timeout=4)
+        check(result.returncode == 0, result.stderr)
+        check(result.stdout.strip() == "10", result.stdout + result.stderr)
+        check("已是低优先级，未再降" in result.stderr, result.stderr)
 
 
 def slot_thread_limits():

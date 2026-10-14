@@ -1137,11 +1137,14 @@ def write_run_file(path: Path, text: str, tail: int | None = None) -> bool:
         return False
 
 
-def lower_verify_priority():
+def lower_verify_priority(target=10):
     try:
-        os.nice(10)
+        current = os.getpriority(os.PRIO_PROCESS, 0)
+        if current < target:
+            os.nice(target - current)
+        return True
     except OSError:
-        pass  # 受限环境不允许调优先级时照常跑
+        return False  # 受限环境不允许调优先级时照常跑
 
 
 def run_verification(commands, workdir, timeout, run_dir):

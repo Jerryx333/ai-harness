@@ -487,7 +487,7 @@ agent-use 的 `status.json` 必须声明整数 `protocol_version: 1`。缺失或
 - **主会话改代码**：Edit、Write、MultiEdit、NotebookEdit 修改非 /private/tmp、/tmp/、scratchpad 路径。
 - **跑测试/验收**：Bash 调用 pytest、npm test/npm run test、go test、cargo test、node --test、bun test、swift test、xcodebuild、make、*check.sh、tests/test_harness.py 或 aiw goal verify。
 - **提交/PR**：Bash 调用 git commit/push/merge/rebase/tag、gh pr 或 gh issue。
-- **等待派单**：Monitor、TaskOutput，或 Bash 含独立 sleep 数字、until、ps aux、pgrep、读取 /tasks/<id>.output。
+- **等待派单**：Monitor、TaskOutput，或 Bash 命令文本含 `sleep` 加数字、`until `、`ps aux`、`pgrep` 或 `/tasks/<id>.output` 路径（按文本匹配，不判断命令是否真的在等）。
 - **写单/草稿**：Edit、Write 修改 scratchpad、/private/tmp、/tmp/ 下文件。
 - **调查/读取**：其余 Bash，以及 Read、Grep、Glob、codegraph 等读工具。
 - **子代理**：Agent 工具调用；此处统计主会话发起调用的轮次。

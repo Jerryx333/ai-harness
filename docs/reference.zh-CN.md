@@ -336,6 +336,8 @@ worker 只接受 `--ro --net --no-fallback --no-findings --allow-nested --attach
 
 运行 `aiw tui [codex 参数...]` 可在 tmux 底栏每 15 秒显示本会话派单摘要，需要安装 tmux（`brew install tmux`）和可选组件 aiw-board。不在 tmux 时新建会话，派单摘要左对齐显示在底栏，隐藏窗口标签，codex 退出后会话结束；已在 tmux 时使用当前会话，仅修改该会话的底栏选项。首单前显示 `○ 派单空闲 │ 今日 0 单`（需已装 aiw-board）；codex 里 `/new` 换线程后，下一次派单才切到新会话。派单仅写状态映射，不连接 tmux socket。
 
+`AIW_TUI_STATUS_EXTRA=<命令>` 可在派单行后追加该命令输出的第一行非空内容（按 `shlex.split` 拆分，不经 shell；3 秒超时，失败时忽略；命令应自行缓存，底栏每 15 秒调用一次）。
+
 `install.sh` 发现本机有 Codex 时会顺带接入：`~/.codex/AGENTS.md` 写入标记块（内容来自 `AGENTS.harness.md`，块外内容不动），`~/.codex/hooks.json` 加同一个派单钩子（Codex 下次启动会请你确认信任）。
 
 - 派单钩子从钩子输入认出是 Codex（带 `turn_id`），注入 Codex 版指令：改文件自己做；第二意见找 `aiw review`；会诊用 `AIW_MAIN=codex aiw panel …`，默认过滤后不足两家时不派单；可接入 agent-use 文本座位。

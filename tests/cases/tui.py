@@ -49,6 +49,7 @@ def tui_status():
     with tempfile.TemporaryDirectory() as td:
         t = Path(td); b = t / 'bin'; b.mkdir()
         env = dict(os.environ, PATH=str(b), AIW_PYTHON=sys.executable, AIW_STATE=str(t / 'state'))
+        env.pop('AIW_TUI_STATUS_EXTRA', None)
         # bin/aiw needs dirname; keep only that utility, excluding installed board/tmux.
         (b / 'dirname').symlink_to(shutil.which('dirname'))
         cmd = ['/bin/bash', str(REPO / 'bin/aiw'), 'tui-status']
@@ -80,6 +81,62 @@ def tui_status():
         check(r.returncode == 0 and len(r.stdout.splitlines()) == 1 and not r.stderr, repr(r))
 
 
+def tui_status_extra():
+    with tempfile.TemporaryDirectory(prefix='aiw extra ') as td:
+        t = Path(td); b = t / 'bin'; b.mkdir()
+        (b / 'dirname').symlink_to(shutil.which('dirname'))
+        env = dict(os.environ, PATH=str(b), AIW_PYTHON=sys.executable, AIW_STATE=str(t / 'state'))
+        env.pop('AIW_TUI_STATUS_EXTRA', None)
+        cmd = ['/bin/bash', str(REPO / 'bin/aiw'), 'tui-status', 'ok']
+        baseline = sh(cmd, env=env).stdout
+        script = t / 'extra command'
+
+        def write_extra(body):
+            script.write_text(f'#!{sys.executable}\n' + body)
+            script.chmod(0o755)
+            return dict(env, AIW_TUI_STATUS_EXTRA=shlex.join([str(script), 'two words']))
+
+        extra_env = write_extra('import sys\nassert sys.stdin.read() == ""\nassert sys.argv[1:] == ["two words"]\nprint("extra #1\\nsecond")\n')
+        r = sh(cmd, env=extra_env)
+        check(r.returncode == 0 and r.stdout == baseline.rstrip('\n') + ' │ extra ##1\n'
+              and not r.stderr, repr(r))
+        extra_env = write_extra('print("  \\n  extra #1  \\nsecond")\n')
+        check(sh(cmd, env=extra_env).stdout.endswith(' │ extra ##1\n'), 'first nonempty line')
+        for body in ('import sys\nprint("ignored")\nprint("error", file=sys.stderr)\nsys.exit(1)\n',
+                     'pass\n', 'print("  ")\n'):
+            r = sh(cmd, env=write_extra(body))
+            check(r.returncode == 0 and r.stdout == baseline and not r.stderr, repr(r))
+        for command in (str(t / 'missing'), "'unclosed", '   ', ''):
+            r = sh(cmd, env=dict(env, AIW_TUI_STATUS_EXTRA=command))
+            check(r.returncode == 0 and r.stdout == baseline and not r.stderr, repr(r))
+        for output, expected in (('x' * 200, 'x' * 119 + '…'),
+                                 ('x' * 118 + '#tail', 'x' * 118 + '…'),
+                                 ('#' * 100, '##' * 59 + '…'),
+                                 ('x' * 120, 'x' * 120)):
+            r = sh(cmd, env=write_extra(f'print({output!r})\n'))
+            extra = r.stdout.rstrip('\n').split(' │ ')[-1]
+            check(extra == expected and len(extra) <= 120 and not r.stderr, repr(r))
+        # Block until killed by the shortened timeout, without sleeping.
+        extra_env = write_extra('import signal\nsignal.pause()\n')
+        timeout_cmd = [sys.executable, '-c',
+                       'import tui; tui.STATUS_EXTRA_TIMEOUT = 0.1; print(tui.status("ok"))']
+        r = sh(timeout_cmd, env=extra_env, cwd=REPO)
+        check(r.returncode == 0 and r.stdout == baseline and not r.stderr, repr(r))
+        extra_env = write_extra('print("extra #1")\n')
+        folder = t / 'state/tui'; folder.mkdir(parents=True); (folder / 'ok').write_text('thread\n')
+        for board_body in (None, 'print("summary #raw  ")\n',
+                           'pass\n', 'raise RuntimeError("board failed")\n'):
+            if board_body is not None:
+                board = b / 'aiw-board'
+                board.write_text(f'#!{sys.executable}\n' + board_body)
+                board.chmod(0o755)
+            for ident in ('ok', '../escape'):
+                base = sh(cmd[:-1] + [ident], env=env).stdout.rstrip('\n')
+                r = sh(cmd[:-1] + [ident], env=extra_env)
+                check(r.returncode == 0 and r.stdout == base + ' │ extra ##1\n'
+                      and not r.stderr, repr(r))
+
+
 def tui_launch():
     with tempfile.TemporaryDirectory(prefix='aiw space ') as td:
         t = Path(td); b = t / 'bin'; b.mkdir(); log = t / 'tmux.jsonl'; result = t / 'codex.json'
@@ -96,6 +153,7 @@ def tui_launch():
             shutil.copy(REPO / name, repo / name)
         env = dict(os.environ, PATH=str(b), AIW_PYTHON=sys.executable, AIW_STATE=str(t / 'state space'))
         env.pop('TMUX', None)
+        env.pop('AIW_TUI_STATUS_EXTRA', None)
         args = ['--model', 'two words', "quote'", '$(touch bad)', 'semi;colon', '', 'line\nbreak']
         cmd = ['/bin/bash', str(repo / 'bin/aiw'), 'tui', *args]
         r = sh(cmd, env=env); check(r.returncode == 0, r.stderr)
@@ -115,6 +173,7 @@ def tui_launch():
         check(argv[4:] == expected_argv and '-g' not in argv, str(argv))
         check(callback.startswith('#(') and callback.endswith(')'), callback)
         callback_args = shlex.split(callback[2:-1])
+        check(not any(a.startswith('AIW_TUI_STATUS_EXTRA=') for a in callback_args), callback)
         check(callback_args[-3:-1] == [str(repo.resolve() / 'bin/aiw'), 'tui-status'], callback)
         tui_id = callback_args[-1]
         check(all(c.isalnum() or c in '_-' for c in tui_id), tui_id)
@@ -133,6 +192,22 @@ def tui_launch():
         callback = next(a[2] for a in calls if a[1] == 'status-right')
         callback_args = shlex.split(callback[2:-1])
         check('AIW_STATE=' + recorded[2] in callback_args, callback)
+        check(not any(a.startswith('AIW_TUI_STATUS_EXTRA=') for a in callback_args), callback)
+        extra = shlex.join([str(t / 'extra command'), "quote'", '$(touch bad)', 'line\nbreak'])
+        for inside in (False, True):
+            log.unlink()
+            launch_env = dict(env, AIW_TUI_STATUS_EXTRA=extra)
+            if inside:
+                launch_env['TMUX'] = 'fake'
+            r = sh(cmd, env=launch_env)
+            check(r.returncode == 0 and not r.stderr, repr(r))
+            calls = [json.loads(line) for line in log.read_text().splitlines()]
+            callback = (next(a[2] for a in calls if a[1] == 'status-right') if inside
+                        else calls[0][calls[0].index('status-left') + 1])
+            callback_args = shlex.split(callback[2:-1])
+            check(callback_args[0] == '/usr/bin/env'
+                  and 'AIW_TUI_STATUS_EXTRA=' + extra in callback_args[:-3], callback)
+        check(not (t / 'bad').exists(), 'extra command was interpreted by shell')
         tmux.unlink()
         r = sh(cmd, env=env)
         check(r.returncode == 127 and '需要 tmux：brew install tmux' in r.stderr, repr(r))
@@ -154,4 +229,4 @@ def tui_gc():
               and (folder / 'link').is_symlink(), repr(r))
 
 
-CASES = {f.__name__: f for f in (tui_sessions, tui_status, tui_launch, tui_gc)}
+CASES = {f.__name__: f for f in (tui_sessions, tui_status, tui_status_extra, tui_launch, tui_gc)}

@@ -12,9 +12,36 @@ import uuid
 from env_compat import getenv, valid_tui_id
 
 HERE = Path(__file__).resolve().parent
+STATUS_EXTRA_TIMEOUT = 3
 
 
 def status(tui_id):
+    line = _dispatch_status(tui_id)
+    command = os.environ.get('AIW_TUI_STATUS_EXTRA', '')
+    if command:
+        try:
+            argv = shlex.split(command)
+            if not argv:
+                return line
+            result = subprocess.run(argv, stdin=subprocess.DEVNULL,
+                                    capture_output=True, text=True,
+                                    timeout=STATUS_EXTRA_TIMEOUT, check=True)
+            extra = next((s.strip() for s in result.stdout.splitlines() if s.strip()), '')
+            extra = extra.replace('#', '##')
+            if len(extra) > 120:
+                extra = extra[:119]
+                # Keep escaped hashes paired at the truncation boundary.
+                if (len(extra) - len(extra.rstrip('#'))) % 2:
+                    extra = extra[:-1]
+                extra += '…'
+            if extra:
+                return line + ' │ ' + extra
+        except (OSError, ValueError, subprocess.SubprocessError):
+            pass
+    return line
+
+
+def _dispatch_status(tui_id):
     idle = '○ 派单空闲'
     try:
         if not valid_tui_id(tui_id):
@@ -47,6 +74,8 @@ def launch(args):
     environment = ['/usr/bin/env', 'PATH=' + os.environ.get('PATH', ''),
                    'AIW_PYTHON=' + sys.executable,
                    'AIW_STATE=' + os.environ['AIW_STATE']]
+    if 'AIW_TUI_STATUS_EXTRA' in os.environ:
+        environment.append('AIW_TUI_STATUS_EXTRA=' + os.environ['AIW_TUI_STATUS_EXTRA'])
     callback = shlex.join(environment + [str(HERE / 'bin' / 'aiw'), 'tui-status', tui_id])
     options = [('status', 'on'), ('status-interval', '15'), ('status-left', ''),
                ('status-right-length', '200'), ('status-right', '#(' + callback + ')')]

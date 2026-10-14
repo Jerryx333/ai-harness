@@ -120,7 +120,7 @@ You need macOS (the only tested OS), Python 3, and logged-in Claude Code or Code
 
 | Command | Purpose and example |
 | --- | --- |
-| `aiw <seat> <dir> <seconds> <prompt> [--ro] [--net]` | Assign work: `aiw review . 900 task.txt --ro`. `--ro` requests read-only; `--net` opens the network for Codex code-change work (off by default). |
+| `aiw <seat> <dir> <seconds> <prompt> [--ro] [--worktree] [--net]` | Assign work: `aiw review . 900 task.txt --ro`. `--ro` requests read-only; `--worktree` dispatches writes in a new branch/worktree from HEAD, preserving it and reporting merge/cleanup commands on exit; `--net` opens the network for Codex code-change work (off by default). |
 | `aiw panel` | Ask several models the same question for independent opinions: `aiw panel . 600 task.txt --prior prior.md`. Pass your own judgment with `--prior`; then accept, reject or defer each opinion, without majority voting. A panel succeeds only when at least two models answer; default lists with fewer than two seats do not dispatch and return 1; an explicitly named single seat still shows its result and returns 1. Output format and options: [reference manual](docs/reference.zh-CN.md#命令) (Chinese). |
 | `aiw map` | Apply one instruction per file: `aiw map . 600 task.txt src/a.py src/b.py`; defaults to the `draft` role, up to 3 jobs. |
 | `aiw goal init / verify` | Create a checklist with `aiw goal init docs/goals/demo.json`; edit its example tasks, `verify` commands and `paths`, then run `aiw goal verify docs/goals/demo.json --full`. |

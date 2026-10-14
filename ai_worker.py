@@ -5,7 +5,8 @@
     kind=cli        直接调用命令行（codex），可以写文件。
 
 用法：
-    aiw <seat> <workdir> <timeout_s> <prompt_file> [--ro] [--net] [--no-fallback] [--no-findings] [--attach 文件 ...] [--effort low|medium|high]
+    aiw <seat> <workdir> <timeout_s> <prompt_file> [--ro] [--worktree] [--net] [--no-fallback] [--no-findings] [--attach 文件 ...] [--effort low|medium|high]
+        --worktree 只用于写任务：从当前 HEAD 创建 aiw/<run-id> 和 state/worktrees/<run-id>；结束后保留并报告合并/清理命令。
         --attach 可重复，路径相对 workdir；CLI 座位收校验后的文件清单，其它座位收内联全文。
         拒绝 .env/密钥/证书类文件、二进制文件、workdir 之外的文件；附件合计上限 200KB。
     aiw doctor            # 每个座位：可执行文件路径、版本、熔断状态、主机名
@@ -1134,6 +1135,62 @@ def new_run_dir(seat: str) -> Path:
     return STATE.resolve() / "runs" / format_run_id(dt.datetime.now(), seat, os.getpid(), uuid.uuid4().hex[:8])
 
 
+def worktree_git(workdir, *args):
+    return subprocess.run(["git", *args], cwd=workdir, env=repository_git_env(),
+                          capture_output=True, check=True, timeout=20)
+
+
+def create_task_worktree(workdir: str, run_dir: Path):
+    try:
+        root = Path(os.fsdecode(worktree_git(workdir, "rev-parse", "--show-toplevel").stdout).removesuffix("\n")).resolve()
+    except subprocess.CalledProcessError as e:
+        raise ValueError("--worktree 工作目录必须在 git 仓库内") from e
+    try:
+        head = worktree_git(root, "rev-parse", "--verify", "HEAD^{commit}").stdout.decode().strip()
+    except subprocess.CalledProcessError as e:
+        raise ValueError("--worktree 仓库 HEAD 必须有提交") from e
+    branch = f"aiw/{run_dir.name}"
+    probe = subprocess.run(["git", "show-ref", "--verify", "--quiet", f"refs/heads/{branch}"],
+                           cwd=root, env=repository_git_env(), capture_output=True, timeout=20)
+    if probe.returncode == 0:
+        raise ValueError(f"--worktree 分支已存在：{branch}，不覆盖")
+    if probe.returncode != 1:
+        raise ValueError(f"--worktree 无法检查分支：{os.fsdecode(probe.stderr).strip()}")
+    dirty = worktree_git(root, "status", "--porcelain=v1", "-z", "--untracked-files=all").stdout.split(b"\0")
+    names, i = [], 0
+    while i < len(dirty) and dirty[i]:
+        entry = dirty[i]
+        names.append(os.fsdecode(entry[3:]))
+        i += 2 if b"R" in entry[:2] or b"C" in entry[:2] else 1
+    if names:
+        print("[ai-worker] 未提交改动不会带进 worktree：", file=sys.stderr)
+        for name in names[:10]:
+            print(f"  {name!r}", file=sys.stderr)
+    path = STATE.resolve() / "worktrees" / run_dir.name
+    relative = Path(workdir).relative_to(root)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    worktree_git(root, "worktree", "add", "-b", branch, str(path), head)
+    return str(path / relative), {"worktree": str(path), "worktree_branch": branch}, root, head
+
+
+def report_task_worktree(fields, root, head):
+    path, branch = fields["worktree"], fields["worktree_branch"]
+    print(f"[ai-worker] worktree：{path}\n[ai-worker] 分支：{branch}", file=sys.stderr)
+    try:
+        diff = worktree_git(path, "diff", "--stat", head, "--").stdout
+        unstaged = worktree_git(path, "diff", "--name-only", "-z").stdout.split(b"\0")
+        untracked = worktree_git(path, "ls-files", "--others", "--exclude-standard", "-z").stdout.split(b"\0")
+        print(f"[ai-worker] git diff --stat（相对 {head}）：\n{os.fsdecode(diff).rstrip() or '（无已跟踪文件改动）'}", file=sys.stderr)
+        print(f"[ai-worker] 未暂存文件数：{sum(bool(p) for p in unstaged)}；未跟踪文件数：{sum(bool(p) for p in untracked)}", file=sys.stderr)
+    except (OSError, subprocess.SubprocessError) as e:
+        print(f"[ai-worker] 无法统计 worktree diff：{e}", file=sys.stderr)
+    qroot, qpath, qbranch = map(shlex.quote, (str(root), path, branch))
+    print(f"[ai-worker] 合并：先在 worktree 检查并提交；可快进时 git -C {qroot} merge --ff-only {qbranch}；"
+          f"不可快进时用 git -C {qpath} diff {head} 或 cherry-pick 已提交的提交。", file=sys.stderr)
+    print(f"[ai-worker] 清理（确认改动已保存后）：git -C {qroot} worktree remove {qpath}；"
+          f"git -C {qroot} branch -D {qbranch}", file=sys.stderr)
+
+
 def atomic_write_bytes(path: Path, data: bytes) -> None:
     temporary = None
     try:
@@ -1393,13 +1450,14 @@ def preflight(cfg: dict) -> dict | None:
     return {"kind": "locked", "rc": 1, "out": "", "err": err, "secs": round(time.time() - t0, 1)}
 
 
-def run_seat(seat: str, prompt: str, workdir: str, timeout: int, ro: bool, effort: str | None = None, fixed_model: str | None = None, net: bool = False, baseline_status: bytes | None = None) -> dict:
+def run_seat(seat: str, prompt: str, workdir: str, timeout: int, ro: bool, effort: str | None = None, fixed_model: str | None = None, net: bool = False, baseline_status: bytes | None = None, run_dir: Path | None = None) -> dict:
     global PENDING_SIGNAL
     t0 = time.time()
     context = {"out": "", "err": "", "archived": False, "output_saved": False}
     try:
         with deferred_signals():
-            result = _run_seat(seat, prompt, workdir, timeout, ro, effort, fixed_model, net, baseline_status)
+            result = _run_seat(seat, prompt, workdir, timeout, ro, effort, fixed_model, net, baseline_status,
+                               **({"run_dir": run_dir} if run_dir is not None else {}))
             context.update(result)
             context["archived"] = True
         # dispatch 的记账延迟区仍在外层：在尝试边界提取信号，先记 interrupted 再退出。
@@ -1412,7 +1470,7 @@ def run_seat(seat: str, prompt: str, workdir: str, timeout: int, ro: bool, effor
         if not context["archived"]:
             context.update(e.result)
             if "run_dir" not in context:
-                run_dir = new_run_dir(seat)
+                run_dir = run_dir or new_run_dir(seat)
                 save_baseline(run_dir, baseline_status)
                 context["run_dir"] = str(run_dir) if write_run_file(run_dir / "task.txt", prompt) else None
             if context["run_dir"] is not None:
@@ -1452,7 +1510,7 @@ def readonly_argv_error(seat, argv, prompt=None):
     return None
 
 
-def _run_seat(seat: str, prompt: str, workdir: str, timeout: int, ro: bool, effort: str | None = None, fixed_model: str | None = None, net: bool = False, baseline_status: bytes | None = None) -> dict:
+def _run_seat(seat: str, prompt: str, workdir: str, timeout: int, ro: bool, effort: str | None = None, fixed_model: str | None = None, net: bool = False, baseline_status: bytes | None = None, run_dir: Path | None = None) -> dict:
     if SEATS["seats"][seat].get("kind") == "agent_use":
         return run_agent_use(seat, prompt, workdir, timeout, fixed_model, baseline_status)
     argv = build_argv(seat, prompt, workdir, ro, effort, net)
@@ -1472,7 +1530,7 @@ def _run_seat(seat: str, prompt: str, workdir: str, timeout: int, ro: bool, effo
             argv[2:2] = ["-c", "skills.include_instructions=false"]
         else:
             print(f"[ai-worker] 执行方独立 CODEX_HOME 不可用，回退共享配置：{reason}", file=sys.stderr)
-    run_dir = new_run_dir(seat)
+    run_dir = run_dir or new_run_dir(seat)
     save_baseline(run_dir, baseline_status)
     if not write_run_file(run_dir / "task.txt", prompt):
         run_dir = None
@@ -1835,6 +1893,11 @@ def record_findings(workdir, seat, actual, via, ro, prompt_id, run_dir, parsed, 
 
 
 def dispatch(inflight: Path | None, attempt: dict, *, before_execute=None) -> int:
+    with contextlib.ExitStack() as stack:
+        return _dispatch(inflight, attempt, before_execute=before_execute, stack=stack)
+
+
+def _dispatch(inflight: Path | None, attempt: dict, *, before_execute=None, stack) -> int:
     signal.signal(signal.SIGTERM, interrupted)
     signal.signal(signal.SIGINT, interrupted)
     if sys.argv[1:] == ["doctor", "--fingerprint"]:
@@ -1843,7 +1906,7 @@ def dispatch(inflight: Path | None, attempt: dict, *, before_execute=None) -> in
         return 0
     try:
         values = {}
-        args, flags, attach = split_argv(sys.argv[1:], {"--ro", "--net", "--no-fallback", "--no-findings", "--allow-nested", "--attach", "--effort"}, values=values)
+        args, flags, attach = split_argv(sys.argv[1:], {"--ro", "--worktree", "--net", "--no-fallback", "--no-findings", "--allow-nested", "--attach", "--effort"}, values=values)
         effort = values.get("effort")
     except AttachError as e:
         print(f"[ai-worker] {e}", file=sys.stderr)
@@ -1859,6 +1922,9 @@ def dispatch(inflight: Path | None, attempt: dict, *, before_execute=None) -> in
         print(__doc__, file=sys.stderr)
         return 64
     seat, workdir, timeout_s, prompt_file = args
+    if "--worktree" in flags and ("--ro" in flags or seat in ("review", "draft")):
+        print("[ai-worker] --worktree 只用于写任务", file=sys.stderr)
+        return 64
     if seat in ('write', 'review', 'draft'):
         role = seat
         try:
@@ -1891,6 +1957,9 @@ def dispatch(inflight: Path | None, attempt: dict, *, before_execute=None) -> in
     if seat not in SEATS["seats"]:
         print(f"[ai-worker] 未知座位 {seat}；可用：{', '.join(SEATS['seats'])}", file=sys.stderr)
         return 64
+    if "--worktree" in flags and (ro or SEATS["seats"][seat].get("kind") == "agent_use"):
+        print("[ai-worker] --worktree 只用于写任务", file=sys.stderr)
+        return 64
     net = "--net" in flags
     if net and (ro or seat_adapter(seat) != "codex" or SEATS["seats"][seat].get("kind") == "agent_use"
                 or not codex_workspace_write(seat, ro)):
@@ -1912,6 +1981,18 @@ def dispatch(inflight: Path | None, attempt: dict, *, before_execute=None) -> in
     except (OSError, UnicodeDecodeError) as e:
         print(f"[ai-worker] 读不了 prompt 文件 {prompt_file}：{e}", file=sys.stderr)
         return 64
+    worktree_fields, task_run_dir = {}, None
+    if "--worktree" in flags:
+        task_run_dir = new_run_dir(seat)
+        try:
+            with deferred_signals():
+                workdir, worktree_fields, source_root, source_head = create_task_worktree(workdir, task_run_dir)
+                stack.callback(report_task_worktree, worktree_fields, source_root, source_head)
+                Path(workdir).mkdir(parents=True, exist_ok=True)
+        except (ValueError, OSError, subprocess.SubprocessError) as e:
+            reason = os.fsdecode(e.stderr).strip() if isinstance(e, subprocess.CalledProcessError) and e.stderr else str(e)
+            print(f"[ai-worker] --worktree 创建失败：{reason}", file=sys.stderr)
+            return 64
     try:
         attachment_files = read_attachments(workdir, attach)
     except AttachError as e:
@@ -1966,7 +2047,7 @@ def dispatch(inflight: Path | None, attempt: dict, *, before_execute=None) -> in
             _, repo = findings.repository_identity(workdir)
         except Exception:
             pass
-        repo_fields = {"repo": repo, "workdir": workdir if repo is None else None}
+        repo_fields = {"repo": repo, "workdir": workdir if repo is None else None, **worktree_fields}
         with WorkChanges(workdir, ro) as changes:
             last_result = None
             outside_free_window = False
@@ -2026,7 +2107,8 @@ def dispatch(inflight: Path | None, attempt: dict, *, before_execute=None) -> in
                             if os.environ.get("AIW_PANEL_FORMAT") == "1" and os.environ.get("AIW_PANEL_DIR"):
                                 task_prompt += PANEL_FORMAT
                             r = run_seat(s, task_prompt, workdir, timeout, ro, effort_fields.get("effort"), None, net,
-                                         changes.baseline_status)
+                                         changes.baseline_status,
+                                         **({"run_dir": task_run_dir if s == seat else new_run_dir(s)} if task_run_dir is not None else {}))
                         except RunInterrupted as e:
                             interruption, r = e, e.result
                         parsed = None

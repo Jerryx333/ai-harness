@@ -263,6 +263,89 @@ def codex_sol_no_fallback():
 
 
 
+def write_worktree():
+    import fcntl
+    import hashlib
+    with tempfile.TemporaryDirectory() as td:
+        t = Path(td)
+        work = git_template(t / 'repo', {'tracked': 'original\n', 'sub/tracked': 'sub original\n'})
+        prompt = t / 'prompt'; prompt.write_text('修改 tracked')
+        state = t / 'state'; state.mkdir()
+        env = dict(os.environ, AIW_STATE=str(state), FAKE_CODEX='write')
+        def run(wd=work, flags=('--worktree',), **extra):
+            return inprocess_sh([sys.executable, str(REPO / 'ai_worker.py'), 'codex', str(wd),
+                                 '10', str(prompt), '--no-fallback', '--no-findings', *flags],
+                                env=dict(env, **extra))
+        (work / 'tracked').write_text('dirty main\n')
+        for n in range(12):
+            (work / f'dirty-{n:02}').write_text('dirty\n')
+        baseline = sh(['git', 'status', '--porcelain'], cwd=work).stdout
+        # 主目录已被占锁时，两次独立派单均能执行。
+        key = hashlib.sha1(str(work.resolve()).encode()).hexdigest()[:12]
+        with (state / ('lock-' + key)).open('w') as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            for wd in (work, work / 'sub'):
+                r = run(wd)
+                check(r.returncode == 0, r.stderr)
+                row = json.loads((state / 'seat-ledger.jsonl').read_text().splitlines()[-1])
+                wt = Path(row['worktree']); branch = row['worktree_branch']
+                check(wt == state.resolve() / 'worktrees' / Path(row['run_dir']).name, repr(row))
+                check(branch == 'aiw/' + wt.name, repr(row))
+                check(sh(['git', 'branch', '--show-current'], cwd=wt).stdout.strip() == branch, '分支未创建')
+                actual = wt if wd == work else wt / 'sub'
+                check((actual / 'tracked').read_text() == 'changed\n', '子目录映射或写入错误')
+                check((actual / 'created').exists() and not (wd / 'created').exists(), '主目录被改动')
+                check(not (wt / 'dirty-00').exists(), '未提交文件被带入')
+                check(sh(['git', 'status', '--porcelain'], cwd=work).stdout == baseline, '主目录状态改变')
+                for expected in (str(wt), branch, 'git diff --stat', '1 file changed',
+                                 '未暂存文件数：1；未跟踪文件数：1', 'merge --ff-only', 'cherry-pick',
+                                 'worktree remove', 'branch -D', '未提交改动不会带进 worktree'):
+                    check(expected in r.stderr, expected + ': ' + r.stderr)
+                warning = r.stderr.split('未提交改动不会带进 worktree：\n')[1].split('[ai-worker]')[0]
+                check(sum(line.startswith('  ') for line in warning.splitlines()) == 10, '未限制警告为十个文件')
+        for mode, timeout, expected_rc in (('quota', '10', 1), ('write_slow', '1', 124)):
+            (state / 'breaker.json').unlink(missing_ok=True)
+            cmd = [sys.executable, str(REPO / 'ai_worker.py'), 'codex', str(work), timeout,
+                   str(prompt), '--worktree', '--no-fallback', '--no-findings']
+            r = inprocess_sh(cmd, env=dict(env, FAKE_CODEX=mode))
+            check(r.returncode == expected_rc and 'git diff --stat' in r.stderr and 'worktree remove' in r.stderr,
+                  f'{mode} 结束未报告: {r.stderr}')
+        # 熔断只影响上面的失败单，普通单仍检查字段兼容性。
+        (state / 'breaker.json').unlink(missing_ok=True)
+        r = run(flags=(), FAKE_CODEX='ok')
+        check(r.returncode == 0, r.stderr)
+        row = json.loads((state / 'seat-ledger.jsonl').read_text().splitlines()[-1])
+        check('worktree' not in row and 'worktree_branch' not in row, '普通单出现新字段')
+
+
+def write_worktree_validation():
+    with tempfile.TemporaryDirectory() as td:
+        t = Path(td)
+        work = git_template(t / 'repo', {'tracked': 'original\n'})
+        empty = git_template(t / 'empty', empty=True)
+        plain = t / 'plain'; plain.mkdir()
+        prompt = t / 'prompt'; prompt.write_text('test')
+        env = dict(os.environ, AIW_STATE=str(t / 'state'))
+        for seat, wd, flags, message in (
+                ('codex', work, ('--ro',), '--worktree 只用于写任务'),
+                ('review', work, (), '--worktree 只用于写任务'),
+                ('draft', work, (), '--worktree 只用于写任务'),
+                ('qoder', work, (), '--worktree 只用于写任务'),
+                ('codex', plain, (), '必须在 git 仓库内'),
+                ('codex', empty, (), 'HEAD 必须有提交')):
+            r = inprocess_sh([sys.executable, str(REPO / 'ai_worker.py'), seat, str(wd),
+                             '10', str(prompt), '--worktree', *flags], env=env)
+            check(r.returncode == 64 and message in r.stderr, f'{seat} {wd}: {r.stderr}')
+        # 固定 run-id，验证同名分支不覆盖；临时仓库中正常创建 refs。
+        check(sh(['git', '-C', str(work), 'branch', 'aiw/existing']).returncode == 0, 'fixture branch')
+        script = ('import sys; from pathlib import Path; import ai_worker as w; '
+                  'w.new_run_dir = lambda seat: w.STATE / "runs/existing"; sys.exit(w.main())')
+        r = inprocess_sh([sys.executable, '-c', script, 'codex', str(work), '10', str(prompt), '--worktree'],
+                         env=env, cwd=REPO)
+        check(r.returncode == 64 and '分支已存在' in r.stderr, r.stderr)
+        check(not (t / 'state/worktrees/existing').exists(), '冲突仍创建 worktree')
+
+
 def repository_write_lock():
     import time
     with tempfile.TemporaryDirectory() as td:
@@ -1462,6 +1545,8 @@ CASES = {case.__name__: case for case in (
     write_changes_report,
     codex_sol_no_fallback,
     repository_write_lock,
+    write_worktree,
+    write_worktree_validation,
     run_provider_location,
     provider_cleared_on_failure,
     provider_cleanup_not_work_change,

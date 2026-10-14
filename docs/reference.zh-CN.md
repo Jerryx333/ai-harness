@@ -110,7 +110,7 @@ aiw errand stop JOB
 aiw errand list
 ```
 
-入口原样转发参数和退出码到 `<errand 根目录>/scripts/errand_use.py`。跑腿根目录按 `AGENT_USE_ERRAND_HOME` > 本地 `errand.home` 解析，支持 `~`；未配置时无跑腿供应商，`aiw errand` 明确报错。本地等待超时（rc 124）不等于云端停止；用 wait 继续确认，结果可能不完整。提交结果未知时用 recover 回查，不能自动重发。额度消耗来自账户余额变化，可能包含其它会话消耗。派单记录写 `job_id`、`state`、`task_url`、`credits_used`。
+入口原样转发参数和退出码到 `<errand 根目录>/scripts/errand_use.py`。跑腿根目录按 `AGENT_USE_ERRAND_HOME` > 本地 `errand.home` 解析，支持 `~`；未配置时无跑腿供应商，`aiw errand` 明确报错。本地等待超时（rc 124）不等于云端停止；用 wait 继续确认，结果可能不完整。提交结果未知时返回 rc 22，用 recover 回查，不能自动重发；24 小时内同一任务仍在运行或结果未知时，再次 submit 会在查额度和弹窗前被拦截（rc 22），网页核实后才可加 `--allow-duplicate`。submit/wait 加 `--notify` 时，若本机有 [ocs](https://github.com/leeguooooo/open-cross-session)，任务结束、需要处理或满 6 小时会用 `ocs dm` 通知发起会话；前台等待到期后由低优先级后台进程继续轮询，通知只含任务号、状态、额度和下一步命令，不含结果正文；没有 ocs 时提示后照常执行。额度消耗来自账户余额变化，可能包含其它会话消耗。派单记录写 `job_id`、`state`、`task_url`、`credits_used`。
 
 errand 名单从 跑腿根目录下的 `config/errands.json` 的 providers 读取，文件不存在视为空，配置损坏明确报错。跑腿供应商不进入 seats.json；route 校验及运行、panel、worker 座位入口和顶替链拒绝跨专线引用，freecheck 跳过；`AIW_NESTED=1` 禁止调用跑腿入口，无嵌套豁免。
 
@@ -252,7 +252,7 @@ agent_use 文本座位通过本地配置接入 [agent-use](https://github.com/Je
 ## 命令
 
 ```
-aiw <seat> <workdir> <timeout_s> <prompt_file> [--ro] [--net] [--no-fallback] [--attach 文件 ...]
+aiw <seat> <workdir> <timeout_s> <prompt_file> [--ro] [--worktree] [--net] [--no-fallback] [--attach 文件 ...]
 aiw panel <workdir> <timeout_s> <prompt_file> [seat ...] [--attach 文件 ...] [--prior 文件] [--free] [--full]
 aiw map <workdir> <timeout_s> <prompt_file> <文件 ...> [--seat 座位] [--jobs N]  # 默认 map_default=draft，并发 3，summary.json 汇总
 aiw panel <workdir> <timeout_s> <prompt_file> --prior prior.md  # 先写自己的判断，仅归档供主会话看，不发给座位
@@ -306,7 +306,12 @@ Claude 派单钩子检查也识别已启用的 `aiw@…` 插件提供的 `UserPr
 
 会诊后填写目录中的 `adjudication.md`：每条关键意见标接受/驳回（理由或证据）/暂缓（写明等什么），不以多数票收敛。未提供 `--prior` 仅提醒，不改变退出码；文件读不到返回 64。
 
-worker 只接受 `--ro --net --no-fallback --no-findings --allow-nested --attach --effort`，panel 只接受 `--attach`、`--prior`、`--free`、`--full`；未知开关返回 64，旧 `--require-no-tools` 提示「已移除，忽略」后继续。
+worker 只接受 `--ro --worktree --net --no-fallback --no-findings --allow-nested --attach --effort`，panel 只接受 `--attach`、`--prior`、`--free`、`--full`；未知开关返回 64，旧 `--require-no-tools` 提示「已移除，忽略」后继续。
+
+`aiw write . 1200 task.txt --worktree`（点名写座位也可用）：只用于写任务，与 `--ro`、review/draft 或只读座位同用返回 64；workdir 必须在有 HEAD 提交的 Git 仓库内。
+从当前 HEAD 创建 `aiw/<run-id>` 分支及 `<STATE>/worktrees/<run-id>`（同名分支返回 64，不覆盖）；子目录映射到同一相对路径，写锁、顶替链、提示词、沙箱与改动统计均使用新目录。未提交改动不会带入，stderr 最多列 10 个文件。
+成功、失败、超时都在 stderr 报告路径、分支、相对初始 HEAD 的 `git diff --stat` 及未暂存/未跟踪文件数；账本增加 `worktree`、`worktree_branch`，普通单不增加。
+保留 worktree，不自动 commit/merge/删除；检查并提交后可用 `git -C <原仓库> merge --ff-only aiw/<run-id>`，不可快进时用 diff/cherry-pick；保存改动后用 `git worktree remove <路径>` 和 `git branch -D aiw/<run-id>` 清理。
 
 `--net` 默认不开，只对 `adapter="codex"` 座位的写单有效，在 prompt 前添加 `-c sandbox_workspace_write.network_access=true`，开放网络和本地端口；与 `--ro`（含只读座位）同用或用于非 codex 座位返回 64 并说明。
 

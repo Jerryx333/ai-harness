@@ -287,6 +287,7 @@ Claude 派单钩子检查也识别已启用的 `aiw@…` 插件提供的 `UserPr
 | 1 | 本单失败（看 stderr，顶替链未必走完） |
 | 2 | 产出不合格 |
 | 3 | goal 保险丝触发 |
+| 4 | 执行方完成但 aiw 验收未通过 |
 | 64 | 用法错误 |
 | 65 | verify 命令变更 |
 | 75 | 目录被写锁占用（goal 正在验收） |
@@ -306,12 +307,18 @@ Claude 派单钩子检查也识别已启用的 `aiw@…` 插件提供的 `UserPr
 
 会诊后填写目录中的 `adjudication.md`：每条关键意见标接受/驳回（理由或证据）/暂缓（写明等什么），不以多数票收敛。未提供 `--prior` 仅提醒，不改变退出码；文件读不到返回 64。
 
-worker 只接受 `--ro --worktree --net --no-fallback --no-findings --allow-nested --attach --effort`，panel 只接受 `--attach`、`--prior`、`--free`、`--full`；未知开关返回 64，旧 `--require-no-tools` 提示「已移除，忽略」后继续。
+worker 只接受 `--ro --worktree --net --no-fallback --no-findings --allow-nested --attach --effort --verify --verify-timeout`，panel 只接受 `--attach`、`--prior`、`--free`、`--full`；未知开关返回 64，旧 `--require-no-tools` 提示「已移除，忽略」后继续。
 
 `aiw write . 1200 task.txt --worktree`（点名写座位也可用）：只用于写任务，与 `--ro`、review/draft 或只读座位同用返回 64；workdir 必须在有 HEAD 提交的 Git 仓库内。
 从当前 HEAD 创建 `aiw/<run-id>` 分支及 `<STATE>/worktrees/<run-id>`（同名分支返回 64，不覆盖）；子目录映射到同一相对路径，写锁、顶替链、提示词、沙箱与改动统计均使用新目录。未提交改动不会带入，stderr 最多列 10 个文件。带 `--attach` 时先在原 workdir 按全部附件规则预检；附件未跟踪、已修改或已暂存（相对 HEAD 有任何差异）返回 64，提示先提交或去掉 `--worktree`，不创建 worktree、分支或元数据；通过后在 worktree 读取对应已提交文件。
 成功、失败、超时都在 stderr 报告路径、分支、相对初始 HEAD 的 `git diff --stat` 及未暂存/未跟踪文件数；账本增加 `worktree`、`worktree_branch`，普通单不增加。
 创建时原子写入 `<STATE>/worktrees/<run-id>.json`（路径、分支、源仓库、初始 HEAD、UTC 创建时间）。本单无已跟踪/暂存/未跟踪改动且分支未前进时即时清理；有改动则保留，不自动 commit/merge。检查并提交后可用 `git -C <原仓库> merge --ff-only aiw/<run-id>`，不可快进时用 diff/cherry-pick；每个 `--worktree` 单报告后及 `aiw gc` 扫描：跳过持写锁目录，已合并且干净的删除，超过固定 7 天的先保存相对初始 HEAD 的二进制补丁到 `<STATE>/worktrees/archive/<run-id>.patch` 再删除（失败保留）；在初始 HEAD 上用 `git apply --binary <补丁>` 恢复。被忽略文件不计入干净判断、不存档到补丁，清理使用强制删除以一并移除它们。源仓库丢失时残留目录整体保存到同目录的 `<run-id>.files/`。
+
+写单可重复传 `--verify '<命令>'`，如 `aiw write . 1200 prompt.md --verify 'python3 -m unittest' --verify 'git diff --check'`。`--verify-timeout <秒>` 默认 600，必须为正整数，按单条命令计时；空命令、与 `--ro` 同用、只读座位或 review/draft 角色使用均返回 64，不派单。
+
+派单（含顶替链）最终 rc=0 且产出合格后，aiw 在主会话环境继承自身环境，按顺序以非 login 的 `bash -c` 运行验收，stdout/stderr 合并；不加执行方沙箱，可联网与监听端口，子进程通过 `os.nice(10)` 降优先级。某条失败或超时也继续后续命令；全部通过返回 0，有失败或超时返回 4。执行方失败、超时或产出不合格不跑验收，保留原退出码，stdout 写「执行方未成功，跳过 aiw 验收」。
+
+验收在实际工作目录运行；带 `--worktree` 时为任务 worktree 中对应子目录，在 worktree 汇报和无改动清理之前运行。验收产生的未跟踪文件计为改动，因此会保留 worktree。stdout 在执行方正文之后追加精简「aiw 验收（主会话环境执行）」结果块：逐条 rc、耗时、最多 120 字符的命令，失败输出最后 40 行（单条最多 1500 字符），通过数与全文路径；完整命令、rc、耗时及输出归档到成功尝试的 `<run_dir>/verify.txt`。成功尝试账本行增加 `verify: {"total": N, "passed": M, "secs": 秒}`；跳过时记录 `{"total": N, "passed": null, "skipped": true}`。未带 `--verify` 时账本不增加字段，旧行为不变。
 
 `--net` 默认不开，只对 `adapter="codex"` 座位的写单有效，在 prompt 前添加 `-c sandbox_workspace_write.network_access=true`，开放网络和本地端口；与 `--ro`（含只读座位）同用或用于非 codex 座位返回 64 并说明。
 
@@ -327,7 +334,7 @@ worker 只接受 `--ro --worktree --net --no-fallback --no-findings --allow-nest
 
 `aiw gc` 同时按文件 mtime 清理 `STATE/tui/` 中过期的普通文件，跳过软链。默认清理 `STATE/runs/`、`STATE/panels/`、`STATE/maps/` 下 mtime 早于 30 天的直接子目录；`STATE/codex-home/sessions/YYYY/MM/DD/` 则按目录名日期清理早于本机时区截止日的整日目录（截止当天保留，不看 mtime），不触碰 codex-home 下其他文件。`STATE/worktrees/archive/` 的 `.patch` 普通文件与 `.files` 目录也按指定天数和 mtime 清理；worktree 扫描固定 7 天，不受 gc 天数参数影响。无元数据目录仅列出不删。`aiw gc 7 --dry-run` 仅报告，不存档或删除。跳过软链，保留账本、熔断、计数、路由日志及锁文件；实际删除不可恢复。
 
-所有座位每次实际运行都在 `state/runs/<时间>-<座位>-<pid>/` 留下完整 prompt（含附件）的 `task.txt`、全文 `output.md` 和只保留末尾 200KB 的 `stderr.txt`；CLI 失败、超时、中断也保存已取得的 stdout（可能为空），agent-use 有答复时保存全文，并保留 `result/` 结果目录（含 `status.json`）。账本记录 `run_dir`。中断也归档并记账本（SIGINT 130、SIGTERM 124）。成功且全文写入成功时 stderr 最后一行为 `[ai-worker] 全文：<run_dir>/output.md`；失败且最后一次尝试有运行目录时为 `[ai-worker] 排查：<run_dir>`。成功但 output.md 写入失败时末行给出排查目录并说明全文只在上面的输出里。stdout 不混入路径；归档写入失败只警告，不改变派单结果。
+所有座位每次实际运行都在 `state/runs/<时间>-<座位>-<pid>/` 留下完整 prompt（含附件）的 `task.txt`、全文 `output.md` 和只保留末尾 200KB 的 `stderr.txt`；CLI 失败、超时、中断也保存已取得的 stdout（可能为空），agent-use 有答复时保存全文，并保留 `result/` 结果目录（含 `status.json`）。账本记录 `run_dir`。中断也归档并记账本（SIGINT 130、SIGTERM 124）。成功且全文写入成功时 stderr 最后一行为 `[ai-worker] 全文：<run_dir>/output.md`；失败且最后一次尝试有运行目录时为 `[ai-worker] 排查：<run_dir>`。成功但 output.md 写入失败时末行给出排查目录并说明全文只在上面的输出里。未带 `--verify` 时 stdout 不混入路径；归档写入失败只警告，不改变派单结果。
 
 ## 执行方独立 CODEX_HOME
 
@@ -442,6 +449,7 @@ python3 tests/mutation_check.py credentials locked  # 只运行指定变异
 
 ## 变更记录
 
+- 2026-10-14 写单新增可重复的 `--verify` 与 `--verify-timeout`：执行方成功后由 aiw 在主会话环境验收，输出精简结果、归档全文并记账本；验收失败返回 4。
 - 2026-10-14 上下文交接默认门槛提前到 20 万，同档位增加由主会话判断新话题的条件提示；后台派单等完成通知，不轮询结果。
 - 2026-10-10 首次公开：公开默认只含 codex / codex-sol / claude；文本座位、路由覆盖、通知、findings 设置、跑腿均由本地配置提供。
 

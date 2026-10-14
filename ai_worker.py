@@ -5,7 +5,7 @@
     kind=cli        直接调用命令行（codex），可以写文件。
 
 用法：
-    aiw <seat> <workdir> <timeout_s> <prompt_file> [--ro] [--worktree] [--net] [--no-fallback] [--no-findings] [--attach 文件 ...] [--effort low|medium|high]
+    aiw <seat> <workdir> <timeout_s> <prompt_file> [--ro] [--worktree] [--net] [--no-fallback] [--no-findings] [--attach 文件 ...] [--verify 命令 ...] [--verify-timeout 秒] [--effort low|medium|high]
         --worktree 只用于写任务：从当前 HEAD 创建 aiw/<run-id> 和 state/worktrees/<run-id>；结束后报告；无改动即时清理，已合并或过期 worktree 自动扫描清理。
         --attach 可重复，路径相对 workdir；CLI 座位收校验后的文件清单，其它座位收内联全文。
         拒绝 .env/密钥/证书类文件、二进制文件、workdir 之外的文件；附件合计上限 200KB。
@@ -1131,6 +1131,58 @@ def write_run_file(path: Path, text: str, tail: int | None = None) -> bool:
         return False
 
 
+def run_verification(commands, workdir, timeout, run_dir):
+    results, full = [], []
+    started = time.monotonic()
+    for command in commands:
+        begin = time.monotonic()
+        try:
+            with subprocess.Popen(["bash", "-c", command], cwd=workdir,
+                                  stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                  text=True, encoding="utf-8", errors="replace",
+                                  start_new_session=True, preexec_fn=lambda: os.nice(10)) as proc:
+                try:
+                    with interruptible_signals():
+                        output, _ = proc.communicate(timeout=timeout)
+                    rc = proc.returncode
+                except subprocess.TimeoutExpired:
+                    output, _ = stop_group(proc)
+                    output += f"\n验收超时（{timeout}s）\n"
+                    rc = 124
+                except RunInterrupted:
+                    stop_group(proc)
+                    raise
+        except (OSError, subprocess.SubprocessError) as e:
+            rc, output = 1, f"验收启动失败：{e}"
+        secs = time.monotonic() - begin
+        results.append((command, rc, secs, output))
+        full.append(f"$ {command}\nrc={rc} secs={secs:.1f}\n{output}\n")
+    summary = {"total": len(results), "passed": sum(rc == 0 for _, rc, _, _ in results),
+               "secs": round(time.monotonic() - started, 1)}
+    path = Path(run_dir) / "verify.txt"
+    saved = write_run_file(path, "\n".join(full))
+    footer = f"结论：{summary['passed']}/{summary['total']} 通过 · 全文 {path}"
+    if not saved:
+        footer += "（写入失败）"
+    lines = ["## aiw 验收（主会话环境执行）"]
+    statuses = []
+    for command, rc, secs, output in results:
+        label = " ".join(command.split())
+        label = label[:117] + "..." if len(label) > 120 else label
+        statuses.append(f"{'✓' if rc == 0 else '✗'} rc={rc} {secs:.1f}s  {label}")
+    budget = max(0, 2450 - len(lines[0]) - len(footer) - sum(len(s) + 1 for s in statuses) - 2)
+    for status, (_, rc, _, output) in zip(statuses, results):
+        lines.append(status)
+        if rc != 0 and budget > 4:
+            tail = "\n".join(output.splitlines()[-40:])
+            tail = tail[-min(1500, budget - 3):]
+            line = "  " + tail.replace("\n", "\n  ")
+            lines.append(line[:budget - 1])
+            budget = max(0, budget - len(lines[-1]) - 1)
+    lines.append(footer)
+    return summary, "\n".join(lines) + "\n"
+
+
 def new_run_dir(seat: str) -> Path:
     return STATE.resolve() / "runs" / format_run_id(dt.datetime.now(), seat, os.getpid(), uuid.uuid4().hex[:8])
 
@@ -1832,7 +1884,7 @@ class AttachError(ValueError):
 
 
 def split_argv(argv: list[str], allowed: set[str], *, values: dict | None = None) -> tuple[list[str], set[str], list[str]]:
-    """拆出位置参数、布尔开关、附件；可选 values 接收单次 --effort / --prior。"""
+    """拆出位置参数、布尔开关、附件；可选 values 接收 --effort / --prior / 验收参数。"""
     if values is None:
         values = {}
     args, flags, attach = [], set(), []
@@ -1857,6 +1909,18 @@ def split_argv(argv: list[str], allowed: set[str], *, values: dict | None = None
             if v is None or v.startswith("--"):
                 raise AttachError("--prior 后面缺文件路径")
             values["prior"] = v
+        elif a == "--verify":
+            v = next(it, None)
+            if v is None or v.startswith("--") or not v.strip():
+                raise AttachError("--verify 后面缺验收命令或命令为空")
+            values.setdefault("verify", []).append(v)
+        elif a == "--verify-timeout":
+            if "verify_timeout" in values:
+                raise AttachError("--verify-timeout 只能出现一次")
+            v = next(it, None)
+            if v is None or not v.isascii() or not v.isdigit() or int(v) <= 0:
+                raise AttachError("--verify-timeout 应为正整数秒")
+            values["verify_timeout"] = int(v)
         elif a == "--attach":
             v = next(it, None)
             if v is None or v.startswith("--"):
@@ -2084,7 +2148,11 @@ def record_findings(workdir, seat, actual, via, ro, prompt_id, run_dir, parsed, 
 
 def dispatch(inflight: Path | None, attempt: dict, *, before_execute=None) -> int:
     with contextlib.ExitStack() as stack:
-        return _dispatch(inflight, attempt, before_execute=before_execute, stack=stack)
+        try:
+            return _dispatch(inflight, attempt, before_execute=before_execute, stack=stack)
+        finally:
+            if attempt.get("verify_requested") and not attempt.get("verify"):
+                print("\n## aiw 验收（主会话环境执行）\n执行方未成功，跳过 aiw 验收")
 
 
 def _dispatch(inflight: Path | None, attempt: dict, *, before_execute=None, stack) -> int:
@@ -2096,14 +2164,14 @@ def _dispatch(inflight: Path | None, attempt: dict, *, before_execute=None, stac
         return 0
     try:
         values = {}
-        args, flags, attach = split_argv(sys.argv[1:], {"--ro", "--worktree", "--net", "--no-fallback", "--no-findings", "--allow-nested", "--attach", "--effort"}, values=values)
+        args, flags, attach = split_argv(sys.argv[1:], {"--ro", "--worktree", "--net", "--no-fallback", "--no-findings", "--allow-nested", "--attach", "--effort", "--verify", "--verify-timeout"}, values=values)
         effort = values.get("effort")
     except AttachError as e:
         print(f"[ai-worker] {e}", file=sys.stderr)
         return 64
-    if args == ["doctor"] and not flags and not attach and effort is None:
+    if args == ["doctor"] and not flags and not attach and not values:
         return doctor()
-    if len(args) == 2 and args[0] == "enable" and not flags and not attach:
+    if len(args) == 2 and args[0] == "enable" and not flags and not attach and "verify" not in values and "verify_timeout" not in values:
         return enable_seat(args[1])
     if os.environ.get("AIW_NESTED") == "1" and "--allow-nested" not in flags:
         print("已在被外包的会话里，不再嵌套派单", file=sys.stderr)
@@ -2112,6 +2180,11 @@ def _dispatch(inflight: Path | None, attempt: dict, *, before_execute=None, stac
         print(__doc__, file=sys.stderr)
         return 64
     seat, workdir, timeout_s, prompt_file = args
+    verify = values.get("verify", [])
+    verify_timeout = values.get("verify_timeout", 600)
+    if verify and ("--ro" in flags or seat in ("review", "draft")):
+        print("[ai-worker] --verify 只用于写任务", file=sys.stderr)
+        return 64
     if "--worktree" in flags and ("--ro" in flags or seat in ("review", "draft")):
         print("[ai-worker] --worktree 只用于写任务", file=sys.stderr)
         return 64
@@ -2149,6 +2222,9 @@ def _dispatch(inflight: Path | None, attempt: dict, *, before_execute=None, stac
         return 64
     if "--worktree" in flags and (ro or SEATS["seats"][seat].get("kind") == "agent_use"):
         print("[ai-worker] --worktree 只用于写任务", file=sys.stderr)
+        return 64
+    if verify and ro:
+        print("[ai-worker] --verify 只用于写任务", file=sys.stderr)
         return 64
     net = "--net" in flags
     if net and (ro or seat_adapter(seat) != "codex" or SEATS["seats"][seat].get("kind") == "agent_use"
@@ -2206,6 +2282,8 @@ def _dispatch(inflight: Path | None, attempt: dict, *, before_execute=None, stac
     chain = [seat] + ([] if "--no-fallback" in flags else SEATS["fallback"].get(seat, []))
     if before_execute is not None:
         inflight = before_execute()
+    if verify:
+        attempt["verify_requested"] = True
     STATE.mkdir(parents=True, exist_ok=True)
     # 只有写任务锁目录；只读任务可以并行（aiw panel 同时问几家）
     lock_key = workdir
@@ -2251,18 +2329,18 @@ def _dispatch(inflight: Path | None, attempt: dict, *, before_execute=None, stac
                     continue  # 写任务不顶替给只能出文本的座位
                 disabled = disabled_seat(s)
                 if disabled:
-                    ledger({**repo_fields, **changes.fields(), "via": via, "seat": seat, "actual": s, "prompt": prompt_id, "kind": "skipped_disabled", "rc": None, "secs": 0})
+                    ledger({**repo_fields, **changes.fields(), **({"verify": {"total": len(verify), "passed": None, "skipped": True}} if verify else {}), "via": via, "seat": seat, "actual": s, "prompt": prompt_id, "kind": "skipped_disabled", "rc": None, "secs": 0})
                     print_disabled(s, disabled)
                     continue
                 why = breaker_open(s)
                 if why:
-                    ledger({**repo_fields, **changes.fields(), "via": via, "seat": seat, "actual": s, "prompt": prompt_id, "kind": "skipped_breaker", "detail": why, "rc": None, "secs": 0})
+                    ledger({**repo_fields, **changes.fields(), **({"verify": {"total": len(verify), "passed": None, "skipped": True}} if verify else {}), "via": via, "seat": seat, "actual": s, "prompt": prompt_id, "kind": "skipped_breaker", "detail": why, "rc": None, "secs": 0})
                     print(f"[{s}] 熔断中: {why}", file=sys.stderr)
                     continue
                 limit = substitute_limits().get(s)
                 token = reserve_substitute(s, limit) if s != seat else None
                 if s != seat and token is None:
-                    ledger({**repo_fields, **changes.fields(), "via": via, "seat": seat, "actual": s, "prompt": prompt_id, "kind": "skipped_daily_limit", "rc": None, "secs": 0})
+                    ledger({**repo_fields, **changes.fields(), **({"verify": {"total": len(verify), "passed": None, "skipped": True}} if verify else {}), "via": via, "seat": seat, "actual": s, "prompt": prompt_id, "kind": "skipped_daily_limit", "rc": None, "secs": 0})
                     print(f"[{s}] 今日顶替上限已达 {limit}", file=sys.stderr)
                     continue
 
@@ -2330,10 +2408,23 @@ def _dispatch(inflight: Path | None, attempt: dict, *, before_execute=None, stac
                         attempt.clear()
                         attempt.update(r, attempted=True)
                         success = r["kind"] == "ok"
+                        verify_fields, verify_block = {}, ""
+                        if verify:
+                            attempt["verify_requested"] = True
+                            if success and r["rc"] == 0:
+                                if not r.get("run_dir"):
+                                    r["run_dir"] = str(new_run_dir(s))
+                                    attempt["run_dir"] = r["run_dir"]
+                                summary, verify_block = run_verification(
+                                    verify, workdir, verify_timeout, r["run_dir"])
+                                verify_fields = {"verify": summary}
+                                attempt.update(verify_fields)
+                            else:
+                                verify_fields = {"verify": {"total": len(verify), "passed": None, "skipped": True}}
                     finally:
                         if token:
                             finish_substitute(token, success)
-                    ledger({**repo_fields, **change_fields, **({"agent_use_versions": r["agent_use_versions"]} if "agent_use_versions" in r else {}), **({"findings_n": len(parsed["observations"])} if parsed is not None else {}), "via": via, **effort_fields, "seat": seat, "actual": s, "prompt": prompt_id, "ro": ro, "model": r.get("model") or SEATS["seats"][s].get("model") or "default",
+                    ledger({**repo_fields, **change_fields, **verify_fields, **({"agent_use_versions": r["agent_use_versions"]} if "agent_use_versions" in r else {}), **({"findings_n": len(parsed["observations"])} if parsed is not None else {}), "via": via, **effort_fields, "seat": seat, "actual": s, "prompt": prompt_id, "ro": ro, "model": r.get("model") or SEATS["seats"][s].get("model") or "default",
                             "run_dir": r.get("run_dir"),
                             "kind": r["kind"], "rc": r["rc"], "secs": r["secs"], "substituted": s != seat,
                             "err_tail": r["err"][-300:],
@@ -2351,6 +2442,8 @@ def _dispatch(inflight: Path | None, attempt: dict, *, before_execute=None, stac
                     sys.stdout.write(r["out"])
                     if r["out"] and not r["out"].endswith("\n"):
                         sys.stdout.write("\n")
+                    if verify_block:
+                        sys.stdout.write("\n" + verify_block)
                     sys.stdout.flush()
                     actual_provider = provider_file or (Path(r["run_dir"]) / "provider" if r.get("run_dir") else None)
                     if actual_provider is not None:
@@ -2365,7 +2458,8 @@ def _dispatch(inflight: Path | None, attempt: dict, *, before_execute=None, stac
                         print(f"{seat} 不在免费时段，已顶替", file=sys.stderr)
                     if s != seat:
                         print(f"\n[ai-worker] 注意：{seat} 不可用，本单实际由 {s} 完成", file=sys.stderr)
-                    return 0
+                    checked = verify_fields.get("verify")
+                    return 4 if checked and checked["passed"] != checked["total"] else 0
                 if r["kind"] == "invalid_argv":
                     print(f"[{s}] {r['err']}；拒绝执行", file=sys.stderr)
                     return 64

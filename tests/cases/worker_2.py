@@ -485,7 +485,126 @@ def repository_identity_contract():
 
 
 
+
+def write_verify():
+    with tempfile.TemporaryDirectory() as td:
+        t = Path(td)
+        cmd, env, wd = worker_call(t, AIW_STATE=str(t / 'state'), FAKE_CODEX='ok')
+        cmd[2] = 'codex'
+        cmd.remove('--ro')
+        cmd += ['--no-fallback', '--no-findings']
+        def run(*flags, **extra):
+            (t / 'state/breaker.json').unlink(missing_ok=True)
+            result = inprocess_sh([*cmd, *flags], env=dict(env, **extra))
+            check((t / 'state/seat-ledger.jsonl').exists(), repr(result))
+            row = json.loads((t / 'state/seat-ledger.jsonl').read_text().splitlines()[-1])
+            return result, row
+
+        r, row = run('--verify', 'echo passed', '--verify', 'echo failed >&2; exit 1')
+        check(r.returncode == 4 and '## aiw 验收（主会话环境执行）' in r.stdout
+              and '1/2 通过' in r.stdout and 'failed' in r.stdout, repr(r))
+        check(r.stdout.startswith('codex ok\n'), r.stdout)
+        check(row['rc'] == 0 and row['kind'] == 'ok' and row['verify']['total'] == 2
+              and row['verify']['passed'] == 1 and row['verify']['secs'] >= 0, repr(row))
+        full = (Path(row['run_dir']) / 'verify.txt').read_text()
+        check('echo passed' in full and 'rc=0 secs=' in full and 'rc=1 secs=' in full
+              and 'failed' in full, full)
+        r, row = run('--verify', 'exit 1', '--verify', 'echo later > later')
+        check(r.returncode == 4 and (wd / 'later').exists(), repr(r))
+        r, row = run('--verify', 'true', '--verify', 'echo good')
+        check(r.returncode == 0 and '2/2 通过' in r.stdout and row['verify']['passed'] == 2, repr(r))
+        r, row = run('--verify', 'sleep 5', '--verify-timeout', '1', '--verify', 'true')
+        check(r.returncode == 4 and 'rc=124' in r.stdout and '超时' in r.stdout
+              and row['verify']['passed'] == 1, repr(r))
+        # The successful substitute owns acceptance and its archive.
+        script = ('import ai_worker as w; '
+                  'w.SEATS["fallback"]["codex"] = ["codex-sol"]; '
+                  'raise SystemExit(w.main())')
+        (t / 'state/breaker.json').unlink(missing_ok=True)
+        r = inprocess_sh([sys.executable, '-c', script, *[arg for arg in cmd[2:] if arg != '--no-fallback'], '--verify', 'true'],
+                         env=dict(env, FAKE_CODEX='auth_sol', FAKE_CODEX_AUTH_MARKER=str(t / 'auth-marker')))
+        rows = [json.loads(line) for line in (t / 'state/seat-ledger.jsonl').read_text().splitlines()]
+        check(r.returncode == 0 and r.stdout.count('## aiw 验收') == 1
+              and rows[-1]['actual'] == 'codex-sol' and rows[-1]['verify']['passed'] == 1
+              and rows[-2]['verify']['skipped'], repr(r))
+
+
+def write_verify_skipped():
+    with tempfile.TemporaryDirectory() as td:
+        t = Path(td)
+        cmd, env, wd = worker_call(t, AIW_STATE=str(t / 'state'), FAKE_CODEX='ok')
+        cmd[2] = 'codex'
+        cmd.remove('--ro')
+        cmd += ['--no-fallback', '--no-findings']
+        def run(*flags, **extra):
+            (t / 'state/breaker.json').unlink(missing_ok=True)
+            r = inprocess_sh([*cmd, *flags], env=dict(env, **extra))
+            row = json.loads((t / 'state/seat-ledger.jsonl').read_text().splitlines()[-1])
+            return r, row
+        for mode, timeout, rc in (('quota', '10', 1), ('partial_timeout', '1', 124)):
+            cmd[4] = timeout
+            r, row = run('--verify', 'touch should-not-run', FAKE_CODEX=mode)
+            check(r.returncode == rc and '执行方未成功，跳过 aiw 验收' in r.stdout
+                  and not (wd / 'should-not-run').exists(), repr(r))
+            check(row['verify'] == {'total': 1, 'passed': None, 'skipped': True}, repr(row))
+            check(not (Path(row['run_dir']) / 'verify.txt').exists(), repr(row))
+        cmd[4] = '10'
+        empty = t / 'empty'; empty.write_text('')
+        r, row = run('--verify', 'touch should-not-run', FAKE_CODEX='findings',
+                     FAKE_FINDINGS_OUTPUT=str(empty))
+        check(r.returncode == 2 and '执行方未成功，跳过 aiw 验收' in r.stdout
+              and not (wd / 'should-not-run').exists() and row['verify']['skipped'], repr(r))
+        r, row = run()
+        check(r.returncode == 0 and 'verify' not in row and r.stdout == 'codex ok\n', repr(row))
+
+
+def write_verify_validation():
+    with tempfile.TemporaryDirectory() as td:
+        t = Path(td)
+        marker = t / 'called'
+        cmd, env, wd = worker_call(t, AIW_STATE=str(t / 'state'), FAKE_CODEX_ARGS=str(marker))
+        cmd[2] = 'codex'
+        cmd.remove('--ro')
+        for seat, flags in (
+                ('codex', ['--ro', '--verify', 'true']),
+                ('review', ['--verify', 'true']), ('draft', ['--verify', 'true']),
+                ('claude', ['--verify', 'true']),
+                ('codex', ['--verify', 'true', '--verify-timeout', '0']),
+                ('codex', ['--verify', 'true', '--verify-timeout', 'abc']),
+                ('codex', ['--verify', '']), ('codex', ['--verify', '   ']),
+                ('codex', ['--verify']), ('codex', ['--verify-timeout', '-1'])):
+            cmd[2] = seat
+            r = inprocess_sh([*cmd, *flags], env=env)
+            check(r.returncode == 64 and not marker.exists()
+                  and not (t / 'state/seat-ledger.jsonl').exists(), repr(r))
+
+
+def write_verify_worktree():
+    with tempfile.TemporaryDirectory() as td:
+        t = Path(td)
+        work = git_template(t / 'repo', {'sub/tracked': 'original\n'})
+        prompt = t / 'prompt'; prompt.write_text('测试')
+        env = dict(os.environ, AIW_STATE=str(t / 'state'), FAKE_CODEX='ok')
+        cmd = [sys.executable, str(REPO / 'ai_worker.py'), 'write', str(work / 'sub'),
+               '10', str(prompt), '--worktree', '--no-fallback', '--no-findings']
+        r = inprocess_sh([*cmd, '--verify', 'pwd > verify-pwd'], env=env)
+        check(r.returncode == 0, repr(r))
+        row = json.loads((t / 'state/seat-ledger.jsonl').read_text().splitlines()[-1])
+        wt = Path(row['worktree'])
+        check((wt / 'sub/verify-pwd').read_text().strip() == str((wt / 'sub').resolve()), repr(row))
+        check(not (work / 'sub/verify-pwd').exists() and '本单无改动，worktree 已清理' not in r.stderr
+              and '未跟踪文件数：1' in r.stderr, repr(r))
+        r = inprocess_sh([*cmd, '--verify', 'test -f tracked'], env=env)
+        check(r.returncode == 0 and '1/1 通过' in r.stdout
+              and '本单无改动，worktree 已清理' in r.stderr, repr(r))
+        row = json.loads((t / 'state/seat-ledger.jsonl').read_text().splitlines()[-1])
+        check(not Path(row['worktree']).exists(), repr(row))
+
 CASES = {case.__name__: case for case in (
+    write_verify,
+    write_verify_skipped,
+    write_verify_validation,
+    write_verify_worktree,
     executor_watchdog,
     inflight_liveness_lock,
     test_inflight_lifecycle,

@@ -529,6 +529,7 @@ def write_verify():
         # The successful substitute owns acceptance and its archive.
         script = ('import ai_worker as w; '
                   'w.SEATS["fallback"]["codex"] = ["codex-sol"]; '
+                  'w.SEATS["seats"]["codex-sol"]["ro_only"] = False; '  # 写单顶替会跳过只读座位
                   'raise SystemExit(w.main())')
         (t / 'state/breaker.json').unlink(missing_ok=True)
         r = inprocess_sh([sys.executable, '-c', script, *[arg for arg in cmd[2:] if arg != '--no-fallback'], '--verify', 'true'],

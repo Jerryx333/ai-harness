@@ -12,6 +12,7 @@ import os
 from env_compat import getenv, session_id
 from pathlib import Path
 import re
+import selectors
 import signal
 import socket
 import subprocess
@@ -170,6 +171,10 @@ def main(argv=None):
                 pass
 
     handlers = {sig: signal.signal(sig, forward) for sig in (signal.SIGINT, signal.SIGTERM)}
+    # 唤醒管道：信号若被内核投给其它线程，靠它打断主线程的 select 去跑处理器。
+    wake_r, wake_w = os.pipe()
+    os.set_blocking(wake_w, False)
+    old_wakeup = signal.set_wakeup_fd(wake_w, warn_on_full_buffer=False)
     try:
         lock = acquire_liveness_lock(lock_path)
         if lock is not None or not lock_path.exists():
@@ -188,13 +193,38 @@ def main(argv=None):
             return 127 if isinstance(error, FileNotFoundError) else 126
         for sig in pending:
             forward(sig, None)
-        with child.stdout:
-            for raw in child.stdout:
-                sys.stdout.buffer.write(raw)
-                sys.stdout.buffer.flush()
-                if progress is not None:
-                    progress.update(progress_line(raw))
-        return child.wait()
+        with child.stdout, selectors.DefaultSelector() as selector:
+            # 只监听原始 fd，不混用 child.stdout 的缓冲读，避免吞掉字节。
+            selector.register(child.stdout.fileno(), selectors.EVENT_READ)
+            selector.register(wake_r, selectors.EVENT_READ)
+            partial = b""
+            while True:
+                for key, _ in selector.select():
+                    if key.fd == wake_r:
+                        # 排空唤醒字节即可；处理器由解释器在主线程自动执行。
+                        os.read(wake_r, 4096)
+                        continue
+                    chunk = os.read(key.fd, 65536)
+                    if not chunk:
+                        if progress is not None and partial:
+                            progress.update(progress_line(partial))
+                        return child.wait()
+                    sys.stdout.buffer.write(chunk)
+                    sys.stdout.buffer.flush()
+                    if progress is None:
+                        continue
+                    partial += chunk
+                    lines = partial.split(b"\n")
+                    partial = lines.pop()
+                    if len(partial) > 4096:
+                        partial = partial[:4096]  # 无换行的超长输出只留前缀。
+                    latest = ""
+                    for line in lines:
+                        text = progress_line(line)
+                        if text:
+                            latest = text
+                    if latest:
+                        progress.update(latest)
     finally:
         if progress is not None:
             progress.stop()
@@ -205,6 +235,12 @@ def main(argv=None):
                 warn(f"删除状态失败：{error}")
         if lock is not None:
             lock.close()
+        signal.set_wakeup_fd(old_wakeup)
+        for fd in (wake_r, wake_w):
+            try:
+                os.close(fd)
+            except OSError:
+                pass
         for sig, handler in handlers.items():
             signal.signal(sig, handler)
         if os.environ.get("AIW_TRACK_TEST_WRITE_COUNT") == "1":

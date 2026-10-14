@@ -197,11 +197,14 @@ def track_failures_and_signals():
         r = sh(cmd + ['demo', '--', 'sh', '-c', 'echo intact; exit 7'], env=env)
         check(r.returncode == 7 and r.stdout == 'intact\n' and '警告' in r.stderr, '状态失败影响执行')
         (root / 'state').unlink()
+        # 不用 signal.pause()：信号在 print 与 pause() 之间到达会被永久吞掉。
+        code = ('import os,signal,sys,time\n'
+                'parent = os.getppid()\n'
+                'signal.signal(signal.SIGINT, lambda *a: sys.exit(23))\n'
+                'signal.signal(signal.SIGTERM, lambda *a: sys.exit(24))\n'
+                'print("ready",flush=True)\n'
+                'while os.getppid() == parent: time.sleep(0.05)\n')
         for sig in (signal.SIGINT, signal.SIGTERM):
-            code = ('import signal,sys; '
-                    'signal.signal(signal.SIGINT, lambda *a: sys.exit(23)); '
-                    'signal.signal(signal.SIGTERM, lambda *a: sys.exit(24)); '
-                    'print("ready",flush=True); signal.pause()')
             p = subprocess.Popen(cmd + ['signal', '--', sys.executable, '-c', code],
                                  env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             try:
@@ -218,6 +221,37 @@ def track_failures_and_signals():
                 if p.poll() is None:
                     p.kill()
                     p.communicate()
+        # 确定性回归：SIGINT 投给辅助线程（模拟内核投给非主线程）；track 必须
+        # 从 select 醒来转发，旧实现阻塞在管道读上会卡到超时。
+        wrapper = f'''import json, os, signal, sys, threading, time
+from pathlib import Path
+import track
+
+def poke():
+    path = Path(os.environ["AIW_STATE"]) / "tracks" / f"{{os.getpid()}}.json"
+    deadline = time.monotonic() + 5
+    while True:
+        try:
+            if json.loads(path.read_text())["progress"] == "ready":
+                break
+        except (OSError, ValueError):
+            pass
+        assert time.monotonic() < deadline, "track 未发布 ready 进度"
+        time.sleep(0.01)
+    signal.pthread_kill(threading.get_ident(), signal.SIGINT)
+
+threading.Thread(target=poke, daemon=True).start()
+sys.exit(track.main(["signal", "--", sys.executable, "-c", {code!r}]))
+'''
+        p = subprocess.Popen([sys.executable, '-c', wrapper], cwd=REPO, env=env,
+                             stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        try:
+            out, err = p.communicate(timeout=10)
+        except subprocess.TimeoutExpired:
+            p.kill()
+            p.communicate()
+            raise AssertionError('track 未转发非主线程信号（丢失唤醒）')
+        check(p.returncode == 23, f'非主线程信号退出码错误: {p.returncode} {out!r} {err!r}')
         # 直接验证描述符不可继承；写盘失败不使线程挂死。
         script = '''import os, pathlib, track
 p = pathlib.Path(os.environ['AIW_STATE']) / 'lock'

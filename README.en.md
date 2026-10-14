@@ -139,6 +139,19 @@ You need macOS (the only tested OS), Python 3, and logged-in Claude Code or Code
 
 See [best practices](docs/best-practices.md) for task templates, a recommended configuration and a daily workflow.
 
+## Optional: status line and dashboard
+
+aiw-board is aiw's independent, read-only status line and dashboard; it does not assign tasks or write aiw state. It shows in-flight assignments, seats → actual executors, panel groups, successes and failures completed within the last 10 minutes, and today's assignment count, with status line text such as `● 派单中 N 单`, `○ 派单空闲`, `刚完成 … ✓/✗`, and `今日 N 单 ✗N`.
+
+```bash
+git clone https://github.com/Jerryx333/aiw-board.git
+cd aiw-board
+./install.sh --apply-settings
+```
+
+Installation backs up and replaces any existing ccstatusline configuration; `--apply-settings` modifies Claude Code settings after backing them up. Omit that flag if you prefer not to change settings automatically.
+After installation, use `aiw board` to open the full dashboard; `aiw statusline` forwards to the status line. See the [aiw-board repository](https://github.com/Jerryx333/aiw-board) for details.
+
 ## More documentation
 
 - [Usage guide](docs/guide.md): installation details, how it works and customization.

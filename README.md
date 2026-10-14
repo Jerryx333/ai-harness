@@ -139,6 +139,19 @@ aiw 负责把任务交给座位；agent-use 负责调用注册的 provider；age
 
 任务单模板、推荐配置和一天的用法见[最佳实践](docs/best-practices.zh-CN.md)。
 
+## 可选：状态栏和看板
+
+aiw-board 是 aiw 的独立只读状态栏和看板，不派单、不写 aiw 状态；展示在途派单、座位→实际执行方、会诊分组、10 分钟内刚完成的成败和今日单数，状态栏文字如 `● 派单中 N 单`、`○ 派单空闲`、`刚完成 … ✓/✗`、`今日 N 单 ✗N`。
+
+```bash
+git clone https://github.com/Jerryx333/aiw-board.git
+cd aiw-board
+./install.sh --apply-settings
+```
+
+安装会备份并替换已有 ccstatusline 配置；`--apply-settings` 会修改 Claude Code settings（先备份），不想自动修改 settings 就去掉该参数。
+装好后用 `aiw board` 打开完整看板，`aiw statusline` 转发到状态栏；细节见 [aiw-board 仓库](https://github.com/Jerryx333/aiw-board)。
+
 ## 更多文档
 
 - [使用指南](docs/guide.zh-CN.md)：安装细节、工作原理和定制。

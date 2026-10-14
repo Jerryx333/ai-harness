@@ -275,7 +275,7 @@ aiw track [--host 名称] [--timeout 秒] <标签> -- <命令> [参数...]
 
 Claude 派单钩子检查也识别已启用的 `aiw@…` 插件提供的 `UserPromptSubmit` 命令钩子，按 route-hook.sh / route.py 派单入口识别；多个插件同时提供时也提示重复；settings.json 与插件同时提供时提示重复执行，可重跑 `install.sh --claude-hook=plugin` 清理。
 
-看板和状态栏是可选的独立组件 aiw-board（不随本仓库发布），`aiw board`/`aiw statusline` 在已安装时转发。状态文件约定见 [docs/state-contract.md](state-contract.md)。inflight 在强制退出后可能残留，展示端按锁判活。
+看板和状态栏是可选组件（独立仓库 [aiw-board](https://github.com/Jerryx333/aiw-board)，不随本仓库安装），`aiw board`/`aiw statusline` 在已安装时转发。状态文件约定见 [docs/state-contract.md](state-contract.md)。inflight 在强制退出后可能残留，展示端按锁判活。
 
 主会话起的长任务（尤其远端机器上的）用 `aiw track --host <机器名> 标签 -- 本机盯梢命令` 包住本机盯梢命令，供状态栏显示（展示端另行接入）。
 

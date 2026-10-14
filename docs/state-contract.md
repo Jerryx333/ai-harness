@@ -92,6 +92,7 @@ worker 在首次写 JSON 前创建或打开同名 `<pid>.lock` 并持有 `fcntl.
 
 | 字段 | 含义 |
 | --- | --- |
+| text | 可选布尔值；`--text`（含 draft/map 自动启用）时写入 true，否则省略。隐含 ro；仅 workspace agent_use 禁用工具、access=none，CLI 和非 workspace agent_use 仅受只读约束；顶替链每条执行或跳过记录沿用此值 |
 | via | 调用来源：direct（直接派单）、panel（aiw panel 会诊）、map（aiw map 批处理）；旧记录可能缺失 |
 | model | `agent_use` 座位的完成记录为实际产出答复的模型，按 `actual_model` → `selected_model` → `requested_model` 取值，都缺失时回退到座位配置；其他座位为座位配置的模型，未配置时为 `default` |
 | freecheck | 每日免费检测由 freecheck.py 写入 true；周报座位质量统计据此剔除检测行，同时不计 skipped_* 跳过行 |

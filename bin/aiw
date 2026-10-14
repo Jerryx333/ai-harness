@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # aiw — aiw 统一入口。任意项目、任意机器同一个命令。
-#   aiw <write|review|draft|seat> <workdir> <timeout_s> <prompt_file> [--ro] [--no-fallback] [--no-findings] [--attach 文件 ...] [--verify 命令 ...] [--verify-timeout 秒]   外包一单
+#   aiw <write|review|draft|seat> <workdir> <timeout_s> <prompt_file> [--ro] [--text] [--no-fallback] [--no-findings] [--attach 文件 ...] [--verify 命令 ...] [--verify-timeout 秒]   外包一单
+#     --text 隐含 --ro；workspace 座位禁用工具；draft 自动启用
 #   aiw note <workdir> <现象> [--expected 文本] [--evidence 文本] [--location 文本]
 #   aiw findings extract [--days N] | status  抽取信号 / 查看本机状态
 #   aiw triage start [--days N] | apply <decisions.json> | abort

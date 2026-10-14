@@ -74,7 +74,7 @@ def ask(item: tuple[int, str], seat: str, workdir: str, timeout: str,
     env = dict(os.environ, AIW_MAP_DIR=str(out), AIW_PROVIDER_FILE=str(provider_file))
     env.pop("AIW_PANEL_DIR", None)  # 本批次账本的来源是 map
     argv = [sys.executable, str(HERE / "ai_worker.py"), seat, workdir, timeout,
-            str(out / "prompt.md"), "--ro", "--attach", file]
+            str(out / "prompt.md"), "--ro", "--text", "--attach", file]
     limit = outer_timeout(seat, int(timeout), grace)
     with workers.lock:
         if workers.stop_code:

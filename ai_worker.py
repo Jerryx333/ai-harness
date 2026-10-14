@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """座位层：统一调用各家模型。两种座位：
     kind=agent_use  通过本机 agent-use 仓库的 scripts/run_agent.py 调用（如 opencode 等 agent-use 适配器）。
-                    只生成文本、不改文件；只接受 --ro。仓库位置：$AGENT_USE_HOME（默认 ~/.local/share/agent-use，新路径不存在时沿用已有的 ~/code/ai/agent-use）。
+                    默认只生成文本、不改文件；workspace 座位可读写仓库，--text 禁用工具并隐含 --ro。仓库位置：$AGENT_USE_HOME（默认 ~/.local/share/agent-use，新路径不存在时沿用已有的 ~/code/ai/agent-use）。
     kind=cli        直接调用命令行（codex），可以写文件。
 
 用法：
-    aiw <seat> <workdir> <timeout_s> <prompt_file> [--ro] [--worktree] [--net] [--no-fallback] [--no-findings] [--attach 文件 ...] [--verify 命令 ...] [--verify-timeout 秒] [--effort low|medium|high]
+    aiw <seat> <workdir> <timeout_s> <prompt_file> [--ro] [--text] [--worktree] [--net] [--no-fallback] [--no-findings] [--attach 文件 ...] [--verify 命令 ...] [--verify-timeout 秒] [--effort low|medium|high]
         --worktree 只用于写任务：从当前 HEAD 创建 aiw/<run-id> 和 state/worktrees/<run-id>；结束后报告；无改动即时清理，已合并或过期 worktree 自动扫描清理。
+        --text 隐含 --ro；workspace 座位禁用工具；draft 自动启用。
         --attach 可重复，路径相对 workdir；CLI 座位收校验后的文件清单，其它座位收内联全文。
         拒绝 .env/密钥/证书类文件、二进制文件、workdir 之外的文件；附件合计上限 200KB。
     aiw doctor            # 每个座位：可执行文件路径、版本、熔断状态、主机名
@@ -1476,7 +1477,7 @@ def contract_observation(workdir, seat, message, expected, run_dir=None):
         pass
 
 
-def run_agent_use(seat: str, prompt: str, workdir: str, timeout: int, fixed_model: str | None = None, baseline_status: bytes | None = None, ro: bool = True) -> dict:
+def run_agent_use(seat: str, prompt: str, workdir: str, timeout: int, fixed_model: str | None = None, baseline_status: bytes | None = None, ro: bool = True, text: bool = False) -> dict:
     cfg = dict(SEATS["seats"][seat])
     if cfg.get("disabled_by_user"):
         return {"rc": 1, "out": "", "err": f"{seat} 已被用户停用：{cfg['disabled_by_user']}", "kind": "skipped_disabled", "secs": 0}
@@ -1503,7 +1504,7 @@ def run_agent_use(seat: str, prompt: str, workdir: str, timeout: int, fixed_mode
             temporary = Path(stack.enter_context(tempfile.TemporaryDirectory(prefix="ai-worker-")))
             task, out_dir = temporary / "task.txt", temporary / "result"
             task.write_text(prompt, encoding="utf-8")
-        result = run_agent_use_files(cfg, script, task, out_dir, run_dir, workdir, timeout, ro=ro or cfg.get("ro_only", False))
+        result = run_agent_use_files(cfg, script, task, out_dir, run_dir, workdir, timeout, ro=ro or cfg.get("ro_only", False), text=text)
         if result.get("unknown_reason"):
             contract_observation(workdir, seat,
                 f"agent-use 返回未知 reason={result['reason']}，按 other 处理；请更新 AGENT_USE_REASON",
@@ -1519,14 +1520,16 @@ def agent_use_response_model(attempt: dict) -> str | None:
     return attempt.get("actual_model") or attempt.get("selected_model") or attempt.get("requested_model")
 
 
-def run_agent_use_files(cfg, script, task, out_dir, run_dir, workdir, timeout, ro=True) -> dict:
+def run_agent_use_files(cfg, script, task, out_dir, run_dir, workdir, timeout, ro=True, text=False) -> dict:
     argv = [sys.executable, "-B", str(script), str(task), str(out_dir),
             "--order", cfg["provider"], "--timeout", str(timeout)]
     if cfg.get("model"):
         argv += ["--model", f"{cfg['provider']}={cfg['model']}"]
     if "fallback_models" in cfg:
         argv += ["--option", f"{cfg['provider']}.fallback_models={cfg['fallback_models']}"]
-    if agent_use_workspace(cfg):
+    if agent_use_workspace(cfg) and text:
+        argv.append("--require-no-tools")
+    elif agent_use_workspace(cfg):
         argv += ["--workdir", str(Path(workdir).resolve()), "--access", "ro" if ro or cfg.get("ro_only") else "rw"]
     elif cfg.get("require_no_tools"):
         argv.append("--require-no-tools")
@@ -1698,13 +1701,13 @@ def preflight(cfg: dict) -> dict | None:
     return {"kind": "locked", "rc": 1, "out": "", "err": err, "secs": round(time.time() - t0, 1)}
 
 
-def run_seat(seat: str, prompt: str, workdir: str, timeout: int, ro: bool, effort: str | None = None, fixed_model: str | None = None, net: bool = False, baseline_status: bytes | None = None, run_dir: Path | None = None) -> dict:
+def run_seat(seat: str, prompt: str, workdir: str, timeout: int, ro: bool, effort: str | None = None, fixed_model: str | None = None, net: bool = False, baseline_status: bytes | None = None, run_dir: Path | None = None, text: bool = False) -> dict:
     global PENDING_SIGNAL
     t0 = time.time()
     context = {"out": "", "err": "", "archived": False, "output_saved": False}
     try:
         with deferred_signals():
-            result = _run_seat(seat, prompt, workdir, timeout, ro, effort, fixed_model, net, baseline_status,
+            result = _run_seat(seat, prompt, workdir, timeout, ro, effort, fixed_model, net, baseline_status, text=text,
                                **({"run_dir": run_dir} if run_dir is not None else {}))
             context.update(result)
             context["archived"] = True
@@ -1758,11 +1761,11 @@ def readonly_argv_error(seat, argv, prompt=None):
     return None
 
 
-def _run_seat(seat: str, prompt: str, workdir: str, timeout: int, ro: bool, effort: str | None = None, fixed_model: str | None = None, net: bool = False, baseline_status: bytes | None = None, run_dir: Path | None = None) -> dict:
+def _run_seat(seat: str, prompt: str, workdir: str, timeout: int, ro: bool, effort: str | None = None, fixed_model: str | None = None, net: bool = False, baseline_status: bytes | None = None, run_dir: Path | None = None, text: bool = False) -> dict:
     if SEATS["seats"][seat].get("kind") == "agent_use":
         if not ro and text_only_seat(seat):
             return {"rc": 64, "out": "", "err": "文本座位不能改文件", "kind": "invalid_argv", "secs": 0}
-        return run_agent_use(seat, prompt, workdir, timeout, fixed_model, baseline_status, ro=ro)
+        return run_agent_use(seat, prompt, workdir, timeout, fixed_model, baseline_status, ro=ro, text=text)
     argv = build_argv(seat, prompt, workdir, ro, effort, net)
     if argv is None:
         return {"rc": 127, "out": "", "err": "binary not found", "kind": "not_installed", "secs": 0}
@@ -2206,7 +2209,7 @@ def _dispatch(inflight: Path | None, attempt: dict, *, before_execute=None, stac
         return 0
     try:
         values = {}
-        args, flags, attach = split_argv(sys.argv[1:], {"--ro", "--worktree", "--net", "--no-fallback", "--no-findings", "--allow-nested", "--attach", "--effort", "--verify", "--verify-timeout"}, values=values)
+        args, flags, attach = split_argv(sys.argv[1:], {"--ro", "--text", "--worktree", "--net", "--no-fallback", "--no-findings", "--allow-nested", "--attach", "--effort", "--verify", "--verify-timeout"}, values=values)
         effort = values.get("effort")
     except AttachError as e:
         print(f"[ai-worker] {e}", file=sys.stderr)
@@ -2240,6 +2243,8 @@ def _dispatch(inflight: Path | None, attempt: dict, *, before_execute=None, stac
         print(f"[ai-worker] 角色 {role} → 座位 {seat}", file=sys.stderr)
         if role in ('review', 'draft'):
             flags.add('--ro')
+        if role == 'draft':
+            flags.add('--text')
     reason = SEATS["seats"].get(seat, {}).get("disabled_by_user")
     if reason:
         print_disabled(seat, {"disabled_by_user": reason})
@@ -2258,6 +2263,10 @@ def _dispatch(inflight: Path | None, attempt: dict, *, before_execute=None, stac
     if invalid:
         print(f"[ai-worker] 顶替链配置错误：跑腿供应商 {sorted(invalid)} 只能用 aiw errand", file=sys.stderr)
         return 64
+    text = "--text" in flags
+    if text:
+        flags.add("--ro")
+    text_fields = {"text": True} if text else {}
     ro = "--ro" in flags or SEATS["seats"].get(seat, {}).get("ro_only", False)
     if seat not in SEATS["seats"]:
         print(f"[ai-worker] 未知座位 {seat}；可用：{', '.join(SEATS['seats'])}", file=sys.stderr)
@@ -2269,7 +2278,7 @@ def _dispatch(inflight: Path | None, attempt: dict, *, before_execute=None, stac
         print("[ai-worker] --verify 只用于写任务", file=sys.stderr)
         return 64
     net = "--net" in flags
-    if net and agent_use_workspace(SEATS["seats"][seat]):
+    if net and not text and agent_use_workspace(SEATS["seats"][seat]):
         print(f"[ai-worker] {seat}：workspace 座位联网由供应商决定，--net 不生效", file=sys.stderr)
         net = False
     if net and (ro or seat_adapter(seat) != "codex" or SEATS["seats"][seat].get("kind") == "agent_use"
@@ -2320,7 +2329,7 @@ def _dispatch(inflight: Path | None, attempt: dict, *, before_execute=None, stac
               "你不认识的模型、版本、产品或事件，标「未核实」，不要断言它不存在。\n\n" + prompt)
     via = call_via()
     collect = (findings.config()["collect"] and via == "direct" and "--no-findings" not in flags
-               and not (text_only_seat(seat) and not attach))
+               and not ((text_only_seat(seat) or (text and agent_use_workspace(SEATS["seats"][seat]))) and not attach))
 
     # 公开默认顶替链为空，本地配置可覆盖。
     attachments_warned = os.environ.get("AIW_ATTACH_WARNING_SUPPRESS") == "1"
@@ -2374,18 +2383,18 @@ def _dispatch(inflight: Path | None, attempt: dict, *, before_execute=None, stac
                     continue  # 写任务不顶替给只能出文本的座位
                 disabled = disabled_seat(s)
                 if disabled:
-                    ledger({**repo_fields, **changes.fields(), **({"verify": {"total": len(verify), "passed": None, "skipped": True}} if verify else {}), "via": via, "seat": seat, "actual": s, "prompt": prompt_id, "kind": "skipped_disabled", "rc": None, "secs": 0})
+                    ledger({**text_fields, **repo_fields, **changes.fields(), **({"verify": {"total": len(verify), "passed": None, "skipped": True}} if verify else {}), "via": via, "seat": seat, "actual": s, "prompt": prompt_id, "kind": "skipped_disabled", "rc": None, "secs": 0})
                     print_disabled(s, disabled)
                     continue
                 why = breaker_open(s)
                 if why:
-                    ledger({**repo_fields, **changes.fields(), **({"verify": {"total": len(verify), "passed": None, "skipped": True}} if verify else {}), "via": via, "seat": seat, "actual": s, "prompt": prompt_id, "kind": "skipped_breaker", "detail": why, "rc": None, "secs": 0})
+                    ledger({**text_fields, **repo_fields, **changes.fields(), **({"verify": {"total": len(verify), "passed": None, "skipped": True}} if verify else {}), "via": via, "seat": seat, "actual": s, "prompt": prompt_id, "kind": "skipped_breaker", "detail": why, "rc": None, "secs": 0})
                     print(f"[{s}] 熔断中: {why}", file=sys.stderr)
                     continue
                 limit = substitute_limits().get(s)
                 token = reserve_substitute(s, limit) if s != seat else None
                 if s != seat and token is None:
-                    ledger({**repo_fields, **changes.fields(), **({"verify": {"total": len(verify), "passed": None, "skipped": True}} if verify else {}), "via": via, "seat": seat, "actual": s, "prompt": prompt_id, "kind": "skipped_daily_limit", "rc": None, "secs": 0})
+                    ledger({**text_fields, **repo_fields, **changes.fields(), **({"verify": {"total": len(verify), "passed": None, "skipped": True}} if verify else {}), "via": via, "seat": seat, "actual": s, "prompt": prompt_id, "kind": "skipped_daily_limit", "rc": None, "secs": 0})
                     print(f"[{s}] 今日顶替上限已达 {limit}", file=sys.stderr)
                     continue
 
@@ -2415,7 +2424,7 @@ def _dispatch(inflight: Path | None, attempt: dict, *, before_execute=None, stac
                         try:
                             attempt["attempted"] = True
                             cfg = SEATS["seats"][s]
-                            kind = "cli" if agent_use_workspace(cfg) else cfg.get("kind")
+                            kind = "cli" if agent_use_workspace(cfg) and not text else cfg.get("kind")
                             if net and agent_use_workspace(cfg):
                                 print(f"[ai-worker] {s}：workspace 座位联网由供应商决定，--net 不生效", file=sys.stderr)
                             if kind != "cli" and not attachments_warned:
@@ -2428,7 +2437,7 @@ def _dispatch(inflight: Path | None, attempt: dict, *, before_execute=None, stac
                                 task_prompt += PANEL_FORMAT
                             attempt["executed"] = True
                             r = run_seat(s, task_prompt, workdir, timeout, ro, effort_fields.get("effort"), None, net,
-                                         changes.baseline_status,
+                                         changes.baseline_status, **({"text": True} if text else {}),
                                          **({"run_dir": task_run_dir if s == seat else new_run_dir(s)} if task_run_dir is not None else {}))
                         except RunInterrupted as e:
                             interruption, r = e, e.result
@@ -2480,7 +2489,7 @@ def _dispatch(inflight: Path | None, attempt: dict, *, before_execute=None, stac
                     finally:
                         if token:
                             finish_substitute(token, success)
-                    ledger({**repo_fields, **change_fields, **verify_fields, **({"agent_use_versions": r["agent_use_versions"]} if "agent_use_versions" in r else {}), **({"findings_n": len(parsed["observations"])} if parsed is not None else {}), "via": via, **effort_fields, "seat": seat, "actual": s, "prompt": prompt_id, "ro": ro, "model": r.get("model") or SEATS["seats"][s].get("model") or "default",
+                    ledger({**text_fields, **repo_fields, **change_fields, **verify_fields, **({"agent_use_versions": r["agent_use_versions"]} if "agent_use_versions" in r else {}), **({"findings_n": len(parsed["observations"])} if parsed is not None else {}), "via": via, **effort_fields, "seat": seat, "actual": s, "prompt": prompt_id, "ro": ro, "model": r.get("model") or SEATS["seats"][s].get("model") or "default",
                             "run_dir": r.get("run_dir"),
                             "kind": r["kind"], "rc": r["rc"], "secs": r["secs"], "substituted": s != seat,
                             "err_tail": r["err"][-300:],

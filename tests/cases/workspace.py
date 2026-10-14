@@ -41,7 +41,7 @@ def workspace_access_ro_rw():
     with tempfile.TemporaryDirectory() as td:
         t = Path(td); cmd, env, wd = fixture(t)
         (wd / 'code.txt').write_text('repository material')
-        for role, readonly in [('workspace', True), ('review', True), ('draft', True), ('workspace', False)]:
+        for role, readonly in [('workspace', True), ('review', True), ('workspace', False)]:
             cmd[2] = role
             flags = ['--ro'] if readonly and role == 'workspace' else []
             r = sh(cmd[:-1] + flags + ['--net', '--attach', 'code.txt', '--no-findings'], env=env)
@@ -78,6 +78,74 @@ def workspace_text_unchanged():
         with patch.object(w, 'SEATS', {'seats': {'text': {'kind': 'agent_use'}}}):
             result = w._run_seat('text', 'test', str(wd), 10, False)
             check(result['kind'] == 'invalid_argv', result)
+
+
+def assert_text_call(call):
+    check(call['no_tools'] and call['access'] == 'none' and call['workdir'] is None, call)
+    check('--require-no-tools' in call['argv'] and '--workdir' not in call['argv']
+          and '--access' not in call['argv'], call)
+
+
+def workspace_draft_text():
+    with tempfile.TemporaryDirectory() as td:
+        t = Path(td); cmd, env, wd = fixture(t)
+        (wd / 'code.txt').write_text('repository material')
+        cmd[2] = 'draft'; cmd.remove('--ro')
+        r = sh(cmd + ['--attach', 'code.txt', '--no-findings'], env=env)
+        check(r.returncode == 0, r.stderr)
+        assert_text_call(calls(t)[0])
+        row = json.loads((t / 'state/seat-ledger.jsonl').read_text().splitlines()[-1])
+        check(row['text'] is True and row['ro'] is True, row)
+        prompt = (Path(row['run_dir']) / 'task.txt').read_text()
+        check('repository material' in prompt, prompt)
+
+
+def workspace_explicit_text():
+    with tempfile.TemporaryDirectory() as td:
+        t = Path(td); cmd, env, _ = fixture(t); cmd.remove('--ro')
+        r = sh(cmd + ['--text', '--no-findings'], env=env)
+        check(r.returncode == 0, r.stderr)
+        assert_text_call(calls(t)[0])
+        row = json.loads((t / 'state/seat-ledger.jsonl').read_text().splitlines()[-1])
+        check(row['text'] is True and row['ro'] is True, row)
+        # Text does not add a tool restriction to a non-workspace seat.
+        local = Path(env['AIW_CONFIG']); cfg = json.loads(local.read_text())
+        cfg['seats']['text']['require_no_tools'] = False; local.write_text(json.dumps(cfg))
+        cmd[2] = 'text'
+        r = sh(cmd + ['--text'], env=env)
+        check(r.returncode == 0 and not calls(t)[-1]['no_tools'], r.stderr)
+        cmd[2] = 'codex'; marker = t / 'cli-argv'; env['FAKE_CODEX_ARGS'] = str(marker)
+        r = sh(cmd + ['--text'], env=env)
+        check(r.returncode == 0 and 'read-only' in marker.read_text()
+              and '--require-no-tools' not in marker.read_text(), r.stderr)
+
+
+def workspace_text_net_conflict():
+    with tempfile.TemporaryDirectory() as td:
+        t = Path(td); cmd, env, _ = fixture(t); cmd.remove('--ro')
+        for seat, flags in [('workspace', ['--text']), ('draft', []),
+                            ('text', ['--text']), ('codex', ['--text'])]:
+            cmd[2] = seat
+            r = sh(cmd + flags + ['--net'], env=env)
+            check(r.returncode == 64 and '不能与 --ro' in r.stderr, r.stderr)
+        check(not (t / 'calls').exists(), 'conflicting dispatch executed')
+
+
+def workspace_text_fallback():
+    with tempfile.TemporaryDirectory() as td:
+        t = Path(td); cmd, env, _ = fixture(t, FAKE_CODEX='quota', FAKE_AU_TEXT='quota')
+        local = Path(env['AIW_CONFIG']); cfg = json.loads(local.read_text())
+        cfg['seats']['workspace2'] = dict(cfg['seats']['workspace'], provider='generic2')
+        cfg['fallback']['codex'] = ['text', 'workspace', 'workspace2']
+        local.write_text(json.dumps(cfg)); env['FAKE_AU_GENERIC'] = 'quota'
+        cmd[2] = 'codex'; cmd.remove('--ro')
+        r = sh(cmd + ['--text', '--no-findings'], env=env)
+        check(r.returncode == 0, r.stderr)
+        check([c['order'] for c in calls(t)] == ['text', 'generic', 'generic2'], calls(t))
+        for call in calls(t):
+            assert_text_call(call)
+        rows = [json.loads(line) for line in (t / 'state/seat-ledger.jsonl').read_text().splitlines()]
+        check(len(rows) == 4 and all(row['text'] is True and row['ro'] is True for row in rows), rows)
 
 
 def workspace_config_conflict():
@@ -122,7 +190,11 @@ def workspace_panel_map():
         check('repository material' in prompt and '不要假设还能读到其它文件' not in prompt, prompt)
         r = sh([sys.executable, str(REPO / 'map.py'), str(wd), '10', cmd[5],
                 'code.txt', '--seat', 'workspace', '--jobs', '1'], env=env)
-        check(r.returncode == 0 and calls(t)[-1]['access'] == 'ro', r.stdout + r.stderr)
+        check(r.returncode == 0, r.stdout + r.stderr)
+        assert_text_call(calls(t)[-1])
+        row = json.loads((t / 'state/seat-ledger.jsonl').read_text().splitlines()[-1])
+        check(row['via'] == 'map' and row['text'] is True and row['ro'] is True, row)
+        check('repository material' in (Path(row['run_dir']) / 'task.txt').read_text(), row)
         r = sh([sys.executable, str(REPO / 'ai_worker.py'), 'doctor'], env=env)
         check('可读写仓库' in r.stdout and 'seats.workspace.workspace' not in r.stdout, r.stdout + r.stderr)
 
@@ -140,5 +212,6 @@ def workspace_findings_context():
 
 
 CASES = {fn.__name__: fn for fn in (workspace_role_write, workspace_access_ro_rw,
-    workspace_text_unchanged, workspace_config_conflict, workspace_fallback_skips_text,
+    workspace_text_unchanged, workspace_draft_text, workspace_explicit_text,
+    workspace_text_net_conflict, workspace_text_fallback, workspace_config_conflict, workspace_fallback_skips_text,
     workspace_panel_map, workspace_findings_context)}

@@ -43,6 +43,7 @@ Every root Python, Shell and configuration/rule file:
 | [tokens.py](tokens.py) | Read-only usage, context and coverage statistics from Claude Code transcripts and assignment ledger. |
 | [weekly.py](weekly.py) | Generate local statistics from the ledger, routing and findings. |
 | [track.py](track.py) | Run/register long tasks; save progress, output and process liveness. |
+| [tui.py](tui.py) | `aiw tui`: start a Codex main session in tmux whose status bar shows this session's assignments via aiw-board. |
 | [snapshot.py](snapshot.py) | Generate local configuration-shape snapshots without credentials to compare drift. |
 | [handoff.py](handoff.py) | Generate handoff templates/paths, validate handoffs and invoke Orca for a new session. |
 | [freecheck.py](freecheck.py) | Probe free seats serially, record disabling and manage scheduled macOS checks. |

@@ -53,9 +53,15 @@ aiw assigns work to seats; agent-use calls registered providers; agent-use-adapt
 
 ## Questions you may have
 
-**Will quality suffer?** All assigned work is a draft for review. The main conversation checks files, evidence and test results before accepting it.
+**Will quality suffer?** All assigned work is a draft for review. The main conversation checks files, evidence and test results before accepting it. The author ran a comparison: 4 real tasks (3–7 files each), each done once by the main conversation itself and once by assigning it to Codex, from the same instructions. Both versions passed the existing tests. In a blind review, GPT preferred the Codex version in 3 of 4 tasks and Claude preferred the Claude version in 3 (one tie). Each judge leaned toward its own model; neither side was clearly better.
 
-**Does assigning work also use the main model's tokens?** Yes: writing instructions, reading results and checking them all use tokens. Very small tasks may not be worth handing off, so it only suggests assignments; it does not make them automatically. To see your actual usage, use `aiw tokens` (local Claude Code main-session usage and context breakdown) and `aiw weekly` (assignment success rates and token totals).
+**Does assigning work also use the main model's tokens?** Yes: writing instructions, reading results and checking them all use tokens, so it only suggests assignments; it does not make them automatically. How much it saves depends:
+
+- On the 4 tasks above, each started from an empty session, assigning cut main-conversation usage by about a third in total, ranging from roughly even to half per task. The cost was 10–20 more minutes of waiting per task.
+- In the author's daily use (about 300 tasks, not a controlled experiment), for tasks touching 3 or more files the median main-conversation cost when assigning was about a quarter of doing it directly. The gap is likely due to long sessions: everyday sessions often carry 100k–300k+ tokens of context, and every turn of editing code yourself is billed at that size.
+- Small edits to 1–2 files have no comparison data; doing them yourself is usually cheaper.
+
+To see your actual usage, use `aiw tokens` (local Claude Code main-session usage and context breakdown) and `aiw weekly` (assignment success rates and token totals).
 
 **How long does an assignment take?** It depends on the work. Medians from one week on the author's machine:
 

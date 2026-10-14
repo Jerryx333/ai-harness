@@ -2,6 +2,8 @@
 """Codex main-session tmux wrapper and its status callback."""
 import json
 import os
+import re
+import stat
 from pathlib import Path
 import shlex
 import shutil
@@ -15,30 +17,184 @@ HERE = Path(__file__).resolve().parent
 STATUS_EXTRA_TIMEOUT = 3
 
 
-def status(tui_id):
-    line = _dispatch_status(tui_id)
+SGR = re.compile(r'\x1b\[([0-9;]*)m')
+COLORS = ('black', 'red', 'green', 'yellow', 'blue', 'magenta', 'cyan', 'white')
+
+
+def _extra_text(text):
+    # Count visible characters before escaping hashes or inserting tmux styles.
+    visible = len(SGR.sub('', text))
+    limit = 119 if visible > 120 else 120
+    used = 0
+    parts = []
+    position = 0
+    for match in SGR.finditer(text):
+        chunk = text[position:match.start()]
+        take = chunk[:max(0, limit - used)]
+        parts.append(take.replace('#', '##'))
+        used += len(take)
+        if used >= limit and visible > 120:
+            break
+        for code in match[1].split(';'):
+            number = int(code or '0')
+            if number in (0, 39):
+                parts.append('#[default]')
+            elif 30 <= number <= 37:
+                parts.append('#[fg=' + COLORS[number - 30] + ']')
+            elif 90 <= number <= 97:
+                parts.append('#[fg=bright' + COLORS[number - 90] + ']')
+        position = match.end()
+    else:
+        parts.append(text[position:position + max(0, limit - used)].replace('#', '##'))
+    if visible > 120:
+        parts.append('…')
+    return ''.join(parts) if visible else ''
+
+
+def _extra_status():
     command = os.environ.get('AIW_TUI_STATUS_EXTRA', '')
     if command:
         try:
             argv = shlex.split(command)
-            if not argv:
-                return line
-            result = subprocess.run(argv, stdin=subprocess.DEVNULL,
-                                    capture_output=True, text=True,
-                                    timeout=STATUS_EXTRA_TIMEOUT, check=True)
-            extra = next((s.strip() for s in result.stdout.splitlines() if s.strip()), '')
-            extra = extra.replace('#', '##')
-            if len(extra) > 120:
-                extra = extra[:119]
-                # Keep escaped hashes paired at the truncation boundary.
-                if (len(extra) - len(extra.rstrip('#'))) % 2:
-                    extra = extra[:-1]
-                extra += '…'
-            if extra:
-                return line + ' │ ' + extra
+            if argv:
+                result = subprocess.run(argv, stdin=subprocess.DEVNULL,
+                                        capture_output=True, text=True,
+                                        timeout=STATUS_EXTRA_TIMEOUT, check=True)
+                extra = next((s.strip() for s in result.stdout.splitlines() if SGR.sub('', s).strip()), '')
+                return _extra_text(extra)
         except (OSError, ValueError, subprocess.SubprocessError):
             pass
-    return line
+    return ''
+
+
+def _mapping(tui_id):
+    if valid_tui_id(tui_id):
+        try:
+            return (Path(getenv('AIW_STATE', HERE / 'state')) / 'tui' / tui_id).read_text().splitlines()
+        except (OSError, UnicodeError):
+            pass
+    return []
+
+
+def _rollout(path):
+    context, tokens = {}, None
+    fd = None
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK)
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            return context, tokens
+        with os.fdopen(fd, 'rb') as stream:
+            fd = None
+            size = stream.seek(0, os.SEEK_END)
+            start = max(0, size - 512 * 1024)
+            stream.seek(max(0, start - 1))
+            partial = start and stream.read(1) != b'\n'
+            stream.seek(start)
+            lines = stream.read(512 * 1024).splitlines()
+            if partial:
+                lines = lines[1:]
+        found_context = found_tokens = False
+        for line in reversed(lines):
+            try:
+                record = json.loads(line)
+                payload = record.get('payload', {})
+                if not isinstance(payload, dict):
+                    continue
+                if not found_context and record.get('type') == 'turn_context':
+                    context, found_context = payload, True
+                if not found_tokens and record.get('type') == 'event_msg' and payload.get('type') == 'token_count':
+                    found_tokens = True
+                    value = payload['info']['last_token_usage']['input_tokens']
+                    if type(value) is int and value >= 0:
+                        tokens = value
+                if found_context and found_tokens:
+                    break
+            except (ValueError, AttributeError, KeyError, TypeError):
+                continue
+    except (OSError, ValueError):
+        pass
+    finally:
+        if fd is not None:
+            os.close(fd)
+    return context, tokens
+
+
+def _token_text(value):
+    if value < 1000:
+        return str(value)
+    return f'{value / 1000000:.1f}M' if value >= 1000000 else f'{value / 1000:.1f}k'
+
+
+def _color(color, value):
+    return '#[fg=' + color + ']' + str(value).replace('#', '##')
+
+
+def status_lines(tui_id, pane_path=''):
+    mapping = _mapping(tui_id)
+    transcript = mapping[1] if len(mapping) > 1 else ''
+    context, tokens = _rollout(transcript) if transcript else ({}, None)
+    if not transcript:
+        try:
+            import tomllib
+            home = Path(os.environ.get('CODEX_HOME', '~/.codex')).expanduser()
+            with (home / 'config.toml').open('rb') as stream:
+                config = tomllib.load(stream)
+            context = {'model': config.get('model'), 'effort': config.get('model_reasoning_effort')}
+        except (OSError, ValueError, ImportError):
+            pass
+    parts = []
+    model = []
+    for label, key, color in (('模型', 'model', 'cyan'), ('思考', 'effort', 'magenta')):
+        if context.get(key):
+            model.append(_color('brightblack', label + ' ') + _color(color, context[key]))
+    if model:
+        parts.append(' '.join(model))
+    cwd = context.get('cwd') or pane_path
+    if cwd:
+        def git(*args):
+            return subprocess.run(['git', '-C', cwd, *args], capture_output=True,
+                                  text=True, timeout=2, check=True).stdout
+        try:
+            branch = git('rev-parse', '--abbrev-ref', 'HEAD').strip()
+            if branch:
+                parts.append(_color('yellow', '⎇ ' + branch))
+        except (OSError, ValueError, subprocess.SubprocessError):
+            pass
+        try:
+            added = deleted = 0
+            for row in git('diff', '--numstat', 'HEAD').splitlines():
+                fields = row.split('\t')
+                if len(fields) >= 3:
+                    added += int(fields[0]) if fields[0].isdigit() else 0
+                    deleted += int(fields[1]) if fields[1].isdigit() else 0
+            parts.append(_color('brightblack', f'改动 (+{added},-{deleted})'))
+        except (OSError, ValueError, subprocess.SubprocessError):
+            pass
+    separator = _color('brightblack', ' | ')
+    line2 = []
+    if tokens is not None:
+        line2.append(_color('brightblack', '上下文 ') + _color('green', _token_text(tokens)))
+    extra = _extra_status()
+    if extra:
+        line2.append('#[default]' + extra if tokens is not None else extra)
+    return separator.join(parts), separator.join(line2), _dispatch_status(tui_id)
+
+
+def status(tui_id, pane_path=None, session=None):
+    if pane_path is None and session is None:
+        line = _dispatch_status(tui_id)
+        extra = _extra_status()
+        return line + ' │ ' + extra if extra else line
+    lines = status_lines(tui_id, pane_path or '')
+    if session:
+        for key, line in zip(('@aiw_line2', '@aiw_line3'), lines[1:]):
+            try:
+                # status-format 会再经 strftime 展开，% 必须写成 %%。
+                subprocess.run(['tmux', 'set-option', '-t', session, key, line.replace('%', '%%')],
+                               capture_output=True, timeout=2, check=True)
+            except (OSError, subprocess.SubprocessError):
+                pass
+    return lines[0]
 
 
 def _dispatch_status(tui_id):
@@ -46,11 +202,8 @@ def _dispatch_status(tui_id):
     try:
         if not valid_tui_id(tui_id):
             return idle
-        state = Path(getenv('AIW_STATE', HERE / 'state'))
-        try:
-            thread = (state / 'tui' / tui_id).read_text().strip()
-        except OSError:
-            thread = ''
+        mapping = _mapping(tui_id)
+        thread = mapping[0].strip() if mapping else ''
         board = shutil.which('aiw-board')
         if not board:
             return '派单 ?（未安装 aiw-board）' if thread else idle
@@ -74,6 +227,8 @@ def launch(args):
     environment = ['/usr/bin/env', 'PATH=' + os.environ.get('PATH', ''),
                    'AIW_PYTHON=' + sys.executable,
                    'AIW_STATE=' + os.environ['AIW_STATE']]
+    if 'CODEX_HOME' in os.environ:
+        environment.append('CODEX_HOME=' + os.environ['CODEX_HOME'])
     if 'AIW_TUI_STATUS_EXTRA' in os.environ:
         environment.append('AIW_TUI_STATUS_EXTRA=' + os.environ['AIW_TUI_STATUS_EXTRA'])
     callback = shlex.join(environment + [str(HERE / 'bin' / 'aiw'), 'tui-status', tui_id])
@@ -85,11 +240,14 @@ def launch(args):
         os.execvp('codex', ['codex', *args])
     else:
         name = 'aiw-' + tui_id
+        callback += ' #{q:pane_current_path} ' + shlex.quote(name)
         command = 'exec ' + shlex.join(environment + ['AIW_TUI_ID=' + tui_id, 'codex', *args])
         argv = ['tmux', 'new-session', '-s', name, command]
-        for key, value in [('status', 'on'), ('status-interval', '15'),
+        for key, value in [('status', '3'), ('status-interval', '15'),
                            ('status-justify', 'left'), ('status-style', 'bg=default,fg=colour250'),
-                           ('status-left', '#(' + callback + ')'), ('status-left-length', '200'),
+                           ('status-format[0]', '#(' + callback + ')'),
+                           ('status-format[1]', '#{E:@aiw_line2}'),
+                           ('status-format[2]', '#{E:@aiw_line3}'), ('status-left', ''),
                            ('status-right', ''), ('window-status-format', ''),
                            ('window-status-current-format', '')]:
             argv += [';', 'set-option', '-t', name, key, value]
@@ -98,6 +256,8 @@ def launch(args):
 
 if __name__ == '__main__':
     if sys.argv[1] == 'status':
-        print(status(sys.argv[2] if len(sys.argv) > 2 else ''))
+        print(status(sys.argv[2] if len(sys.argv) > 2 else '',
+                     sys.argv[3] if len(sys.argv) > 3 else None,
+                     sys.argv[4] if len(sys.argv) > 4 else None))
     else:
         sys.exit(launch(sys.argv[2:]))

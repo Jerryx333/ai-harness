@@ -39,6 +39,11 @@ def tui_sessions():
         with patch.dict(os.environ, CODEX_THREAD_ID='nested-thread', AIW_TUI_ID='nested', AIW_NESTED='1'):
             write_tui_session(t / 'nested')
         check(not (t / 'nested/tui').exists(), 'nested mapping')
+        with patch.dict(os.environ, CODEX_THREAD_ID='new-thread', AIW_TUI_ID='keep'):
+            folder = t / 'tui'; folder.mkdir()
+            (folder / 'keep').write_text('old-thread\nrollout.jsonl\n')
+            write_tui_session(t)
+            check((folder / 'keep').read_text() == 'new-thread\nrollout.jsonl\n', 'transcript lost')
         state = t / 'blocked'; state.mkdir(); (state / 'tui').write_text('blocked')
         cmd, env, _ = worker_call(t, AIW_STATE=str(state), CODEX_THREAD_ID='thread', AIW_TUI_ID='valid')
         r = sh(cmd, env=env)
@@ -110,12 +115,14 @@ def tui_status_extra():
             r = sh(cmd, env=dict(env, AIW_TUI_STATUS_EXTRA=command))
             check(r.returncode == 0 and r.stdout == baseline and not r.stderr, repr(r))
         for output, expected in (('x' * 200, 'x' * 119 + '…'),
-                                 ('x' * 118 + '#tail', 'x' * 118 + '…'),
-                                 ('#' * 100, '##' * 59 + '…'),
+                                 ('x' * 118 + '#tail', 'x' * 118 + '##…'),
+                                 ('#' * 100, '##' * 100),
                                  ('x' * 120, 'x' * 120)):
             r = sh(cmd, env=write_extra(f'print({output!r})\n'))
             extra = r.stdout.rstrip('\n').split(' │ ')[-1]
-            check(extra == expected and len(extra) <= 120 and not r.stderr, repr(r))
+            check(extra == expected and len(extra.replace('##', '#')) <= 120 and not r.stderr, repr(r))
+        r = sh(cmd, env=write_extra("print('\\x1b[36mextra #1\\x1b[0m')\n"))
+        check(r.stdout == baseline.rstrip('\n') + ' │ #[fg=cyan]extra ##1#[default]\n', 'ANSI command output')
         # Block until killed by the shortened timeout, without sleeping.
         extra_env = write_extra('import signal\nsignal.pause()\n')
         timeout_cmd = [sys.executable, '-c',
@@ -162,10 +169,11 @@ def tui_launch():
         launch = argv[3]
         parsed = shlex.split(launch)
         check(parsed[-len(args):] == args and parsed[-len(args)-1] == 'codex', launch)
-        callback = argv[argv.index('status-left') + 1]
-        expected = [('status', 'on'), ('status-interval', '15'), ('status-justify', 'left'),
-                    ('status-style', 'bg=default,fg=colour250'), ('status-left', callback),
-                    ('status-left-length', '200'), ('status-right', ''),
+        callback = argv[argv.index('status-format[0]') + 1]
+        expected = [('status', '3'), ('status-interval', '15'), ('status-justify', 'left'),
+                    ('status-style', 'bg=default,fg=colour250'), ('status-format[0]', callback),
+                    ('status-format[1]', '#{E:@aiw_line2}'),
+                    ('status-format[2]', '#{E:@aiw_line3}'), ('status-left', ''), ('status-right', ''),
                     ('window-status-format', ''), ('window-status-current-format', '')]
         expected_argv = []
         for key, value in expected:
@@ -174,8 +182,9 @@ def tui_launch():
         check(callback.startswith('#(') and callback.endswith(')'), callback)
         callback_args = shlex.split(callback[2:-1])
         check(not any(a.startswith('AIW_TUI_STATUS_EXTRA=') for a in callback_args), callback)
-        check(callback_args[-3:-1] == [str(repo.resolve() / 'bin/aiw'), 'tui-status'], callback)
-        tui_id = callback_args[-1]
+        check(callback_args[-5:-3] == [str(repo.resolve() / 'bin/aiw'), 'tui-status'], callback)
+        tui_id = callback_args[-3]
+        check(callback_args[-2:] == ['#{q:pane_current_path}', argv[2]], callback)
         check(all(c.isalnum() or c in '_-' for c in tui_id), tui_id)
         check(argv[2] == 'aiw-' + tui_id, str(argv))
         check('AIW_TUI_ID=' + tui_id in parsed, launch)
@@ -203,7 +212,7 @@ def tui_launch():
             check(r.returncode == 0 and not r.stderr, repr(r))
             calls = [json.loads(line) for line in log.read_text().splitlines()]
             callback = (next(a[2] for a in calls if a[1] == 'status-right') if inside
-                        else calls[0][calls[0].index('status-left') + 1])
+                        else calls[0][calls[0].index('status-format[0]') + 1])
             callback_args = shlex.split(callback[2:-1])
             check(callback_args[0] == '/usr/bin/env'
                   and 'AIW_TUI_STATUS_EXTRA=' + extra in callback_args[:-3], callback)
@@ -211,6 +220,89 @@ def tui_launch():
         tmux.unlink()
         r = sh(cmd, env=env)
         check(r.returncode == 127 and '需要 tmux：brew install tmux' in r.stderr, repr(r))
+
+
+def tui_hook_mapping():
+    with tempfile.TemporaryDirectory() as td:
+        t = Path(td)
+        payload = {'turn_id': 'turn', 'session_id': 'thread',
+                   'transcript_path': str(t / 'rollout.jsonl'), 'prompt': 'hello', 'cwd': str(t)}
+        cmd = [sys.executable, str(REPO / 'route.py'), '--hook']
+        env = dict(os.environ, AIW_STATE=str(t / 'state'))
+        env.pop('AIW_TUI_ID', None)
+        baseline = sh(cmd, env=env, input=json.dumps(payload))
+        for ident, nested, mapped in (('valid', '', True), ('nested', '1', False), ('../escape', '', False)):
+            current = dict(env, AIW_TUI_ID=ident, AIW_NESTED=nested)
+            result = sh(cmd, env=current, input=json.dumps(payload))
+            check(result.returncode == 0 and result.stdout == ('' if nested else baseline.stdout), repr(result))
+            if mapped:
+                check((t / 'state/tui/valid').read_text() == 'thread\n' + payload['transcript_path'] + '\n', 'hook mapping')
+        check(not (t / 'state/tui/nested').exists() and not (t / 'state/escape').exists(), 'invalid mapping')
+        blocked = t / 'blocked'; blocked.mkdir(); (blocked / 'tui').write_text('blocked')
+        result = sh(cmd, env=dict(env, AIW_STATE=str(blocked), AIW_TUI_ID='valid'), input=json.dumps(payload))
+        check(result.stdout == baseline.stdout and '警告：写 tui 会话失败' in result.stderr, repr(result))
+
+
+def tui_render():
+    import tui
+    from unittest.mock import patch
+    with tempfile.TemporaryDirectory() as td:
+        t = Path(td); folder = t / 'state/tui'; folder.mkdir(parents=True)
+        repo = t / 'repo'; repo.mkdir()
+        def git(*args):
+            result = sh(['git', '-C', str(repo), *args])
+            check(result.returncode == 0, result.stderr)
+            return result.stdout
+        git('init', '-b', 'main')
+        (repo / 'file').write_text('old\nkeep\n')
+        git('add', 'file'); git('-c', 'user.name=Test', '-c', 'user.email=test@example.invalid', 'commit', '-m', 'initial')
+        (repo / 'file').write_text('new\nkeep\nmore\nlast\n')
+        rollout = t / 'rollout.jsonl'
+        context = {'type': 'turn_context', 'payload': {'model': 'gpt-6-astra', 'effort': 'high', 'cwd': str(repo)}}
+        token = {'type': 'event_msg', 'payload': {'type': 'token_count', 'info': {'last_token_usage': {'input_tokens': 58900}}}}
+        # Leading junk exceeds the read window; malformed records are skipped.
+        rollout.write_text('x' * (600 * 1024) + '\n' + json.dumps(context) + '\n' + json.dumps(token) + '\ninvalid\n')
+        (folder / 'ok').write_text('thread\n' + str(rollout) + '\n')
+        with patch.dict(os.environ, AIW_STATE=str(t / 'state'), CODEX_HOME=str(t), AIW_TUI_STATUS_EXTRA=''):
+            with patch.object(tui, '_dispatch_status', return_value='○ 派单空闲 │ 今日 0 单'):
+                lines = tui.status_lines('ok', str(t))
+                check(lines == ('#[fg=brightblack]模型 #[fg=cyan]gpt-6-astra #[fg=brightblack]思考 #[fg=magenta]high#[fg=brightblack] | #[fg=yellow]⎇ main#[fg=brightblack] | #[fg=brightblack]改动 (+3,-1)',
+                                '#[fg=brightblack]上下文 #[fg=green]58.9k', '○ 派单空闲 │ 今日 0 单'), str(lines))
+                context['payload']['cwd'] = str(t)
+                rollout.write_text(json.dumps(context) + '\n' + json.dumps(token) + '\n')
+                check('⎇' not in tui.status_lines('ok', str(repo))[0] and '改动' not in tui.status_lines('ok')[0], 'cwd precedence')
+                (t / 'config.toml').write_text('model = "fallback"\nmodel_reasoning_effort = "low"\n')
+                check(tui.status_lines('missing')[0] == '#[fg=brightblack]模型 #[fg=cyan]fallback #[fg=brightblack]思考 #[fg=magenta]low', 'config fallback')
+                check(tui.status_lines('missing')[1] == '', 'empty line2')
+                with patch.object(tui, '_extra_status', return_value='extra'):
+                    check(tui.status_lines('missing')[1] == 'extra', 'extra only')
+                    check(tui.status_lines('ok')[1].endswith('#[fg=brightblack] | #[default]extra'), 'context plus extra')
+                rollout.write_text(json.dumps(context) + '\n' + json.dumps(token) + '\n'
+                                   + json.dumps({'type': 'turn_context', 'payload': {'model': 'latest'}}) + '\n'
+                                   + json.dumps({'type': 'event_msg', 'payload': {'type': 'token_count', 'info': {'last_token_usage': {'input_tokens': 999}}}}) + '\n')
+                check(tui.status_lines('ok')[0] == '#[fg=brightblack]模型 #[fg=cyan]latest', 'latest context')
+                check(tui.status_lines('ok')[1] == '#[fg=brightblack]上下文 #[fg=green]999', 'latest token usage')
+                (t / 'config.toml').write_text('invalid')
+                check(tui.status_lines('missing')[0] == '', 'invalid config')
+            for value, expected in ((999, '999'), (1000, '1.0k'), (58900, '58.9k'), (1200000, '1.2M')):
+                check(tui._token_text(value) == expected, str(value))
+            b = t / 'bin'; b.mkdir(); log = t / 'tmux.jsonl'
+            tmux = b / 'tmux'
+            tmux.write_text(f'#!{sys.executable}\nimport json, sys\nwith open({str(log)!r}, "a") as f: f.write(json.dumps(sys.argv[1:]) + "\\n")\n')
+            tmux.chmod(0o755)
+            extra = shlex.join([sys.executable, '-c', 'print("q 26%")'])
+            with patch.dict(os.environ, PATH=str(b) + os.pathsep + os.environ['PATH'], AIW_TUI_STATUS_EXTRA=extra):
+                result = sh([sys.executable, str(REPO / 'tui.py'), 'status', 'ok', str(t), 'aiw-ok'])
+                check(result.returncode == 0 and len(result.stdout.splitlines()) == 1 and not result.stderr, repr(result))
+                calls = [json.loads(row) for row in log.read_text().splitlines()]
+                lines = tui.status_lines('ok')
+                # tmux 会对 status-format 再做 strftime 展开，% 须转义为 %%。
+                check('26%' in lines[1] and calls == [['set-option', '-t', 'aiw-ok', '@aiw_line2', lines[1].replace('%', '%%')],
+                                ['set-option', '-t', 'aiw-ok', '@aiw_line3', lines[2].replace('%', '%%')]], str(calls))
+        check(tui._extra_text('\x1b[31;1mred#\x1b[0m') == '#[fg=red]red###[default]', 'ANSI conversion')
+        for code, expected in ((39, 'default'), (90, 'fg=brightblack'), (97, 'fg=brightwhite'), (30, 'fg=black'), (37, 'fg=white')):
+            check(tui._extra_text(f'\x1b[{code}mtext') == '#[' + expected + ']text', str(code))
+        check(tui._extra_text('\x1b[32m' + '#' * 121 + '\x1b[39m') == '#[fg=green]' + '##' * 119 + '…', 'visible truncation')
 
 
 def tui_gc():
@@ -229,4 +321,4 @@ def tui_gc():
               and (folder / 'link').is_symlink(), repr(r))
 
 
-CASES = {f.__name__: f for f in (tui_sessions, tui_status, tui_status_extra, tui_launch, tui_gc)}
+CASES = {f.__name__: f for f in (tui_sessions, tui_status, tui_status_extra, tui_launch, tui_hook_mapping, tui_render, tui_gc)}

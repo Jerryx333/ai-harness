@@ -339,9 +339,19 @@ worker 只接受 `--ro --worktree --net --no-fallback --no-findings --allow-nest
 
 ## 主会话用 Codex
 
-运行 `aiw tui [codex 参数...]` 可在 tmux 底栏每 15 秒显示本会话派单摘要，需要安装 tmux（`brew install tmux`）和可选组件 aiw-board。不在 tmux 时新建会话，派单摘要左对齐显示在底栏，隐藏窗口标签，codex 退出后会话结束；已在 tmux 时使用当前会话，仅修改该会话的底栏选项。首单前显示 `○ 派单空闲 │ 今日 0 单`（需已装 aiw-board）；codex 里 `/new` 换线程后，下一次派单才切到新会话。派单仅写状态映射，不连接 tmux socket。
+运行 `aiw tui [codex 参数...]` 可在 tmux 底栏每 15 秒刷新本会话状态，需要安装 tmux（`brew install tmux`）和可选组件 aiw-board。不在 tmux 时新建会话，底栏为三行中文样式，背景 default、左对齐并隐藏窗口标签；codex 退出后会话结束：
 
-`AIW_TUI_STATUS_EXTRA=<命令>` 可在派单行后追加该命令输出的第一行非空内容（按 `shlex.split` 拆分，不经 shell；3 秒超时，失败时忽略；命令应自行缓存，底栏每 15 秒调用一次）。
+```text
+模型 gpt-6-astra 思考 high | ⎇ main | 改动 (+3,-1)
+上下文 58.9k | <AIW_TUI_STATUS_EXTRA 输出>
+○ 派单空闲 │ 今日 0 单
+```
+
+模型名用 cyan、思考强度用 magenta、分支用 yellow、上下文数值用 green；标签、改动数值和 ` | ` 分隔符用 brightblack。第三行沿用 aiw-board 的派单摘要和 fg=colour250；首单前显示上述空闲摘要（需已装 aiw-board）。缺少数据的项及分隔符省略，第二行可以为空。已在 tmux 时保持当前会话单行底栏，status-right 显示派单摘要及 EXTRA，不改变行数。
+
+Codex 的 UserPromptSubmit 钩子将线程号及 transcript 路径原子写入 `state/tui/<AIW_TUI_ID>`；`/new` 后下一次用户提示即更新映射。派单也会更新线程号并保留已有 transcript 路径，嵌套会话不写映射。底栏仅读取 rollout 末尾 512KB：最近的 turn_context 提供 model、effort 和 cwd，最近的 token_count 提供 last_token_usage.input_tokens。没有 transcript 时，模型和思考强度回退读取 `${CODEX_HOME:-~/.codex}/config.toml`；git 分支与 HEAD 差异的增删行取自 turn_context.cwd，否则取当前 pane 目录，二进制文件计 0，git 超时 2 秒时忽略。上下文不足 1000 原样显示，其余显示一位小数的 k 或 M。
+
+`AIW_TUI_STATUS_EXTRA=<命令>` 可在第二行上下文后追加该命令输出的第一行非空内容（已在 tmux 时追加在派单行后）。命令按 `shlex.split` 拆分，不经 shell；3 秒超时，失败时忽略；命令应自行缓存，底栏每 15 秒调用一次。允许 ANSI SGR 的 30–37、90–97 前景色及 0/39 复位，其它 SGR 丢弃；文本中的 `#` 自动转义，可见内容最多 120 字符，超出时以省略号结尾。
 
 `install.sh` 发现本机有 Codex 时会顺带接入：`~/.codex/AGENTS.md` 写入标记块（内容来自 `AGENTS.harness.md`，块外内容不动），`~/.codex/hooks.json` 加同一个派单钩子（Codex 下次启动会请你确认信任）。
 

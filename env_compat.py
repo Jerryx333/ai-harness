@@ -13,22 +13,33 @@ def valid_tui_id(value):
     return bool(value and re.fullmatch(r'[A-Za-z0-9_-]+', value))
 
 
-def write_tui_session(state):
+def write_tui_session(state, thread=None, transcript=None):
     """Publish Codex's thread without contacting the tmux server."""
     import sys
     import tempfile
     tui_id = os.environ.get('AIW_TUI_ID')
     if (os.environ.get('AIW_NESTED') == '1' or not valid_tui_id(tui_id)
-            or os.environ.get('CLAUDE_CODE_SESSION_ID') or not session_id()):
+            or (thread is None and os.environ.get('CLAUDE_CODE_SESSION_ID'))):
+        return
+    thread = thread if thread is not None else session_id()
+    if not isinstance(thread, str) or not thread or '\n' in thread or '\r' in thread:
         return
     temporary = None
     try:
         folder = state / 'tui'
         folder.mkdir(parents=True, exist_ok=True)
+        if transcript is None:
+            try:
+                lines = (folder / tui_id).read_text().splitlines()
+                transcript = lines[1] if len(lines) > 1 else None
+            except (OSError, UnicodeError):
+                pass
         with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', dir=folder,
                                          prefix='.', delete=False) as stream:
             temporary = stream.name
-            stream.write(session_id() + '\n')
+            stream.write(thread + '\n')
+            if isinstance(transcript, str) and transcript and '\n' not in transcript and '\r' not in transcript:
+                stream.write(transcript + '\n')
         os.replace(temporary, folder / tui_id)
     except OSError as exc:
         print(f'[ai-worker] 警告：写 tui 会话失败：{exc}', file=sys.stderr)

@@ -20,7 +20,7 @@ import datetime as dt
 import fcntl
 import json
 import os
-from env_compat import getenv
+from env_compat import getenv, write_tui_session
 import re
 import socket
 import stat
@@ -321,6 +321,8 @@ def main() -> int:
             return 0
         if not isinstance(payload.get("prompt", ""), str) or not isinstance(payload.get("cwd", str(cwd)), str):
             return 0
+        if "turn_id" in payload and payload.get("session_id"):
+            write_tui_session(STATE, payload["session_id"], payload.get("transcript_path"))
         msg = payload.get("prompt", "")
         cwd = Path(payload.get("cwd") or cwd)
         # Codex 的钩子输入带 turn_id（Codex 扩展字段）；Claude Code 没有

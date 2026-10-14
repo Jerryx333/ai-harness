@@ -451,6 +451,8 @@ Codex 主会话自己改文件，不调用 `aiw write`；独立评审用 `aiw re
 
 ## 自测
 
+日常用 `python3 tests/test_harness.py --changed [BASE]` 按改动选择用例模块（默认基线依次尝试 `origin/main`、`main`，含已暂存、未暂存、未跟踪文件，无法安全选择时退回全量）；合并前经 `aiw slot -- python3 tests/test_harness.py` 跑全量，定向选择达到总用例数一半也拿名额，`--slow 秒` 默认列出超过 5 秒的用例。
+
 ```bash
 python3 tests/test_harness.py      # 假 CLI + 假 HOME，后台低优先级；默认并发 CPU 数的 1/4（至少 1），-j 上限 CPU 数的 1/2（至少 1）；-j 1 串行，--durations 列耗时
 python3 tests/mutation_check.py    # 临时副本中运行全部红线变异

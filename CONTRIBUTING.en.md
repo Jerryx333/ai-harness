@@ -67,6 +67,8 @@ Every root Python, Shell and configuration/rule file:
 
 ## Tests
 
+For daily work, run `python3 tests/test_harness.py --changed` to test affected case modules (compares against `origin/main`, then `main`, including local changes). Before merging, run the full suite through `aiw slot -- python3 tests/test_harness.py`; the harness reuses the slot. `--changed [BASE]` cannot be combined with case names; selections covering at least half the cases also reserve a slot. `--slow SECONDS` reports cases exceeding 5 seconds by default.
+
 ```bash
 python3 tests/test_harness.py
 python3 tests/mutation_check.py

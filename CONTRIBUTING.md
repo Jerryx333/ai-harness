@@ -67,6 +67,8 @@ AIW_CONFIG=.tmp-baseline/dev-seats.json AIW_STATE=.tmp-baseline/dev-state python
 
 ## 测试
 
+日常运行 `python3 tests/test_harness.py --changed`，只跑改动影响的用例模块（默认比较 `origin/main`，其次 `main`，包含本地改动）。合并前经 `aiw slot -- python3 tests/test_harness.py` 跑全量；harness 会复用名额。`--changed [BASE]` 不能与用例名混用，选择达到总用例数一半时也会拿名额；`--slow 秒` 默认提示超过 5 秒的用例。
+
 ```bash
 python3 tests/test_harness.py
 python3 tests/mutation_check.py

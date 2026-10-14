@@ -43,6 +43,7 @@ AIW_CONFIG=.tmp-baseline/dev-seats.json AIW_STATE=.tmp-baseline/dev-state python
 | [tokens.py](tokens.py) | 只读统计 Claude Code 转录及派单账本的用量、上下文与覆盖。 |
 | [weekly.py](weekly.py) | 从本机账本、路由及 findings 生成统计周报。 |
 | [track.py](track.py) | 运行并登记长任务，保存进度、输出和进程存活信息。 |
+| [slot.py](slot.py) | 全机测试名额、内存压力等待及后台 QoS。 |
 | [tui.py](tui.py) | `aiw tui`：在 tmux 里启动 Codex 主会话，底栏通过 aiw-board 显示本会话派单摘要。 |
 | [snapshot.py](snapshot.py) | 生成不含凭据的本机配置形状快照，检查漂移。 |
 | [handoff.py](handoff.py) | 生成交接模板与建议路径、校验交接内容并调用 Orca 开新会话。 |

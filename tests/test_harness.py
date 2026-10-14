@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import argparse
+from contextlib import nullcontext
 from concurrent.futures import ThreadPoolExecutor
 import importlib
 import os
@@ -17,6 +18,9 @@ import time
 
 from support import fake_agent_use, fake_bins, write_legacy_local
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+import slot
+
 
 CASE_MODULES = (
     "roles",
@@ -26,6 +30,7 @@ CASE_MODULES = (
     "route_panel_map",
     "install_doctor",
     "track_snapshot",
+    "slot",
     "goal",
     "misc",
     "free_guard",
@@ -84,6 +89,7 @@ def run_named(names, durations):
                         os.environ.pop(key, None)
                     root = Path(isolated)
                     os.environ.update(HOME=str(root), AIW_STATE=str(root / "state"),
+                                      AIW_SLOT_DIR=str(root / "slots"),
                                       PATH=f"{fake_bins(root)}:{os.environ['PATH']}",
                                       AGENT_USE_HOME=str(fake_agent_use(root)))
                     local = root / "test-seats.json"
@@ -136,7 +142,6 @@ def run_parallel(jobs, durations):
 
 
 def main(argv=None):
-    lower_priority()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("-j", type=int, default=default_jobs(),
                         help="parallel children (default: quarter of CPUs; capped at half)")
@@ -146,16 +151,34 @@ def main(argv=None):
     if args.j < 1:
         parser.error("-j must be at least 1")
     args.j = clamp_jobs(args.j)
+    if not args.cases:
+        try:
+            os.environ.update(slot.thread_environment())
+        except ValueError as error:
+            slot.warn(str(error))
+            return 64
     durations = []
-    if args.cases or args.j == 1:
-        status = run_named(args.cases or list(CASES), durations)
-    else:
-        status = run_parallel(args.j, durations)
+    with suite_reservation(args.cases):
+        if args.cases:
+            lower_priority()
+        else:
+            slot.qos(current=True)
+        if args.cases or args.j == 1:
+            status = run_named(args.cases or list(CASES), durations)
+        else:
+            status = run_parallel(args.j, durations)
     if args.durations:
         print("Slowest 15 cases (seconds):")
         for name, elapsed in sorted(durations, key=lambda row: (-row[1], row[0]))[:15]:
             print(f"{elapsed:8.3f}s {name}")
     return status
+
+
+def suite_reservation(names):
+    if names or os.environ.get("AIW_SLOT_HELD") == "1":
+        return nullcontext()
+    return slot.reservation([sys.executable, str(Path(__file__).resolve())],
+                            label="aiw test_harness")
 
 
 if __name__ == "__main__":

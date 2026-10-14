@@ -265,7 +265,19 @@ aiw gc [天数] [--dry-run]
 aiw board [--all] [--session <id>] [--once] [--interval 2] [--recent 15]
 aiw statusline
 aiw track [--host 名称] [--timeout 秒] <标签> -- <命令> [参数...]
+aiw slot [--slots N] [--max-wait 秒] [--label 文本] -- <命令> [参数...]
+aiw slot --status
 ```
+
+`aiw slot` 为任何项目的全量或较重测试提供全机共享名额。`--slots` 优先于 `AIW_TEST_SLOTS`，默认 2，必须是正整数；同机各会话应使用一致的名额数。`--label` 为持有者说明，默认空。`--` 后 argv 原样执行，不经 shell；缺命令或参数非法返回 64，子命令 stdout/stderr 直接继承、退出码原样返回，SIGINT/SIGTERM 转发给子进程组并等待退出。
+
+名额目录由 `AIW_SLOT_DIR` 指定，默认 `/tmp/aiw-slots`，新目录权限 0777；创建失败退回 `$TMPDIR/aiw-slots` 并提示「名额只在本沙箱内生效」。逐个尝试 flock，持有到命令结束，崩溃自动释放；全部占满时每 5 秒重试，首次显示排队和持有者摘要。取得名额后读取 macOS 内存压力等级（1 正常、2 警告、4 严重），≥2 每 15 秒复查，读取失败视为正常。`--max-wait` 默认 900 秒，0 表示不等，排队和内存等待共用上限；到期明确提示「已超过等待上限，直接运行」，名额未取得时不持有名额。`--status` 显示名额数、压力等级和锁仍被持有的记录，清理陈旧 json，无持有者显示「空闲」。
+
+默认（未设 `AIW_SLOT_QOS` 或设为 `nice`）只用 `os.nice(10)` 降优先级（nice +10），被拒绝则普通优先级，stderr 说明实际方式。仅 `AIW_SLOT_QOS=bg` 选择后台 QoS：macOS 有 `/usr/sbin/taskpolicy` 时先用 `taskpolicy -b /usr/bin/true` 最小探测，再以 `taskpolicy -b` 启动命令；不可用或探测失败退回 nice。选择 `bg` 时 stderr 警告「主机繁忙时后台 QoS 可能长时间拿不到 CPU，带超时的测试会误判」。`AIW_SLOT_QOS=0` 禁用优先级调整；其它值提示未知值并按默认处理。测试注入可用 `AIW_SLOT_PRESSURE_CMD` 替换压力读取命令（shlex 拆 argv，不经 shell）。
+
+启动子命令时，仅为未设置的 `OMP_NUM_THREADS`、`OPENBLAS_NUM_THREADS`、`MKL_NUM_THREADS`、`VECLIB_MAXIMUM_THREADS`、`NUMEXPR_NUM_THREADS`、`POLARS_MAX_THREADS`、`RAYON_NUM_THREADS` 设置 `AIW_SLOT_THREADS` 的值（默认 `1`），已有设置（包括空值）不覆盖。`AIW_SLOT_THREADS=0` 表示不设置任何线程变量；非法值（非非负整数）返回 64。
+
+`tests/test_harness.py` 不带用例名（包括 `-j 1`）时直接复用 slot 的名额与等待逻辑，并为自身应用相同的 QoS 选择（默认 nice +10）及线程变量设置；定向用例不排队。slot 与全量 harness 都设置 `AIW_SLOT_HELD=1`，子进程继承后跳过重复抢名额。harness 在每个用例临时目录设置独立 `AIW_SLOT_DIR`，避免影响真实名额。派单的 `--verify` 也用 `aiw slot -- <命令>` 包装。
 
 `aiw sync` 先照旧对 aiw 执行 `git pull --ff-only`，失败时保留其退出码；成功后对已存在的 agent-use 和 agent-use-adapters Git 仓库分别快进更新，后两者失败只警告。目录覆盖变量与安装相同。
 
@@ -449,6 +461,7 @@ python3 tests/mutation_check.py credentials locked  # 只运行指定变异
 
 ## 变更记录
 
+- 2026-10-14 新增 `aiw slot` 全机测试名额、内存压力等待、默认 nice +10 和限线程，后台 QoS 可选；全量 harness 自动复用，定向用例隔离名额目录。
 - 2026-10-14 写单新增可重复的 `--verify` 与 `--verify-timeout`：执行方成功后由 aiw 在主会话环境验收，输出精简结果、归档全文并记账本；验收失败返回 4。
 - 2026-10-14 上下文交接默认门槛提前到 20 万，同档位增加由主会话判断新话题的条件提示；后台派单等完成通知，不轮询结果。
 - 2026-10-10 首次公开：公开默认只含 codex / codex-sol / claude；文本座位、路由覆盖、通知、findings 设置、跑腿均由本地配置提供。

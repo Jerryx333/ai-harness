@@ -5,6 +5,7 @@
 #   aiw findings extract [--days N] | status  抽取信号 / 查看本机状态
 #   aiw triage start [--days N] | apply <decisions.json> | abort
 #   aiw track [--host 名称] [--timeout 秒] <标签> -- <命令> [参数...]  登记主会话长任务
+#   aiw slot [--slots N] [--max-wait 秒] [--label 文本] -- <命令> [参数...] | --status  测试排队
 #   aiw errand <子命令> ...  跑腿专线（云端真实执行，需用户弹窗确认）
 #   aiw enable <seat|provider:model>  用户确认仍免费后恢复单条停用记录
 #   aiw freecheck [--install|--uninstall]  免费检查 / 每日 09:30 定时任务
@@ -40,6 +41,7 @@ case "$cmd" in
   findings) shift; exec "$PY" "${H}/findings.py" "$@" ;;
   triage) shift; exec "$PY" "${H}/triage.py" "$@" ;;
   track) shift; exec "$PY" "${H}/track.py" "$@" ;;
+  slot) shift; exec "$PY" "${H}/slot.py" "$@" ;;
   errand)
     shift
     if [ "${AIW_NESTED:-}" = 1 ]; then

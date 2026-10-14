@@ -48,7 +48,7 @@ TASK
 AIW_MAIN=claude aiw write . 1200 /tmp/aiw-doc-task.txt
 ```
 
-涉及规则或数据字段时附原文和 `path:line`，不要只给转述。执行方发现原文与转述不一致，应按原文理解并回报。文本座位不会自动读仓库，用 `--attach` 带材料；发送前检查正文里的敏感数据，文件安全检查不会替你识别所有密钥。
+涉及规则或数据字段时附原文和 `path:line`，不要只给转述。执行方发现原文与转述不一致，应按原文理解并回报。workspace agent_use 座位可自行读仓库；非 workspace 文本座位不会自动读仓库，用 `--attach` 带材料；发送前检查正文里的敏感数据，文件安全检查不会替你识别所有密钥。
 
 ## 产出当待审稿
 
@@ -113,7 +113,7 @@ aiw doctor
 
 - `seats`：内置 CLI 从公开配置继承；额外的 `opencode` 是可选的只读文本座位，provider 是 agent-use-adapters 提供的 `opencode`，默认 `disabled: true`。安装适配器和 CLI 后再改成 false，验证 provider 能调用。空 `model` 使用适配器默认模型；`free_only` 只标注免费，`free_guard` 调用后检测收费，不能保证零费用；当前模型级停用记录不会过滤 OpenCode 默认/备选模型。
 - `roles`：按主会话身份排候选。Claude/default 的 write 首选 Codex，再用 claude-write；Codex 的 write 为空，自己改文件。review 优先另一个家族；draft 优先可选文本座位，停用时跳过并用 CLI。review/draft 强制只读。
-- `fallback`：写单只在两个写座位之间顶替，CLI 只读单在两个只读座位间顶替；可选文本座位失败后可用只读 CLI。顶替仅用于支持的失败类别，不保证每种错误都重试；每日成功顶替上限继承公开配置。只读角色即使顶替也保持只读。
+- `fallback`：写单在写座位之间顶替（含 workspace agent_use，跳过文本座位），CLI 只读单在两个只读座位间顶替；可选文本座位失败后可用只读 CLI。顶替仅用于支持的失败类别，不保证每种错误都重试；每日成功顶替上限继承公开配置。只读角色即使顶替也保持只读。
 - `panel_default` / `panel_free`：默认会诊列两家 CLI 加可选文本座位，免费名单只列 opencode；不启用文本座位时 `--free` 不足两家，不能构成会诊。默认会诊排除主会话后也可能只剩一家。
 - `self_seats`：Claude 主会话排除 claude 与 claude-write；Codex 主会话排除 codex 与 codex-sol，避免把同家会话当成跨家族复核。
 - `map_default`：逐文件批处理使用 draft 角色。

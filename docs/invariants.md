@@ -10,7 +10,7 @@
 | Codex | 空（改文件自己做） | claude → codex-sol | codex-sol → claude |
 | 未识别（default） | codex → claude-write | codex-sol → claude | codex-sol → claude |
 
-按顺序取首个存在、bin 可找到（尊重 CODEX_BIN/CLAUDE_BIN）、未停用且没有当前 auth/not_installed 熔断的座位。全部不可用返回 rc=2，列出每个候选原因，提示接入 agent-use 文本座位；Codex 主会话 write 列表为空时提示「Codex 主会话改文件请自己做」。review/draft 强制只读，包括写能力的顶替座位。`roles` 本地覆盖对象递归合并、列表整体替换；review/draft 候选只能是只读 CLI 或 agent_use 文本座位，角色名不能与座位或内置命令冲突。
+按顺序取首个存在、bin 可找到（尊重 CODEX_BIN/CLAUDE_BIN）、未停用且没有当前 auth/not_installed 熔断的座位。全部不可用返回 rc=2，列出每个候选原因，提示接入 agent-use 文本座位；Codex 主会话 write 列表为空时提示「Codex 主会话改文件请自己做」。review/draft 强制只读，包括写能力的顶替座位。`roles` 本地覆盖对象递归合并、列表整体替换；review/draft 候选只能是只读 CLI 或 agent_use 座位（文本/workspace），角色名不能与座位或内置命令冲突。
 
 只装 Codex 时，主会话自己改代码，review/draft 使用另一 Codex 会话。只装 Claude Code 时，write 使用 claude-write，review/draft 使用 claude。两家都装时 review 会落到另一家模型；只装一家时是同一家另开上下文，不等于跨家族复核。
 
@@ -59,3 +59,5 @@ panel 默认名单去掉主会话自身后过滤不可用座位，stderr 列原�
 | unexplained 观察仍计入 open | `findings.py:recompute_count_cache` | `findings_local_cache_hint` | `findings-open` |
 
 跑腿只能点名 `aiw errand`，不进入文本座位和顶替链；嵌套执行方不得调用。提交前说明会花额度，账户及私人数据仅限用户同意的该单。提交、动作放行、回复提问必须由用户亲手点击 macOS 弹窗；禁止 System Events、辅助功能、脚本代点或改代码绕过。派单记录包含 job_id、state、task_url、credits_used。弹窗及额度逻辑由 agent-use 实现，本仓库离线测试只验证转发和隔离。
+
+workspace agent_use 写单须跳过非 workspace 文本顶替座位并说明；ro 禁编辑/命令，rw 全工具跳过确认、不加 sandbox-exec，MCP 不加载。默认文本行为保持不变，workspace 与 require_no_tools 冲突报错。离线用例见 `tests/cases/workspace.py`。

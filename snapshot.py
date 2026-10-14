@@ -58,7 +58,8 @@ def version(cmd: str) -> str | None:
 def seat_shape(c: dict) -> dict:
     if c.get("kind") == "agent_use":
         return {"kind": "agent_use", "provider": c["provider"], "model": c.get("model") or "agent-use-default",
-                "require_no_tools": bool(c.get("require_no_tools"))}
+                "require_no_tools": bool(c.get("require_no_tools")),
+                **({"workspace": True} if c.get("workspace") else {})}
     b = os.environ.get(c.get("bin_env", "")) or c["bin"]
     return {"kind": "cli", "bin": os.environ.get(c.get("bin_env", "")) and "<env override>" or c["bin"],
             "version": version(b), "model": c.get("model") or "cli-default"}

@@ -331,7 +331,7 @@ def local_config(repo):
         print(f'  · 仅本地的座位：{new_seats}')
 
     seat_fields = {"disabled", "disabled_by_user", "max_concurrency", "kind", "provider", "model", "models",
-                   "free_guard", "free_only", "expects_credits", "require_no_tools", "tools_note", "adapter"}
+                   "free_guard", "free_only", "expects_credits", "require_no_tools", "tools_note", "adapter", "workspace"}
     seat_fields.update(key for seat in public_seats.values() if isinstance(seat, dict) for key in seat)
 
     known_seats = merged.get('seats', {})

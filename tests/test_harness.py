@@ -24,6 +24,7 @@ import slot
 
 CASE_MODULES = (
     "roles",
+    "workspace",
     "worker",
     "worker_2",
     "worktree_gc",

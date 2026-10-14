@@ -48,7 +48,7 @@ TASK
 AIW_MAIN=claude aiw write . 1200 /tmp/aiw-doc-task.txt
 ```
 
-For rules or field meanings, include original text and `path:line`, not just a paraphrase. If the two disagree, follow the original and report the discrepancy. Text seats do not automatically read the repository; provide material with `--attach`. Check sensitive content before sending: file checks cannot detect every key in the text.
+For rules or field meanings, include original text and `path:line`, not just a paraphrase. If the two disagree, follow the original and report the discrepancy. Workspace agent_use seats can read the repository; non-workspace text seats do not automatically read it; provide material with `--attach`. Check sensitive content before sending: file checks cannot detect every key in the text.
 
 ## Treat output as a draft
 
@@ -113,7 +113,7 @@ What each part does:
 
 - `seats`: built-in CLIs are inherited. Optional `opencode` is a read-only text seat using the `opencode` provider from agent-use-adapters, initially `disabled: true`. Install adapters and the CLI, set it to false and verify the provider can run. Empty `model` uses the adapter default. `free_only` is a label; `free_guard` detects charges after calls and cannot guarantee zero cost. Model-level disabled records currently do not filter OpenCode default/fallback models.
 - `roles`: candidate order by main-session identity. Claude/default write prefers Codex, then claude-write; Codex write is empty and edits locally. Review prefers another family; draft prefers optional text, skipping it when disabled and using a CLI. review/draft always run read-only.
-- `fallback`: writes substitute only between write seats, CLI read-only jobs between read-only seats, and optional text can fall back to read-only CLIs. Only supported failure categories trigger fallback, not every error. Daily successful-substitution limits are inherited. Read-only roles stay read-only after substitution.
+- `fallback`: writes substitute between write seats (including workspace agent_use, skipping text seats), CLI read-only jobs between read-only seats, and optional text can fall back to read-only CLIs. Only supported failure categories trigger fallback, not every error. Daily successful-substitution limits are inherited. Read-only roles stay read-only after substitution.
 - `panel_default` / `panel_free`: default panel lists two CLI families plus optional text; the free list contains only opencode. Without an enabled text seat, `--free` cannot reach two participants. Default panels may also have only one after excluding the main session.
 - `self_seats`: exclude claude and claude-write for Claude, codex and codex-sol for Codex, to avoid treating another same-family context as cross-family review.
 - `map_default`: use draft for per-file batches.

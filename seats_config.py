@@ -142,9 +142,11 @@ def validate(merged) -> list[str]:
         elif 'model_args' in seat:
             strings(seat['model_args'], f'{path}.model_args')
         # free_only 是展示/不换付费模型的声明；free_guard 才是执行时的收费检测保护。
-        for key in ('disabled', 'ro_only', 'free_only', 'free_guard', 'require_no_tools', 'expects_credits'):
+        for key in ('disabled', 'ro_only', 'free_only', 'free_guard', 'require_no_tools', 'expects_credits', 'workspace'):
             if key in seat and type(seat[key]) is not bool:
                 error(f'{path}.{key}', '布尔值')
+        if seat.get('workspace') is True and seat.get('require_no_tools') is True:
+            errors.append(f'{path}.workspace 与 require_no_tools 不能同时为 true')
         if 'max_concurrency' in seat:
             concurrency(seat['max_concurrency'], f'{path}.max_concurrency')
     roles = merged.get('roles', {})

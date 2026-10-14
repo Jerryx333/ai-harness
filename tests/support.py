@@ -58,6 +58,7 @@ ap = argparse.ArgumentParser(); ap.add_argument("task"); ap.add_argument("output
 ap.add_argument("--order"); ap.add_argument("--timeout", type=float); ap.add_argument("--model", action="append", default=[])
 ap.add_argument("--option", action="append", default=[])
 ap.add_argument("--require-no-tools", action="store_true")
+ap.add_argument("--workdir"); ap.add_argument("--access", choices=["none", "ro", "rw"], default="none")
 a = ap.parse_args()
 if os.path.exists(a.output):
     print("output exists", file=sys.stderr); sys.exit(2)
@@ -66,7 +67,12 @@ prov = a.order
 mode = os.environ.get("FAKE_AU_" + prov.upper(), "ok")
 log = os.environ.get("FAKE_AU_LOG")
 if log:
-    open(log, "a").write(json.dumps({"order": prov, "model": a.model, "options": a.option, "no_tools": a.require_no_tools, **({"panel": os.environ["AIW_PANEL_DIR"]} if os.environ.get("AIW_PANEL_DIR") else {})}) + "\n")
+    open(log, "a").write(json.dumps({"order": prov, "model": a.model, "options": a.option, "no_tools": a.require_no_tools, **({"argv": sys.argv[1:], "workdir": a.workdir, "access": a.access} if os.environ.get("FAKE_AU_WORKSPACE_LOG") else {}), **({"panel": os.environ["AIW_PANEL_DIR"]} if os.environ.get("AIW_PANEL_DIR") else {})}) + "\n")
+if mode == "write":
+    assert a.access == "rw" and os.getcwd() == a.workdir
+    open("tracked", "w").write("changed\n")
+    open("created", "w").write("new\n")
+    mode = "ok"
 if mode == "brief":
     time.sleep(2)
     mode = "ok"

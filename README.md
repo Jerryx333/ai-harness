@@ -47,6 +47,8 @@ flowchart LR
 
 aiw 负责把任务交给座位；agent-use 负责调用注册的 provider；agent-use-adapters 提供现成的 provider 适配器。只用内置 CLI 座位不需要后两个仓库。
 
+`kind=agent_use` 座位可选布尔字段 `workspace`，默认 false（纯文本、硬禁工具）。设为 true 时，provider 必须声明 `tool_policy=workspace`；可进入 write 候选，不能同时设 `require_no_tools: true`。派单传 `--workdir <绝对路径> --access ro|rw`：`--ro`、`ro_only`、review/draft 使用 ro，其余使用 rw。ro 只能读文件、搜索和列目录，不能编辑或跑命令；rw 开放全部内置工具并跳过确认，不套 `sandbox-exec`，文件直接改在工作目录，调用方用 diff 验收。两种模式均不加载 MCP。附件可选；直接派单给 workspace 座位文件清单，由它自行读取，panel 仍给各家同一份附件全文快照。`--net` 只打印说明、不生效，联网由供应商决定；写单复用 CLI 的 baseline、改动统计、账本与汇报。
+
 ## 你可能会担心的
 
 **质量会不会降？** 派出去的产出都是待审稿，主会话核对文件、证据和测试结果后才算数。

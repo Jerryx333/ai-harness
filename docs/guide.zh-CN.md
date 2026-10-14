@@ -12,7 +12,7 @@
 | Codex | 空（改文件自己做） | claude → codex-sol | codex-sol → claude |
 | 未识别（default） | codex → claude-write | codex-sol → claude | codex-sol → claude |
 
-按顺序取首个存在、bin 可找到（尊重 CODEX_BIN/CLAUDE_BIN）、未停用且没有当前 auth/not_installed 熔断的座位。全部不可用返回 rc=2，列出每个候选原因，提示接入 agent-use 文本座位；Codex 主会话 write 列表为空时提示「Codex 主会话改文件请自己做」。review/draft 强制只读，包括写能力的顶替座位。`roles` 本地覆盖对象递归合并、列表整体替换；review/draft 解析时跳过非只读 CLI 候选并说明原因，doctor 同样警告；可使用只读 CLI 或 agent_use 文本座位，角色名不能与座位或内置命令冲突。
+按顺序取首个存在、bin 可找到（尊重 CODEX_BIN/CLAUDE_BIN）、未停用且没有当前 auth/not_installed 熔断的座位。全部不可用返回 rc=2，列出每个候选原因，提示接入 agent-use 文本座位；Codex 主会话 write 列表为空时提示「Codex 主会话改文件请自己做」。review/draft 强制只读，包括写能力的顶替座位。`roles` 本地覆盖对象递归合并、列表整体替换；review/draft 解析时跳过非只读 CLI 候选并说明原因，doctor 同样警告；可使用只读 CLI 或 agent_use 座位（文本/workspace），角色名不能与座位或内置命令冲突。
 
 只装 Codex 时，主会话自己改代码，review/draft 使用另一 Codex 会话。只装 Claude Code 时，write 使用 claude-write，review/draft 使用 claude。两家都装时 review 会落到另一家模型；只装一家时是同一家另开上下文，不等于跨家族复核。
 
@@ -94,6 +94,8 @@ aiw 帮 Claude Code 或 Codex 主会话把活分给不同模型：改代码用 w
 3. 可选：用 `router-rules.local.json` 将起草类任务路由过去；参照[座位示例](../seats.local.example.json)和[路由示例](../router-rules.local.example.json)。
 4. 运行 `aiw doctor`。启用座位的 provider 在生效注册表中缺失或被禁用时会警告；这类警告不改变退出码。
 
+`kind=agent_use` 座位可选布尔字段 `workspace`，默认 false（纯文本、硬禁工具）。设为 true 时，provider 必须声明 `tool_policy=workspace`；可进入 write 候选，不能同时设 `require_no_tools: true`。派单传 `--workdir <绝对路径> --access ro|rw`：`--ro`、`ro_only`、review/draft 使用 ro，其余使用 rw。ro 只能读文件、搜索和列目录，不能编辑或跑命令；rw 开放全部内置工具并跳过确认，不套 `sandbox-exec`，文件直接改在工作目录，调用方用 diff 验收。两种模式均不加载 MCP。附件可选；直接派单给 workspace 座位文件清单，由它自行读取，panel 仍给各家同一份附件全文快照。`--net` 只打印说明、不生效，联网由供应商决定；写单复用 CLI 的 baseline、改动统计、账本与汇报。
+
 ## 自定义
 
 本地文件放在 `~/.config/aiw/`：
@@ -126,7 +128,7 @@ aiw 帮 Claude Code 或 Codex 主会话把活分给不同模型：改代码用 w
 
 ### 附件与运行记录
 
-产出都是**待审稿**。成功时，stderr 的「实际执行方」行报告实际座位及 `provider` 文件的实际路径，可核对顶替。默认写在 run 目录；设置 `AIW_PROVIDER_FILE` 时写到指定路径。Git 仓库根目录与子目录的写单共用一把锁。Git 写单开工前保存 `baseline-status.txt`，结束时分列开工前已有改动与本单期间新出现变化的文件。默认有 `codex`、`codex-sol`、`claude`、`claude-write`，顶替链为空，需本地配置。文本座位需显式用 `--attach 文件` 才能看到仓库材料。直接派单的附件按实际座位分发：CLI 座位只收通过安全校验的文件清单（相对路径、字节数、SHA256 前 12 位），在工作目录自行读取；其它座位收内联全文。两种方式均保留 200KB 上限及安全检查；直接派单到文本座位时，附件超过 30KB 只警告一次、不拒绝。panel 预检读取附件一次，将全文渲染进共用 `prompt.md` 快照，各家（含 CLI 座位）收到同一份全文；附件合计超过 30KB 在预检时提醒一次，全 CLI 会诊也适用。附件内容会原样发给对应座位背后的模型服务；安全检查只拦凭据类文件、越界路径和二进制等，不识别正文里的密码、密钥或私人数据，发送前请自行确认。
+产出都是**待审稿**。成功时，stderr 的「实际执行方」行报告实际座位及 `provider` 文件的实际路径，可核对顶替。默认写在 run 目录；设置 `AIW_PROVIDER_FILE` 时写到指定路径。Git 仓库根目录与子目录的写单共用一把锁。Git 写单开工前保存 `baseline-status.txt`，结束时分列开工前已有改动与本单期间新出现变化的文件。默认有 `codex`、`codex-sol`、`claude`、`claude-write`，顶替链为空，需本地配置。文本座位需显式用 `--attach 文件` 才能看到仓库材料。直接派单的附件按实际座位分发：CLI 或 workspace 座位只收通过安全校验的文件清单（相对路径、字节数、SHA256 前 12 位），在工作目录自行读取；其它座位收内联全文。两种方式均保留 200KB 上限及安全检查；直接派单到文本座位时，附件超过 30KB 只警告一次、不拒绝。panel 预检读取附件一次，将全文渲染进共用 `prompt.md` 快照，各家（含 CLI 座位）收到同一份全文；附件合计超过 30KB 在预检时提醒一次，全 CLI 会诊也适用。附件内容会原样发给对应座位背后的模型服务；安全检查只拦凭据类文件、越界路径和二进制等，不识别正文里的密码、密钥或私人数据，发送前请自行确认。
 
 ### 自定义 CLI 适配器
 

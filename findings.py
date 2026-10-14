@@ -304,7 +304,8 @@ def common_fields(workdir: str, **dispatch) -> dict:
         except OSError:
             pass
     seat = dispatch.get("seat")
-    kind = dispatch.get("kind", _settings().get("seats", {}).get(seat, {}).get("kind"))
+    cfg = _settings().get("seats", {}).get(dispatch.get("actual") or seat, {})
+    kind = dispatch.get("kind", cfg.get("kind"))
     return {"id": new_id(),
             "ts": stamp.isoformat(timespec="seconds"), "host": host,
             "session": dispatch.get("session", session_id()),
@@ -314,7 +315,7 @@ def common_fields(workdir: str, **dispatch) -> dict:
             "repo": repo, "repo_rel": os.path.relpath(Path(workdir).resolve(), root) if root else None,
             "commit": _git(workdir, "rev-parse", "--verify", "HEAD") if root else None,
             "branch": _git(workdir, "symbolic-ref", "--quiet", "--short", "HEAD") if root else None,
-            "rules_hash": digest.hexdigest()[:12], "effective_hash": effective_hash(_settings()), "partial_context": kind == "agent_use"}
+            "rules_hash": digest.hexdigest()[:12], "effective_hash": effective_hash(_settings()), "partial_context": kind == "agent_use" and not cfg.get("workspace", False)}
 TEXT_FIELDS = ("guess", "deviation", "abandoned", "fixed",
                "observation", "expected", "evidence", "location")
 def record(rows: list[dict], *, strict=False) -> dict:

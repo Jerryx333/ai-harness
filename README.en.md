@@ -47,6 +47,8 @@ flowchart LR
 
 aiw assigns work to seats; agent-use calls registered providers; agent-use-adapters supplies ready-made provider adapters. Built-in CLI seats work without the other two repositories.
 
+`kind=agent_use` seats accept the boolean `workspace`, default false (text only, tools hard-disabled). With true, the provider must declare `tool_policy=workspace`; the seat can be a write candidate and cannot also set `require_no_tools: true`. Assignments pass `--workdir <absolute path> --access ro|rw`: `--ro`, `ro_only` and review/draft use ro; other jobs use rw. ro allows only file reads, search and directory listing, with no edits or commands. rw enables all built-in tools and bypasses confirmation, without `sandbox-exec`; changes land directly in the working directory for the caller to check with diff. Neither mode loads MCP. Attachments are optional; direct workspace assignments receive a file manifest and read files themselves, while panels retain the same inline snapshot for all seats. `--net` prints a notice and has no effect; the provider decides network access. Write jobs share CLI baselines, change counts, ledger fields and reports.
+
 ## Questions you may have
 
 **Will quality suffer?** All assigned work is a draft for review. The main conversation checks files, evidence and test results before accepting it.

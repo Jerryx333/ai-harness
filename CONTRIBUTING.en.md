@@ -74,6 +74,8 @@ python3 tests/mutation_check.py
 
 Behavior tests cover normal operation; mutation checks confirm tests detect broken invariants. See [test options](docs/reference.zh-CN.md#自测) (Chinese) for concurrency, named cases and mutations. Prefer minimal offline cases with temporary directories, fake CLIs and isolated HOME. Do not access real accounts or weaken assertions. If a sandbox blocks a check, record the command and reason instead of bypassing it or changing tests.
 
+Workspace seat changes need fake agent-use tests for ro/rw arguments, text defaults, configuration conflicts and write fallbacks; verify baselines, ledger entries and file changes in a temporary repository for rw.
+
 ## Documentation conventions
 
 Keep README sections corresponding across languages with equal second-level heading counts. Update both languages of guides, best practices and contribution instructions. Explain reader outcomes before mechanisms; make commands copyable, verify behavior against source, give sources/methods for numbers and label unknown products or versions unverified. Public files must not contain credentials, private seats, machine names, local absolute paths or personal account information. Edit relevant paragraphs without reformatting whole files. State-field changes require updates to the state contract and tests.

@@ -73,7 +73,7 @@ def ask(seat: str, workdir: str, timeout: str, prompt_file: str, out: Path, full
 
 def main() -> int:
     sys.path.insert(0, str(HERE))
-    from ai_worker import split_argv, read_attachments, render_attachments, warn_large_attachments, AttachError, main_agent, disabled_seat, print_disabled, errand_names, StateError
+    from ai_worker import split_argv, read_attachments, render_attachments, warn_large_attachments, AttachError, agent_use_workspace, main_agent, disabled_seat, print_disabled, errand_names, StateError
     try:
         values = {}
         args, flags, attach = split_argv(sys.argv[1:], {"--attach", "--free", "--prior", "--full"}, values=values)
@@ -163,7 +163,7 @@ def main() -> int:
     out = STATE / "panels" / format_panel_id(dt.datetime.now(), os.getpid())
     out.mkdir(parents=True, exist_ok=True)
     prompt = Path(prompt_file).read_text(encoding="utf-8") if prompt_file else text
-    (out / "prompt.md").write_text(prompt + render_attachments(attachment_files), encoding="utf-8")
+    (out / "prompt.md").write_text(prompt + render_attachments(attachment_files, "workspace" if any(agent_use_workspace(SEATS["seats"][s]) for s in seats) else "agent_use"), encoding="utf-8")
     if attachment_files:
         manifest = [{"path": rel, "bytes": len(data), "sha256": hashlib.sha256(data).hexdigest()}
                     for rel, data in attachment_files]

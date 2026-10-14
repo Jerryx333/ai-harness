@@ -1,5 +1,11 @@
 {
   "seats": {
+    "local-workspace": {
+      "kind": "agent_use",
+      "provider": "your-workspace-provider",
+      "workspace": true,
+      "max_concurrency": 1
+    },
     "local-text": {
       "kind": "agent_use",
       "provider": "your-provider",
@@ -9,6 +15,7 @@
     }
   },
   "fallback": {
+    "local-workspace": [],
     "local-text": []
   },
   "panel_default": [

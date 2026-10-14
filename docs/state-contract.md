@@ -186,3 +186,5 @@ agent-use 协议不兼容的账本 `kind=incompatible` 对应 breaker 的 `not_i
 ## tui/<AIW_TUI_ID>
 
 纯文本一行，保存 Codex 主会话的线程 ID。`aiw tui` 生成随机标识并通过环境传给 codex，标识只接受 `[A-Za-z0-9_-]+`。ai_worker 在派单发布在途记录时，若会话来自 `CODEX_THREAD_ID` 且 `AIW_NESTED` 不为 `1`，先写同目录临时文件再原子 replace；写失败仅警告，不阻断派单。`aiw tui-status` 读取此文件，将 `{"session_id": "<id>"}` 送给可选组件 `aiw-board statusline`。首单前没有映射，显示空闲；`aiw gc` 按文件 mtime 和指定天数清理，支持 `--dry-run`。
+
+workspace agent_use 写单与 CLI 写单共用 `changed_files`、`baseline-status.txt` 和文件变化汇报；ro 不增加改动字段。findings 的 `partial_context` 仅对非 workspace agent_use 为 true，并按实际执行座位判断。snapshot 对启用 workspace 的 agent_use 座位形状记录 `workspace: true`，缺省形状保持不变。

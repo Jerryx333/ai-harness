@@ -8,6 +8,7 @@ import re
 import shlex
 import shutil
 import subprocess
+import tomllib
 import contextvars
 from contextlib import contextmanager
 from urllib.parse import urlsplit
@@ -182,11 +183,6 @@ def agents(home, repo):
 
 
 def trust(home, hp, mine):
-    try:
-        import tomllib
-    except ImportError:
-        warn('Codex 配置', 'Python 没有 tomllib', '使用 Python 3.11 或更新版本')
-        return
     config = tomllib.loads((home / '.codex/config.toml').read_text(encoding='utf-8'))
     if config.get('features', {}).get('hooks') is False:
         warn('Codex 钩子功能', 'Codex 关闭了钩子功能', '在 config.toml 中启用 features.hooks')

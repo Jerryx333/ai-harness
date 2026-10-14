@@ -9,6 +9,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+import tomllib
 import uuid
 
 from env_compat import getenv, valid_tui_id
@@ -153,12 +154,11 @@ def status_lines(tui_id, pane_path=''):
     context, tokens = _rollout(transcript) if transcript else ({}, None)
     if not transcript:
         try:
-            import tomllib
             home = Path(os.environ.get('CODEX_HOME', '~/.codex')).expanduser()
             with (home / 'config.toml').open('rb') as stream:
                 config = tomllib.load(stream)
             context = {'model': config.get('model'), 'effort': config.get('model_reasoning_effort')}
-        except (OSError, ValueError, ImportError):
+        except (OSError, ValueError):
             pass
     parts = []
     model = []

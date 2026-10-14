@@ -36,7 +36,12 @@ CLAUDE_DIR="${HOME}/.claude"
 STAMP="$(date +%Y%m%d-%H%M%S)"
 PY="${AIW_PYTHON:-python3}"
 
-command -v "$PY" >/dev/null || { echo "需要 python3" >&2; exit 1; }
+command -v "$PY" >/dev/null || { echo "需要 Python 3.11 及以上；可用 AIW_PYTHON 指定解释器" >&2; exit 1; }
+
+if ! "$PY" -c 'import sys; sys.exit(sys.version_info < (3, 11))'; then
+  "$PY" -c 'import sys; print("当前 Python " + sys.version.split()[0] + "，需要 Python 3.11 及以上；可用 AIW_PYTHON 指定解释器", file=sys.stderr)'
+  exit 1
+fi
 
 # 已有安装入口必须属于这份 checkout；包括失效软链。
 "$PY" - "${CLAUDE_DIR}/aiw" "$H" <<'PYEOF'

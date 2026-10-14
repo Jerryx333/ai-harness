@@ -6,7 +6,7 @@ Reproducible reports, documentation and offline tests are welcome. Commit messag
 
 ## Development setup
 
-You need Python 3 and Git. Scripts use only the Python standard library; tests use fake CLIs and isolated HOME, without real model accounts. Only macOS has been tested; Linux is untested.
+You need Python 3.11+ and Git. Scripts use only the Python standard library; tests use fake CLIs and isolated HOME, without real model accounts. Only macOS has been tested; Linux is untested.
 
 ```bash
 git clone https://github.com/Jerryx333/aiw.git

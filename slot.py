@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # 用途：全机测试名额、内存压力等待、降优先级和限线程；运行：aiw slot [选项] -- 命令。
-# 依赖：Python 3 标准库、POSIX flock；macOS 可选 taskpolicy。
+# 依赖：Python 3.11+ 标准库、POSIX flock；macOS 可选 taskpolicy。
 from __future__ import annotations
 
 import argparse

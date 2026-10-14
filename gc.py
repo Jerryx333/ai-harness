@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # 用途：清理过期 runs/panels/maps 子目录及 codex-home 日期会话目录；运行：python3 gc.py [天数] [--dry-run]
-# 依赖：Python 3 标准库；状态目录由 AIW_STATE 指定。
+# 依赖：Python 3.11+ 标准库；状态目录由 AIW_STATE 指定。
 import os
 import datetime as dt
 from env_compat import getenv

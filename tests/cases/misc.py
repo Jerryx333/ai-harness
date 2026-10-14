@@ -404,7 +404,7 @@ def test_aiw_board_forward():
         board = fakebin / 'aiw-board'
         board.write_text('#!/bin/bash\nprintf "%s\\n" "$@" > "$FORWARD_ARGS"\n')
         board.chmod(0o755)
-        env = dict(os.environ, PATH=str(fakebin), FORWARD_ARGS=str(args))
+        env = dict(os.environ, PATH=str(fakebin), AIW_PYTHON=sys.executable, FORWARD_ARGS=str(args))
         cmd = ['/bin/bash', str(REPO / 'bin/aiw')]
         for given, expected in ((['board', '--once', '--all'], ['--once', '--all']),
                                 (['statusline'], ['statusline']),

@@ -6,7 +6,7 @@
 
 ## 开发环境
 
-需要 Python 3 和 Git；脚本只用 Python 标准库，测试使用假 CLI 和隔离 HOME，不需要真实模型账号。项目目前只测试过 macOS，Linux 未测试。
+需要 Python 3.11+ 和 Git；脚本只用 Python 标准库，测试使用假 CLI 和隔离 HOME，不需要真实模型账号。项目目前只测试过 macOS，Linux 未测试。
 
 ```bash
 git clone https://github.com/Jerryx333/aiw.git

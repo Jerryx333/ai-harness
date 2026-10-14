@@ -88,6 +88,61 @@ def install_agent_use_default_location():
         check((home / '.local/share/agent-use-adapters/.git').is_dir(), '适配器未克隆到默认同级位置')
 
 
+def python_requirement():
+    from unittest.mock import patch
+    import contextlib
+    import io
+    import ai_worker
+
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        home, env = fake_home(root)
+        repo = home / '.claude/aiw'
+        calls = root / 'python-calls'
+        fake = root / 'old-python'
+        fake.write_text('#!' + sys.executable + '\n' +
+                        'import pathlib, sys\n' +
+                        'with pathlib.Path(' + repr(str(calls)) + ').open("a") as log: log.write("call\\n")\n' +
+                        'assert sys.argv[1] == "-c", "门禁后仍启动了子命令"\n' +
+                        'code = sys.argv[2]\n' +
+                        'sys.argv = ["-c", *sys.argv[3:]]\n' +
+                        'sys.version_info = (3, 10, 9)\nsys.version = "3.10.9 (fake)"\n' +
+                        'exec(code)\n')
+        fake.chmod(0o755)
+        env['AIW_PYTHON'] = str(fake)
+
+        def snapshot():
+            return {str(p.relative_to(home)): (p.lstat().st_mode,
+                    os.readlink(p) if p.is_symlink() else p.read_bytes() if p.is_file() else None)
+                    for p in home.rglob('*')}
+
+        before = snapshot()
+        result = sh(['bash', str(repo / 'install.sh')], env=env)
+        message = '需要 Python 3.11 及以上；可用 AIW_PYTHON 指定解释器'
+        check(result.returncode != 0 and '3.10.9' in result.stderr and message in result.stderr,
+              result.stdout + result.stderr)
+        check(len(result.stderr.splitlines()) == 1, '安装低版本提示应只有一行')
+        check(snapshot() == before, '低版本安装改动了文件或权限')
+        for command in ('help', 'sync', 'board', 'statusline', 'doctor', 'route', 'write'):
+            calls.unlink(missing_ok=True)
+            result = sh(['bash', str(repo / 'bin/aiw'), command], env=env)
+            check(result.returncode == 1 and '3.10.9' in result.stderr and message in result.stderr,
+                  command + ': ' + result.stdout + result.stderr)
+            check(calls.read_text().splitlines() == ['call'], '入口门禁不应多起 Python 进程')
+            if command == 'doctor':
+                check('✗ Python 版本' in result.stdout, '低版本 doctor 缺版本检查行')
+        check(snapshot() == before, '低版本入口改动了文件或权限')
+        result = sh(['bash', str(repo / 'bin/aiw'), 'help'],
+                    env=dict(env, AIW_PYTHON=sys.executable))
+        check(result.returncode == 0 and '统一入口' in result.stdout, '正常 Python 入口受影响')
+
+    output = io.StringIO()
+    with patch.object(ai_worker.sys, 'version_info', (3, 10, 9)), \
+            patch.object(ai_worker.sys, 'version', '3.10.9 (fake)'), \
+            contextlib.redirect_stdout(output):
+        check(ai_worker.doctor() == 1, '低版本 doctor 应返回 1')
+    check('✗ Python 版本' in output.getvalue() and message in output.getvalue(), output.getvalue())
+
 
 def doctor():
     with tempfile.TemporaryDirectory() as t:
@@ -101,6 +156,7 @@ def doctor():
         env['FAKE_VERSION_LOG'] = str(versions)
         p = sh(["bash", str(REPO / "bin" / "aiw"), "doctor"], env=env)
         check(p.returncode == 0, f"doctor 应成功: {p.stdout}{p.stderr}")
+        check("✓ Python 版本：" + sys.version.split()[0] in p.stdout, "doctor 缺 Python 版本行")
         for s in ("qoder", "workbuddy", "antigravity", "codex", "host:", "agent-use:qoder", "agent-use:doubao", "codex-cli fake"):
             check(s in p.stdout, f"doctor 输出缺 {s}: {p.stdout}")
         check("仅免费模型" in p.stdout and "硬禁工具" in p.stdout, "doctor 应标出免费模型与工具策略")
@@ -1114,6 +1170,7 @@ def install_launch_failure():
 CASES = {case.__name__: case for case in (
     agent_use_default_paths,
     install_agent_use_default_location,
+    python_requirement,
     doctor,
     doctor_config,
     install_fresh,

@@ -2,7 +2,7 @@
 
 [中文](README.md) | [English](README.en.md)
 
-For people who use Claude Code or Codex as their main tool and often hit usage limits or fill their context. Keep the main model focused on planning and checking results; hand off reading code, running commands and drafting summaries. You configure who gets the work: a cheaper model in the same family, other subscriptions you already have, or free models. Defaults are included, and one installed CLI is enough. No service to run and no dependencies beyond Python 3.
+For people who use Claude Code or Codex as their main tool and often hit usage limits or fill their context. Keep the main model focused on planning and checking results; hand off reading code, running commands and drafting summaries. You configure who gets the work: a cheaper model in the same family, other subscriptions you already have, or free models. Defaults are included, and one installed CLI is enough. No service to run and no dependencies beyond Python 3.11+.
 
 <p align="center"><img src="assets/hero.en.webp" alt="aiw: the main session plans, models share the work, the main session verifies" width="760"></p>
 <p align="center"><img src="assets/demo.gif" alt="First aiw assignment: see which role a request routes to, check role resolution, run a read-only review" width="760"><br><sub>A real run (terminal output is in Chinese); about one minute of waiting was cut. Regenerate with <code>vhs assets/demo.tape</code>.</sub></p>
@@ -81,7 +81,7 @@ The main conversation can keep working meanwhile. For small, urgent work, doing 
 
 ## Five-minute start
 
-You need macOS (the only tested OS), Python 3, and logged-in Claude Code or Codex CLI (at least one). Optional: [agent-use](https://github.com/Jerryx333/agent-use) to connect more models.
+You need macOS (the only tested OS), Python 3.11+, and logged-in Claude Code or Codex CLI (at least one). Optional: [agent-use](https://github.com/Jerryx333/agent-use) to connect more models.
 
 1. Clone and install at this exact location:
 

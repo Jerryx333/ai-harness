@@ -2,7 +2,7 @@
 
 [中文](README.md) | [English](README.en.md)
 
-给用 Claude Code 或 Codex 当主力、常被额度卡住或上下文撑爆的人。主模型专心规划和把关，读代码、跑命令、起草摘要这类体力活派出去。派给谁由你配：同一家更省的模型、你已有的其他订阅、免费模型都行。装好有默认配置，只装一家也能用。不用起服务，除 Python 3 外不装依赖。
+给用 Claude Code 或 Codex 当主力、常被额度卡住或上下文撑爆的人。主模型专心规划和把关，读代码、跑命令、起草摘要这类体力活派出去。派给谁由你配：同一家更省的模型、你已有的其他订阅、免费模型都行。装好有默认配置，只装一家也能用。不用起服务，除 Python 3.11+ 外不装依赖。
 
 <p align="center"><img src="assets/hero.webp" alt="aiw：主会话定方案，模型分工，主会话验收" width="760"></p>
 <p align="center"><img src="assets/demo.gif" alt="aiw 第一单：判断该派给哪个角色、查看角色解析、派一单只读评审" width="760"><br><sub>真实运行录屏，等待执行方的约 1 分钟已剪掉；用 <code>vhs assets/demo.tape</code> 可重新生成。</sub></p>
@@ -81,7 +81,7 @@ aiw 负责把任务交给座位；agent-use 负责调用注册的 provider；age
 
 ## 5 分钟上手
 
-需要 macOS（目前只在 macOS 测试过）、Python 3，以及已登录的 Claude Code 或 Codex CLI（至少一个）；可选 [agent-use](https://github.com/Jerryx333/agent-use)，用于接入更多模型。
+需要 macOS（目前只在 macOS 测试过）、Python 3.11+，以及已登录的 Claude Code 或 Codex CLI（至少一个）；可选 [agent-use](https://github.com/Jerryx333/agent-use)，用于接入更多模型。
 
 1. 克隆到此固定位置，再安装：
 

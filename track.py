@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # 用途：登记本机盯梢命令及远端任务的进度；运行：aiw track [选项] 标签 -- 命令。
-# 依赖：Python 3 标准库，POSIX flock 和进程组。
+# 依赖：Python 3.11+ 标准库，POSIX flock 和进程组。
 from __future__ import annotations
 
 import argparse

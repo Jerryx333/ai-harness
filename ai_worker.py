@@ -41,6 +41,7 @@ import subprocess
 import sys
 import time
 import tempfile
+import tomllib
 import uuid
 from pathlib import Path
 
@@ -207,7 +208,6 @@ def prepare_codex_home(*, dry_run: bool = False) -> tuple[Path | None, str]:
     stage = "读取源 config.toml"
     temporary = None
     try:
-        import tomllib
         source = Path(os.environ.get("CODEX_HOME") or Path.home() / ".codex").expanduser().resolve()
         with (source / "config.toml").open("rb") as stream:
             config = tomllib.load(stream)
@@ -1833,6 +1833,11 @@ def _run_seat(seat: str, prompt: str, workdir: str, timeout: int, ro: bool, effo
 
 
 def doctor() -> int:
+    version = sys.version.split()[0]
+    if sys.version_info < (3, 11):
+        print(f"  ✗ Python 版本：当前 Python {version}，需要 Python 3.11 及以上；可用 AIW_PYTHON 指定解释器")
+        return 1
+    print(f"  ✓ Python 版本：{version}")
     from doctor_config import memoized_checks
     with memoized_checks():
         return _doctor()

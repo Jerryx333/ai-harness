@@ -260,7 +260,7 @@ aiw panel --free <workdir> <timeout_s> <prompt_file>  # 只问免费座位，不
 aiw doctor | route "消息" | goal init|next|verify|status <file> | weekly [天] [--json] | snapshot | sync
 aiw goal verify <file> [id] [--force] [--accept-verify-change] [--full]
 aiw route --check
-aiw tokens [天数=7] [--json] [--top N=10]
+aiw tokens [天数=7] [--json] [--top N=10] [--phases]
 aiw gc [天数] [--dry-run]
 aiw board [--all] [--session <id>] [--once] [--interval 2] [--recent 15]
 aiw statusline
@@ -473,13 +473,30 @@ agent-use 的 `status.json` 必须声明整数 `protocol_version: 1`。缺失或
 
 ### aiw tokens
 
-`aiw tokens [天数=7] [--json] [--top N=10]` 只读测量本机 Claude Code 用量，默认最近 7 天、列出最大的 10 个主会话。无数据时文本打印「无数据」，退出码为 0；JSON 仍输出完整的零值结构。`--top` 只限制列表，不影响总计。
+`aiw tokens [天数=7] [--json] [--top N=10] [--phases]` 只读测量本机 Claude Code 用量，默认最近 7 天、列出最大的 10 个主会话。无数据时文本打印「无数据」，退出码为 0；JSON 仍输出完整的零值结构。`--top` 只限制列表，不影响总计。`--phases` 默认关闭，开启后追加主会话环节拆账和用户回合起点上下文，不改变默认输出结构。
 
 - **构成**：主会话 input、cache_read、cache_creation、output 的合计和占比；token 合计是四者之和。参考 API 权重为 input 1、cache_creation 1.25、cache_read 0.1、output 5。订阅额度的计量权重未公开，折算仅供参考，不代表费用或订阅额度。
 - **上下文**：ctx = input + cache_read + cache_creation；展示轮数、中位、最近秩 p90、最大，以及 ctx 严格超过 20 万、40 万的轮次占比和 token 占比（含 output）。固定开销估计 F 是窗口内各会话首轮 ctx 的中位；固定部分 = Σmin(F, ctx)/Σctx，增长部分为其补数。这是窗口内估计，不是实际会话启动开销。
 - **会话集中度**：前 3、前 10 个主会话的 token 占比；Top N 展示 session 前 8 位、项目名、轮数、ctx 中位/最大、token、截图数、关联派单数和 codex input。项目名取 cwd 最后一段，缺失时取项目目录名。截图数统计窗口内用户 tool_result content 列表中的 image 块，不推断图片与上下文增长的因果关系。
 - **子 agent**：isSidechain 或 subagents 目录中的助手回复不进入主会话统计，按父会话汇总；全局子 agent 占比 = 子 agent token /（主会话 + 子 agent token）。
 - **派单关联**：窗口内账本 rc 非 null 的记录按 actual 计数，包含失败和超时；展示有 session 的记录比例，按完整 session 关联主会话。用量按账本记录本身的 token 元数据汇总，不读取当前座位配置：任何 actual（含 codex-high 等别名座位）只要 tokens 是对象且 source=rollout，就合计其 input/cached/output；input 已包含 cached，不再叠加。没有 session 的派单不猜测关联。
+
+`--phases` 只统计主会话 assistant 轮次（排除 isSidechain 和 subagents 文件），一个 message id 算一轮，同 id 各行的工具分类合并，usage 只计一次；权重沿用上述参考 API 权重。分类是按工具调用的启发式，不判断消息正文的意图；同轮多个工具按以下优先级归到第一个命中的环节：
+
+- **发起派单**：Bash 调用 aiw 或 ai_worker.py 的 codex、write、claude-write、goal run、review、draft、panel、codex-sol、workbuddy、workbuddy-cn、qoder、opencode、doubao、qianwen、claude、map。
+- **主会话改代码**：Edit、Write、MultiEdit、NotebookEdit 修改非 /private/tmp、/tmp/、scratchpad 路径。
+- **跑测试/验收**：Bash 调用 pytest、npm test/npm run test、go test、cargo test、node --test、bun test、swift test、xcodebuild、make、*check.sh、tests/test_harness.py 或 aiw goal verify。
+- **提交/PR**：Bash 调用 git commit/push/merge/rebase/tag、gh pr 或 gh issue。
+- **等待派单**：Monitor、TaskOutput，或 Bash 含独立 sleep 数字、until、ps aux、pgrep、读取 /tasks/<id>.output。
+- **写单/草稿**：Edit、Write 修改 scratchpad、/private/tmp、/tmp/ 下文件。
+- **调查/读取**：其余 Bash，以及 Read、Grep、Glob、codegraph 等读工具。
+- **子代理**：Agent 工具调用；此处统计主会话发起调用的轮次。
+- **文字回复**：没有 tool_use 的轮次。
+- **其他**：剩余工具调用。
+
+环节展示轮数、加权花费占比、每轮平均加权 token，按花费占比降序排列。**每单等待轮数** = 等待派单轮数 / 发起派单轮数，衡量主会话等待开销；没有发起派单时显示「无派单」。**回合起点上下文**：真实用户文本消息到下一条真实用户消息前为一回合，起点 ctx 取其后第一轮主会话 assistant 的 ctx，花费为该回合主会话轮次的加权合计；展示回合数、起点 ctx 中位，以及严格超过 20 万、30 万的回合数占比和花费占比。排除 isMeta、tool_result、空白文本，以及去空白后以 `<task-notification`、`<system-reminder`、`<local-command`、`Caveat:`、`[Request interrupted`、`<bash-`、`This session is being continued` 开头的消息；窗口内没有后续有效 assistant 轮次的用户消息不计入起点统计，只计算窗口内花费。
+
+`--json --phases` 顶层追加 `phases`（每环节 `rounds/weighted/share`）、`wait_per_dispatch`（无派单为 null）、`turn_start`（`turns/ctx_median`，以及 `over_200k/over_300k` 各自的 `turns_share/weighted_share`）。新增统计只输出环节名和数字，不输出消息正文、命令或路径；额外读取用户文本不改变原有 coverage 计数口径。
 
 转录根目录为 `AIW_CLAUDE_PROJECTS`（直接指向 projects），否则取 `${CLAUDE_CONFIG_DIR:-~/.claude}/projects`；账本为 `${AIW_STATE}/seat-ledger.jsonl`，默认是当前 aiw 仓库的 state 目录，与 weekly 相同。按时间窗口内助手 message.id 去重，缺 id 用 uuid；跳过全零 usage，损坏行跳过并在 stderr 汇报数量。时间无时区的旧格式按本机时区解释。
 

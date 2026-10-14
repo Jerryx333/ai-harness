@@ -7,6 +7,7 @@ import datetime as dt
 import json
 import math
 import os
+import re
 from env_compat import getenv
 import sys
 from collections import Counter, defaultdict
@@ -17,6 +18,90 @@ FIELDS = ('input', 'cache_read', 'cache_creation', 'output')
 USAGE = ('input_tokens', 'cache_read_input_tokens', 'cache_creation_input_tokens', 'output_tokens')
 WEIGHTS = dict(input=1, cache_read=0.1, cache_creation=1.25, output=5)
 STATE = Path(getenv('AIW_STATE', Path(__file__).resolve().parent / 'state'))
+PHASES = ('发起派单', '主会话改代码', '跑测试/验收', '提交/PR', '等待派单',
+          '写单/草稿', '调查/读取', '子代理', '文字回复', '其他')
+DISPATCH = re.compile(r'\b(?:aiw|ai_worker\.py)\s+(?:codex-sol|codex|write|claude-write|goal\s+run|review|draft|panel|workbuddy-cn|workbuddy|qoder|opencode|doubao|qianwen|claude|map)(?=\s|$|[;|&])')
+TEST = re.compile(r'\b(?:pytest|npm\s+(?:run\s+)?test|go\s+test|cargo\s+test|node\s+--test|bun\s+test|swift\s+test|xcodebuild|make)\b|\S*check\.sh\b|tests/test_harness\.py\b|\baiw\s+goal\s+verify\b')
+COMMIT = re.compile(r'\bgit\s+(?:-[^\s]+\s+(?:[^\s]+\s+)?)*?(?:commit|push|merge|rebase|tag)\b|\bgh\s+(?:pr|issue)\b')
+WAIT = re.compile(r'\bsleep\s+\d+(?:\.\d+)?(?=\s|$|[;|&])|\buntil\s|\bps\s+aux\b|\bpgrep\b|/tasks/[^/\s]+\.output\b')
+SKIP_TURN = ('<task-notification', '<system-reminder', '<local-command', 'Caveat:',
+             '[Request interrupted', '<bash-', 'This session is being continued')
+
+
+def phase(content):
+    tags = set()
+    for block in content if isinstance(content, list) else []:
+        if not isinstance(block, dict) or block.get('type') != 'tool_use':
+            continue
+        name, args = block.get('name', ''), block.get('input') or {}
+        command = args.get('command') or ''
+        path = args.get('file_path') or args.get('notebook_path') or ''
+        scratch = any(s in path for s in ('/private/tmp', '/tmp/', 'scratchpad'))
+        if name == 'Bash':
+            tags.add(next((label for pattern, label in (
+                (DISPATCH, '发起派单'), (TEST, '跑测试/验收'),
+                (COMMIT, '提交/PR'), (WAIT, '等待派单')) if pattern.search(command)), '调查/读取'))
+        elif name in ('Edit', 'Write', 'MultiEdit', 'NotebookEdit') and not scratch:
+            tags.add('主会话改代码')
+        elif name in ('Monitor', 'TaskOutput'):
+            tags.add('等待派单')
+        elif name in ('Edit', 'Write') and scratch:
+            tags.add('写单/草稿')
+        elif name in ('Read', 'Grep', 'Glob') or 'codegraph' in name.lower():
+            tags.add('调查/读取')
+        elif name == 'Agent':
+            tags.add('子代理')
+        else:
+            tags.add('其他')
+    return next((label for label in PHASES if label in tags), '文字回复')
+
+
+def user_turn(row):
+    if row.get('type') != 'user' or row.get('isMeta'):
+        return False
+    content = row.get('message', {}).get('content')
+    if isinstance(content, list):
+        if any(isinstance(b, dict) and b.get('type') == 'tool_result' for b in content):
+            return False
+        content = '\n'.join(b.get('text', '') for b in content
+                            if isinstance(b, dict) and b.get('type') == 'text')
+    return isinstance(content, str) and bool(content.strip()) and not content.strip().startswith(SKIP_TURN)
+
+
+def phase_summary(latest, labels, starts):
+    counts, costs, events = Counter(), Counter(), defaultdict(list)
+    for unique, (key, child, turn, values, _) in latest.items():
+        if child or not any(values):
+            continue
+        label, first = labels[unique]
+        cost = sum(value * WEIGHTS[field] for field, value in zip(FIELDS, values))
+        counts[label] += 1
+        costs[label] += cost
+        events[key].append((first, 1, turn[1], cost))
+    for key, entries in starts.items():
+        events[key].extend((position, 0, 0, 0) for position in entries)
+    turns = []
+    for entries in events.values():
+        current = None
+        for _, kind, ctx, cost in sorted(entries):
+            if kind == 0:
+                current = [None, 0]
+                turns.append(current)
+            elif current is not None:
+                if current[0] is None:
+                    current[0] = ctx
+                current[1] += cost
+    turns = [t for t in turns if t[0] is not None]
+    total = sum(costs.values())
+    phases = {label: dict(rounds=counts[label], weighted=costs[label], share=ratio(costs[label], total))
+              for label in PHASES}
+    start = dict(turns=len(turns), ctx_median=median(t[0] for t in turns) if turns else 0)
+    for n in (200000, 300000):
+        start[f'over_{n // 1000}k'] = dict(
+            turns_share=ratio(sum(t[0] > n for t in turns), len(turns)),
+            weighted_share=ratio(sum(t[1] for t in turns if t[0] > n), sum(t[1] for t in turns)))
+    return dict(phases=phases, wait_per_dispatch=ratio(counts['等待派单'], counts['发起派单'])
+                if counts['发起派单'] else None, turn_start=start)
 
 
 def timestamp(value):
@@ -36,7 +121,7 @@ def summary(turns):
                 ctx_max=max(contexts, default=0))
 
 
-def report(days, top):
+def report(days, top, phases=False):
     end = dt.datetime.now().astimezone()
     since = end - dt.timedelta(days=days)
     root = Path(os.environ.get('AIW_CLAUDE_PROJECTS',
@@ -45,6 +130,7 @@ def report(days, top):
     main, children = defaultdict(list), defaultdict(list)
     projects, images, dispatch_counts, codex = {}, Counter(), Counter(), Counter()
     latest, bad = {}, 0
+    labels, starts, sequence = {}, defaultdict(list), 0
     root_source = dict(name='transcripts', exists=root.exists(), rows=0, bad=0,
                        files=0, files_with_rows=0)
     sources = [root_source]
@@ -57,7 +143,8 @@ def report(days, top):
             project = path.parents[2].name if child else path.parent.name
             with path.open(encoding='utf-8', errors='replace') as stream:
                 for line in stream:
-                    if '"assistant"' not in line and '"tool_result"' not in line:
+                    covered = '"assistant"' in line or '"tool_result"' in line
+                    if not covered and not (phases and not child and '"user"' in line):
                         continue
                     try:
                         row = json.loads(line)
@@ -67,6 +154,10 @@ def report(days, top):
                         is_child = child or bool(row.get('isSidechain'))
                         sid = parent if is_child else row.get('sessionId') or parent
                         key = (project, sid)
+                        sequence += 1
+                        position = (timestamp(row['timestamp']), sequence)
+                        if phases and not is_child and user_turn(row):
+                            starts[key].append(position)
                         if row.get('type') == 'assistant':
                             usage = msg.get('usage') or {}
                             values = [usage.get(f, 0) for f in USAGE]
@@ -76,20 +167,31 @@ def report(days, top):
                             if not isinstance(identity, str) or not identity:
                                 raise ValueError('missing message id and uuid')
                             unique = (key, path.name if child else is_child, identity)
+                            if phases and unique in latest and not msg.get('usage'):
+                                values = latest[unique][3]
                             turn = (timestamp(row['timestamp']), sum(values[:3]), sum(values))
                             cwd = row.get('cwd')
+                            if phases and not is_child:
+                                label = phase(msg.get('content'))
                             latest[unique] = (key, is_child, turn, values,
                                 Path(cwd).name if isinstance(cwd, str) and cwd else project)
+                            if phases and not is_child:
+                                if unique in labels:
+                                    previous, first = labels[unique]
+                                    if label == '文字回复' or (previous != '文字回复' and PHASES.index(previous) < PHASES.index(label)):
+                                        label = previous
+                                    position = min(first, position)
+                                labels[unique] = (label, position)
                         elif row.get('type') == 'user' and not is_child:
                             content = msg.get('content')
                             if isinstance(content, list):
                                 for block in content:
                                     if isinstance(block, dict) and block.get('type') == 'tool_result' and isinstance(block.get('content'), list):
                                         images[key] += sum(isinstance(b, dict) and b.get('type') == 'image' for b in block['content'])
-                        root_source['rows'] += 1
+                        root_source['rows'] += covered
                     except (ValueError, KeyError, TypeError, AttributeError):
-                        bad += 1
-                        root_source['bad'] += 1
+                        bad += covered
+                        root_source['bad'] += covered
             root_source['files_with_rows'] += root_source['rows'] > rows_before
     for key, is_child, turn, values, project in latest.values():
         if not any(values):
@@ -176,6 +278,8 @@ def report(days, top):
                       with_session=linked, session_share=ratio(linked, calls)), malformed_lines=bad, coverage=coverage)
     if bad:
         print(f'⚠ 转录和账本有 {bad} 行解析不了，未计入统计', file=sys.stderr)
+    if phases:
+        result.update(phase_summary(latest, labels, starts))
     return result
 
 
@@ -186,6 +290,8 @@ def print_report(d):
     print('覆盖只说明读到多少，不代表结论可信度')
     if not d['context']['rounds'] and not d['subagents']['rounds'] and not d['dispatch']['count']:
         print('无数据')
+        if 'phases' in d:
+            print_phases(d)
         return
     pct = lambda v: f'{v * 100:.2f}%'
     print(f"最近 {d['window_days']} 天 · Claude Code token 测量")
@@ -214,17 +320,32 @@ def print_report(d):
         print(f'{seat}: {count} 次')
     for seat, usage in a['rollout'].items():
         print(f"{seat} rollout: input {usage['input']} · cached {usage['cached']} · output {usage['output']}")
+    if 'phases' in d:
+        print_phases(d)
+
+
+def print_phases(d):
+    print('\n环节（主会话，加权）')
+    for label, value in sorted(d['phases'].items(), key=lambda item: -item[1]['share']):
+        if value['rounds']:
+            print(f"{label}: {value['rounds']} 轮 · {value['share']:.1%} · 每轮 {value['weighted'] / value['rounds'] / 1000:.1f}k")
+    wait = d['wait_per_dispatch']
+    print('每单等待轮数: ' + ('无派单' if wait is None else f'{wait:.2f}'))
+    start = d['turn_start']
+    thresholds = ' · '.join(f">{n}k 回合 {start[f'over_{n}k']['turns_share']:.1%} 花费 {start[f'over_{n}k']['weighted_share']:.1%}" for n in (200, 300))
+    print(f"回合起点上下文：{start['turns']} 回合 · 中位 {start['ctx_median'] / 1000:g}k · {thresholds}")
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('days', nargs='?', type=int, default=7)
     parser.add_argument('--json', action='store_true')
+    parser.add_argument('--phases', action='store_true')
     parser.add_argument('--top', type=int, default=10)
     args = parser.parse_args()
     if args.days < 1 or args.top < 0:
         parser.error('天数须大于 0，--top 须非负')
-    data = report(args.days, args.top)
+    data = report(args.days, args.top, args.phases)
     if args.json:
         print(json.dumps(data, ensure_ascii=False))
     else:

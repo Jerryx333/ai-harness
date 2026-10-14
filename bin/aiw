@@ -18,7 +18,7 @@
 #     board 转发到 aiw-board
 #   aiw statusline              转发到 aiw-board statusline
 #   aiw tui [codex 参数...]     在 tmux 底栏显示本会话派单摘要
-#   aiw tokens [天数=7] [--json] [--top N=10]  只读 token 测量
+#   aiw tokens [天数=7] [--json] [--top N=10] [--phases]  只读 token 测量
 #   aiw weekly [days] [--json]  本机周报
 #   aiw snapshot               写本机脱敏快照到 snapshots/<host>.json（用于两台机器查漂移）
 #   aiw gc [天数] [--dry-run]   清理旧 runs/panels/maps（默认 30 天）

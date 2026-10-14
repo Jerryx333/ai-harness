@@ -225,6 +225,135 @@ def tokens_report():
 
 
 
+def tokens_phases():
+    import datetime as dt
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td); project = root / 'projects/fake-project'
+        project.mkdir(parents=True)
+        state = root / 'state'; state.mkdir()
+        (state / 'seat-ledger.jsonl').write_text('')
+        now = dt.datetime.now(dt.timezone.utc) - dt.timedelta(hours=1)
+        rows = []
+        sentinel = 'PRIVATE_PHASE_SENTINEL'
+        def add(kind, content, mid=None, ctx=100000, **extra):
+            message = dict(content=content)
+            if kind == 'assistant':
+                message.update(id=mid, usage=dict(input_tokens=100, cache_read_input_tokens=ctx-120,
+                                                  cache_creation_input_tokens=20, output_tokens=10))
+            row = dict(type=kind, timestamp=(now + dt.timedelta(seconds=len(rows))).isoformat(),
+                       sessionId='fake-session', message=message, **extra)
+            rows.append(row)
+            return row
+        def tool(name, **args):
+            return dict(type='tool_use', name=name, input=args)
+        add('user', '  ' + sentinel + '  ')
+        add('assistant', [tool('Read', file_path='/repo/' + sentinel)], 'split', 210000)
+        add('assistant', [tool('Bash', command='aiw codex /repo 60 /tmp/' + sentinel)], 'split', 210000)
+        add('user', '  <task-notification>done</task-notification>')
+        add('assistant', [tool('Monitor')], 'wait')
+        add('assistant', [tool('Write', file_path='/repo/' + sentinel)], 'edit')
+        add('assistant', [tool('Bash', command='git commit -m test; pytest')], 'test')
+        add('assistant', [tool('Bash', command='git -C /repo push')], 'commit')
+        add('assistant', [tool('Edit', file_path='/private/tmp/' + sentinel)], 'draft')
+        add('assistant', [tool('Grep', pattern=sentinel)], 'read')
+        add('assistant', [tool('Agent', prompt=sentinel)], 'agent')
+        add('assistant', sentinel, 'text')
+        add('assistant', [tool('Mystery')], 'other')
+        add('assistant', [tool('Bash', command='aiw write /repo 60 /tmp/task')], 'side', isSidechain=True)
+        for prefix in ('<system-reminder', '<local-command', 'Caveat:', '[Request interrupted',
+                       '<bash-', 'This session is being continued'):
+            add('user', '  ' + prefix + sentinel)
+        add('user', sentinel, isMeta=True)
+        add('user', [dict(type='tool_result', content=sentinel), dict(type='text', text=sentinel)])
+        add('user', [dict(type='text', text='  ' + sentinel)])
+        add('assistant', [tool('Bash', command='sleep 2')], 'wait-high', 310000)
+        add('user', sentinel)
+        add('assistant', [], 'boundary', 200000)
+        add('user', sentinel)
+        add('assistant', [], 'boundary-high', 300000)
+        add('user', sentinel)
+        # A user without a following measured assistant has no start ctx.
+        transcript = project / 'fake-session.jsonl'
+        transcript.write_text('\n'.join(json.dumps(r) for r in rows) + '\n')
+        sub = project / 'fake-session/subagents'; sub.mkdir(parents=True)
+        (sub / 'agent-fake.jsonl').write_text(json.dumps(rows[2]) + '\n')
+        env = dict(os.environ, AIW_CLAUDE_PROJECTS=str(root / 'projects'), AIW_STATE=str(state))
+        cmd = [sys.executable, str(REPO / 'tokens.py'), '3']
+        plain = sh(cmd + ['--json'], env=env)
+        result = sh(cmd + ['--json', '--phases'], env=env)
+        check(result.returncode == plain.returncode == 0, result.stderr + plain.stderr)
+        data, baseline = json.loads(result.stdout), json.loads(plain.stdout)
+        check({k: v for k, v in data.items() if k not in ('phases', 'wait_per_dispatch', 'turn_start')} == baseline,
+              'default fields changed')
+        phases = data['phases']
+        expected = {'发起派单': 1, '主会话改代码': 1, '跑测试/验收': 1, '提交/PR': 1,
+                    '等待派单': 2, '写单/草稿': 1, '调查/读取': 1, '子代理': 1, '文字回复': 3, '其他': 1}
+        check({k: v['rounds'] for k, v in phases.items()} == expected, str(phases))
+        def cost(ctx):
+            return 100 + (ctx-120)*.1 + 20*1.25 + 10*5
+        check(phases['发起派单']['weighted'] == cost(210000), str(phases))
+        total = cost(210000) + 9*cost(100000) + cost(310000) + cost(200000) + cost(300000)
+        check(abs(sum(v['weighted'] for v in phases.values())-total) < .001
+              and abs(sum(v['share'] for v in phases.values())-1) < 1e-10, str(phases))
+        check(data['wait_per_dispatch'] == 2, str(data))
+        start = data['turn_start']
+        check(start['turns'] == 4 and start['ctx_median'] == 255000, str(start))
+        check(start['over_200k']['turns_share'] == .75 and start['over_300k']['turns_share'] == .25, str(start))
+        check(abs(start['over_200k']['weighted_share'] - (total-cost(200000))/total) < 1e-10
+              and abs(start['over_300k']['weighted_share'] - cost(310000)/total) < 1e-10, str(start))
+        text, plain_text = sh(cmd + ['--phases'], env=env), sh(cmd, env=env)
+        check(text.stdout.split('\n环节（')[0] == plain_text.stdout, text.stdout)
+        check('每单等待轮数: 2.00' in text.stdout and '回合起点上下文：4 回合' in text.stdout, text.stdout)
+        check(sentinel not in result.stdout + result.stderr + text.stdout + text.stderr, 'privacy leak')
+        rows[2]['message']['content'] = [tool('Read', file_path='/repo/file')]
+        # The second content line can omit usage without losing the measured round.
+        rows[2]['message'].pop('usage')
+        transcript.write_text('\n'.join(json.dumps(r) for r in rows) + '\n')
+        no_dispatch = json.loads(sh(cmd + ['--json', '--phases'], env=env).stdout)
+        check(no_dispatch['wait_per_dispatch'] is None and no_dispatch['phases']['发起派单']['rounds'] == 0
+              and no_dispatch['phases']['调查/读取']['weighted'] == cost(210000) + cost(100000), str(no_dispatch))
+        check('每单等待轮数: 无派单' in sh(cmd + ['--phases'], env=env).stdout, 'missing no-dispatch label')
+        transcript.write_text('')
+        (sub / 'agent-fake.jsonl').unlink()
+        empty = sh(cmd + ['--phases'], env=env)
+        check(empty.returncode == 0 and '环节' in empty.stdout and '回合起点上下文：0 回合' in empty.stdout, empty.stdout)
+
+
+def tokens_phases_rules():
+    import importlib.util
+    spec = importlib.util.spec_from_file_location('tokens_phases_rules', REPO / 'tokens.py')
+    module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
+    def block(name, **args):
+        return dict(type='tool_use', name=name, input=args)
+    def classify(*tools):
+        return module.phase(list(tools))
+    for seat in ('codex', 'write', 'claude-write', 'goal run', 'review', 'draft', 'panel',
+                 'codex-sol', 'workbuddy', 'workbuddy-cn', 'qoder', 'opencode', 'doubao',
+                 'qianwen', 'claude', 'map'):
+        for cli in ('/bin/aiw', 'python3 /repo/ai_worker.py'):
+            check(classify(block('Bash', command=f'{cli} {seat} /repo 60 /tmp/task')) == '发起派单', seat)
+    for command in ('pytest', 'npm test', 'npm run test', 'go test', 'cargo test', 'node --test',
+                    'bun test', 'swift test', 'xcodebuild', 'make', './scripts/check.sh',
+                    './scripts/unit-check.sh', 'python3 tests/test_harness.py', 'aiw goal verify plan'):
+        check(classify(block('Bash', command=command)) == '跑测试/验收', command)
+    for command in ('git commit -m x', 'git push', 'git merge branch', 'git rebase HEAD',
+                    'git tag v1', 'git -C /repo commit -m x', 'gh pr view', 'gh issue list'):
+        check(classify(block('Bash', command=command)) == '提交/PR', command)
+    for command in ('sleep 10', 'sleep 0.5; cat file', 'until test -f file; do true; done',
+                    'ps aux', 'pgrep python', 'cat /private/tmp/tasks/abc-123.output'):
+        check(classify(block('Bash', command=command)) == '等待派单', command)
+    for command in ('echo asleep 10', 'echo sleepiness', 'aiw status', 'aiw board', 'ls'):
+        check(classify(block('Bash', command=command)) == '调查/读取', command)
+    for name in ('Edit', 'Write', 'MultiEdit', 'NotebookEdit'):
+        check(classify(block(name, notebook_path='/repo/file')) == '主会话改代码', name)
+    for path in ('/tmp/file', '/private/tmp/file', '/repo/scratchpad/file'):
+        check(classify(block('Write', file_path=path)) == '写单/草稿', path)
+    check(classify(block('TaskOutput'), block('Agent')) == '等待派单', 'wait priority')
+    check(classify(block('Read'), block('Agent')) == '调查/读取', 'read priority')
+    check(classify(block('Write', file_path='/repo/file'), block('Bash', command='pytest')) == '主会话改代码', 'edit priority')
+    check(classify(block('mcp__codegraph__query')) == '调查/读取', 'codegraph')
+
+
 def weekly_repo_section():
     with tempfile.TemporaryDirectory() as td:
         t = Path(td)
@@ -546,6 +675,8 @@ CASES = {case.__name__: case for case in (
     codex_tokens_rollout,
     codex_tokens_fallback,
     tokens_report,
+    tokens_phases,
+    tokens_phases_rules,
     tokens_coverage,
     weekly_coverage,
     weekly_repo_section,

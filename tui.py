@@ -18,10 +18,26 @@ STATUS_EXTRA_TIMEOUT = 3
 
 
 SGR = re.compile(r'\x1b\[([0-9;]*)m')
+ESCAPE = re.compile(
+    r'\x1b\].*?(?:\x07|\x1b\\|$)'
+    r'|\x1b[P^_X].*?(?:\x1b\\|$)'
+    r'|\x1b\[[0-?]*[ -/]*(?:[@-~]|$)'
+    r'|\x1b[ -/]*[0-~]?|\x1b', re.DOTALL)
 COLORS = ('black', 'red', 'green', 'yellow', 'blue', 'magenta', 'cyan', 'white')
 
 
+def _clean_extra(text, keep_newlines=False):
+    # Strip controls inside escape sequences too, before recognizing them.
+    controls = r'[\x00-\x06\x08-\x09\x0b-\x1a\x1c-\x1f\x7f-\x9f]' if keep_newlines else r'[\x00-\x06\x08-\x1a\x1c-\x1f\x7f-\x9f]'
+    text = re.sub(controls, '', text)
+    text = ESCAPE.sub(lambda m: m[0] if SGR.fullmatch(m[0]) else '', text)
+    # The only ESC bytes left belong to retained SGR sequences.
+    controls = r'[\x00-\x09\x0b-\x1a\x1c-\x1f\x7f-\x9f]' if keep_newlines else r'[\x00-\x1a\x1c-\x1f\x7f-\x9f]'
+    return re.sub(controls, '', text)
+
+
 def _extra_text(text):
+    text = _clean_extra(text)
     # Count visible characters before escaping hashes or inserting tmux styles.
     visible = len(SGR.sub('', text))
     limit = 119 if visible > 120 else 120
@@ -48,7 +64,7 @@ def _extra_text(text):
         parts.append(text[position:position + max(0, limit - used)].replace('#', '##'))
     if visible > 120:
         parts.append('…')
-    return ''.join(parts) if visible else ''
+    return _clean_extra(''.join(parts)) if visible else ''
 
 
 def _extra_status():
@@ -59,8 +75,10 @@ def _extra_status():
             if argv:
                 result = subprocess.run(argv, stdin=subprocess.DEVNULL,
                                         capture_output=True, text=True,
+                                        env=dict(os.environ, AIW_TUI_STATUS_ANSI='1'),
                                         timeout=STATUS_EXTRA_TIMEOUT, check=True)
-                extra = next((s.strip() for s in result.stdout.splitlines() if SGR.sub('', s).strip()), '')
+                output = _clean_extra(result.stdout, keep_newlines=True)
+                extra = next((s.strip() for s in output.split('\n') if SGR.sub('', s).strip()), '')
                 return _extra_text(extra)
         except (OSError, ValueError, subprocess.SubprocessError):
             pass
@@ -216,6 +234,24 @@ def _dispatch_status(tui_id):
         return '派单 ?'
 
 
+def _has_status_line_override(args):
+    arguments = iter(args)
+    for arg in arguments:
+        if arg == '--':
+            break
+        if arg in ('-c', '--config'):
+            value = next(arguments, '')
+        elif arg.startswith('--config='):
+            value = arg[len('--config='):]
+        elif arg.startswith('-c'):
+            value = arg[2:]
+        else:
+            continue
+        if value.partition('=')[0].strip() == 'tui.status_line':
+            return True
+    return False
+
+
 def launch(args):
     if not shutil.which('tmux'):
         print('需要 tmux：brew install tmux', file=sys.stderr)
@@ -239,6 +275,8 @@ def launch(args):
             subprocess.run(['tmux', 'set-option', key, value], check=True)
         os.execvp('codex', ['codex', *args])
     else:
+        if not _has_status_line_override(args):
+            args = [*args, '-c', 'tui.status_line=[]']
         name = 'aiw-' + tui_id
         callback += ' #{q:pane_current_path} ' + shlex.quote(name)
         command = 'exec ' + shlex.join(environment + ['AIW_TUI_ID=' + tui_id, 'codex', *args])

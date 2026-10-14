@@ -123,6 +123,20 @@ def tui_status_extra():
             check(extra == expected and len(extra.replace('##', '#')) <= 120 and not r.stderr, repr(r))
         r = sh(cmd, env=write_extra("print('\\x1b[36mextra #1\\x1b[0m')\n"))
         check(r.stdout == baseline.rstrip('\n') + ' │ #[fg=cyan]extra ##1#[default]\n', 'ANSI command output')
+        extra_env = write_extra('import os\nprint(os.environ.get("AIW_TUI_STATUS_ANSI", "missing"))\n')
+        extra_env['AIW_TUI_STATUS_ANSI'] = '0'
+        r = sh(cmd, env=extra_env)
+        check(r.stdout == baseline.rstrip('\n') + ' │ 1\n', 'single-line ANSI capability')
+        import tui
+        from unittest.mock import patch
+        with patch.dict(os.environ, extra_env):
+            check(tui.status_lines('ok')[1] == '1', 'three-line ANSI capability')
+        dirty = '\x1b[2J\x1b]0;title\x07\x1b(B\x07\x7f\x9b\x1b[90mextra\x1b[0m'
+        r = sh(cmd, env=write_extra(f'print({dirty!r})\n'))
+        check(r.stdout == baseline.rstrip('\n') + ' │ #[fg=brightblack]extra#[default]\n'
+              and not any(c in r.stdout for c in ('\x1b', '\x07', '\x7f', '\x9b')), 'clean ANSI command output')
+        r = sh(cmd, env=write_extra("print('\\x1b[2J\\x07\\nextra')\n"))
+        check(r.stdout == baseline.rstrip('\n') + ' │ extra\n', 'first cleaned nonempty line')
         # Block until killed by the shortened timeout, without sleeping.
         extra_env = write_extra('import signal\nsignal.pause()\n')
         timeout_cmd = [sys.executable, '-c',
@@ -168,7 +182,8 @@ def tui_launch():
         check(argv[:2] == ['new-session', '-s'], str(argv))
         launch = argv[3]
         parsed = shlex.split(launch)
-        check(parsed[-len(args):] == args and parsed[-len(args)-1] == 'codex', launch)
+        check(parsed[-2:] == ['-c', 'tui.status_line=[]']
+              and parsed[-len(args)-2:-2] == args and parsed[-len(args)-3] == 'codex', launch)
         callback = argv[argv.index('status-format[0]') + 1]
         expected = [('status', '3'), ('status-interval', '15'), ('status-justify', 'left'),
                     ('status-style', 'bg=default,fg=colour250'), ('status-format[0]', callback),
@@ -189,7 +204,22 @@ def tui_launch():
         check(argv[2] == 'aiw-' + tui_id, str(argv))
         check('AIW_TUI_ID=' + tui_id in parsed, launch)
         check(sh(['/bin/sh', '-c', launch], env=env).returncode == 0, launch)
-        check(json.loads(result.read_text()) == [args, tui_id, env['AIW_STATE']], result.read_text())
+        check(json.loads(result.read_text()) == [args + ['-c', 'tui.status_line=[]'], tui_id, env['AIW_STATE']], result.read_text())
+        for overrides in (['-c', 'tui.status_line=["model"]'],
+                          ['--config', 'tui.status_line=["model"]'],
+                          ['--config=tui.status_line=[]'], ['-ctui.status_line=[]'],
+                          ['-c', 'model="example"']):
+            for inside in (False, True):
+                log.unlink()
+                r = sh(cmd + overrides, env=dict(env, TMUX='fake') if inside else env)
+                check(r.returncode == 0, r.stderr)
+                if not inside:
+                    call = json.loads(log.read_text().splitlines()[0])
+                    check(sh(['/bin/sh', '-c', call[3]], env=env).returncode == 0, call[3])
+                expected_args = args + overrides
+                if not inside and overrides == ['-c', 'model="example"']:
+                    expected_args += ['-c', 'tui.status_line=[]']
+                check(json.loads(result.read_text())[0] == expected_args, result.read_text())
         log.unlink()
         r = sh(cmd, env=dict(env, TMUX='fake', AIW_STATE='state rel'), cwd=t)
         check(r.returncode == 0, r.stderr)
@@ -303,6 +333,12 @@ def tui_render():
         for code, expected in ((39, 'default'), (90, 'fg=brightblack'), (97, 'fg=brightwhite'), (30, 'fg=black'), (37, 'fg=white')):
             check(tui._extra_text(f'\x1b[{code}mtext') == '#[' + expected + ']text', str(code))
         check(tui._extra_text('\x1b[32m' + '#' * 121 + '\x1b[39m') == '#[fg=green]' + '##' * 119 + '…', 'visible truncation')
+        noise = '\x1b[2J\x1b]0;title\x07\x1b]0;title\x1b\\\x1b(B\x1bPpayload\x1b\\'
+        controls = ''.join(chr(c) for c in range(32) if c != 27) + ''.join(chr(c) for c in range(127, 160))
+        check(tui._extra_text(noise + controls + '\x1b[90mtext\x1b[0m') == '#[fg=brightblack]text#[default]', 'escape and control cleaning')
+        check(tui._extra_text(noise + 'x' * 120) == 'x' * 120, 'cleaned visible length')
+        check(tui._extra_text('text\x1b]unterminated') == 'text', 'unterminated OSC')
+        check(tui._extra_text('\x1b[9\x001mtext\x1b[0m') == '#[fg=brightred]text#[default]', 'control inside SGR')
 
 
 def tui_gc():

@@ -100,6 +100,8 @@ worker 在首次写 JSON 前创建或打开同名 `<pid>.lock` 并持有 `fcntl.
 | tokens_null_reason | rollout 未用上时的原因：no_session_id、rollout_missing、rollout_unparsed、error；stderr 兜底或 tokens=null 时出现，正常 rollout 不写此键。异常只影响测量，不改变派单结果 |
 | findings_n | 可选整数，本次收集的 observation 条数；未收集时无此键，展示端不依赖它 |
 | changed_files | #6：写任务每次尝试相对派单开始时的变化文件数；非 git 或统计失败为 null；只读任务没有这个键 |
+| worktree | 可选字符串，`ai_worker.py` 仅为 `--worktree` 单写入隔离工作树根目录的绝对路径；普通单不出现，结束后目录可能已清理 |
+| worktree_branch | 可选字符串，`ai_worker.py` 仅为 `--worktree` 单写入对应的 `aiw/<run-id>` 分支名；普通单不出现，结束后分支可能已清理 |
 | run_dir | #7：实际运行过的尝试都有 run 目录路径；归档失败或没有运行为 null（跳过记录也可能没有此键） |
 | repo | #8：origin remote 经 findings._repo 规范化后的仓库标识；无 git、无 origin 或解析失败为 null；同仓库不同 worktree 相同，旧记录可能缺失 |
 | workdir | #9：仅 repo 为 null 时记录工作目录的绝对真实路径，否则为 null；旧记录可能缺失 |
@@ -119,7 +121,7 @@ worker 在首次写 JSON 前创建或打开同名 `<pid>.lock` 并持有 `fcntl.
 
 ## 兼容性与验收
 
-改字段名或语义时必须同步修改 aiw-board，并更新 `tests/cases/misc.py` 的 `test_state_contract`。该测试运行真实 worker 配合假后端，在运行中校验 inflight 键集合恰好为上述 14 个字段，完成后校验账本最新记录至少包含约定的 11 个字段。
+改字段名或语义时必须同步修改 aiw-board，并更新 `tests/cases/misc.py` 的 `test_state_contract`。该测试运行真实 worker 配合假后端，在运行中校验 inflight 键集合恰好为上述 14 个字段，完成后校验账本最新记录至少包含约定的 11 个字段，并检查普通单不含 worktree/worktree_branch、`--worktree` 单含这两个可选字段且值对应运行目录和分支。
 
 运行：`python3 tests/test_harness.py test_state_contract`；完整回归：`python3 tests/test_harness.py`。
 
@@ -130,6 +132,14 @@ worker 在首次写 JSON 前创建或打开同名 `<pid>.lock` 并持有 `fcntl.
 ## runs/<尝试目录>/
 
 直接派单成功时，默认在该次尝试的 run 目录写 `provider`，stderr 打印「实际执行方」及文件路径；`AIW_PROVIDER_FILE` 可显式指定位置，panel/map 继续使用各单的 `.provider`。已有工作区 `.provider` 不删除。Git 写单在执行前把 `git status --porcelain` 保存为 run 目录的 `baseline-status.txt`，结束报告分列开工前已有改动与本单期间新出现变化的文件，均列数量和文件。写锁使用 Git 仓库根目录的 realpath；非 Git 使用 workdir 的 realpath，锁文件不回收。`ai_worker.py` 和 `findings.py` 的 Git 调用统一经 `gitenv.repository_git_env()` 清除调用方的仓库定位变量，保留认证和普通 Git 配置环境变量。
+
+## worktrees/<run-id>/、worktrees/<run-id>.json 与 worktrees/archive/
+
+`ai_worker.py` 为 `--worktree` 单从源仓库 HEAD 创建隔离工作树及 `aiw/<run-id>` 分支，创建前在原 workdir 按全部附件规则预检；附件必须已提交，工作区及索引相对 HEAD 有差异或未跟踪时返回 64，不创建工作树、分支或元数据。通过后在隔离目录读取附件，普通单附件行为不变。
+
+worker 创建时原子写入同级 `<run-id>.json`，含 `path`（工作树根目录绝对路径）、`branch`、`source_root`（源仓库根目录）、`base_head`（初始 HEAD 提交）、`created_at`（带 UTC 时区的 ISO 8601 创建时间）。本单无已跟踪/暂存改动、无未跟踪的非忽略文件且分支未前进时即时清理。worker 报告后及 `gc.py` 扫描跳过持写锁目录；已合并且干净的清理，超过固定 7 天的先由 worker 保存相对初始 HEAD 的二进制补丁 `archive/<run-id>.patch` 再强制删除工作树、分支和元数据，存档失败保留。被忽略文件不计入干净判断、不存档到补丁，删除工作树时一并删除。在初始 HEAD 上用 `git apply --binary <补丁>` 恢复。
+
+源仓库丢失、无法生成补丁时，worker 将残留目录整体保存为 `archive/<run-id>.files/`（包含残留文件），再删除元数据。`gc.py` 按指定天数（默认 30 天）与 mtime 清理过期的 `*.patch` 普通文件及 `*.files` 目录，目录删除方式同 runs；跳过软链，`--dry-run` 只报告，不存档或删除。展示端只读。
 
 ## panels/<YYYYmmdd-HHMMSS>-<pid>/
 

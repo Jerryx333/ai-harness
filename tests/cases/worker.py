@@ -308,7 +308,8 @@ def write_worktree():
             cmd = [sys.executable, str(REPO / 'ai_worker.py'), 'codex', str(work), timeout,
                    str(prompt), '--worktree', '--no-fallback', '--no-findings']
             r = inprocess_sh(cmd, env=dict(env, FAKE_CODEX=mode))
-            check(r.returncode == expected_rc and 'git diff --stat' in r.stderr and 'worktree remove' in r.stderr,
+            check(r.returncode == expected_rc and 'git diff --stat' in r.stderr
+                  and ('本单无改动，worktree 已清理' if mode == 'quota' else 'worktree remove') in r.stderr,
                   f'{mode} 结束未报告: {r.stderr}')
         # 熔断只影响上面的失败单，普通单仍检查字段兼容性。
         (state / 'breaker.json').unlink(missing_ok=True)
@@ -316,6 +317,53 @@ def write_worktree():
         check(r.returncode == 0, r.stderr)
         row = json.loads((state / 'seat-ledger.jsonl').read_text().splitlines()[-1])
         check('worktree' not in row and 'worktree_branch' not in row, '普通单出现新字段')
+
+
+def write_worktree_symlink_workdir():
+    with tempfile.TemporaryDirectory() as td:
+        t = Path(td)
+        work = git_template(t / 'repo', {'sub/tracked': 'original\n'})
+        alias = t / 'alias'; alias.symlink_to(work, target_is_directory=True)
+        wd = alias / 'sub'
+        (wd / 'untracked').write_text('untracked\n')
+        (wd / 'untracked-link').symlink_to('tracked')
+        prompt = t / 'prompt'; prompt.write_text('修改 tracked')
+        state = t / 'state'; state.mkdir()
+        env = dict(os.environ, AIW_STATE=str(state), FAKE_CODEX='write')
+        # 直接调用也必须接受未解析的 workdir；入口 main 已会解析它。
+        script = '''import sys
+from pathlib import Path
+import ai_worker as w
+wd = sys.argv[1]
+assert w.validate_worktree_attachments(wd, ['tracked']) == ['tracked']
+for name in ('untracked', 'untracked-link'):
+    try:
+        w.validate_worktree_attachments(wd, [name])
+    except w.AttachError as e:
+        assert '只能附加已提交的文件' in str(e), str(e)
+    else:
+        raise AssertionError('未提交的命名路径被接受：' + name)
+mapped, fields, root, head = w.create_task_worktree(wd, w.STATE / 'runs/direct')
+assert Path(mapped) == Path(fields['worktree']) / 'sub', mapped
+assert (Path(mapped) / 'tracked').read_text() == 'original\\n'
+'''
+        r = inprocess_sh([sys.executable, '-c', script, str(wd)], env=env, cwd=REPO)
+        check(r.returncode == 0, r.stderr)
+        for attachments, expected_rc in (((), 0), (('tracked',), 0),
+                                         (('untracked',), 64), (('untracked-link',), 64)):
+            cmd = [sys.executable, str(REPO / 'ai_worker.py'), 'codex', str(wd),
+                   '10', str(prompt), '--worktree', '--no-fallback', '--no-findings']
+            if attachments:
+                cmd.extend(['--attach', *attachments])
+            r = inprocess_sh(cmd, env=env)
+            check(r.returncode == expected_rc, r.stderr)
+            if expected_rc == 0:
+                row = json.loads((state / 'seat-ledger.jsonl').read_text().splitlines()[-1])
+                wt = Path(row['worktree'])
+                check((wt / 'sub/tracked').read_text() == 'changed\n', '软链子目录映射错误')
+                check((wd / 'tracked').read_text() == 'original\n', '源目录被修改')
+            else:
+                check('只能附加已提交的文件' in r.stderr, r.stderr)
 
 
 def write_worktree_validation():
@@ -1546,6 +1594,7 @@ CASES = {case.__name__: case for case in (
     codex_sol_no_fallback,
     repository_write_lock,
     write_worktree,
+    write_worktree_symlink_workdir,
     write_worktree_validation,
     run_provider_location,
     provider_cleared_on_failure,

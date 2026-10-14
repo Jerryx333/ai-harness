@@ -309,9 +309,9 @@ Claude 派单钩子检查也识别已启用的 `aiw@…` 插件提供的 `UserPr
 worker 只接受 `--ro --worktree --net --no-fallback --no-findings --allow-nested --attach --effort`，panel 只接受 `--attach`、`--prior`、`--free`、`--full`；未知开关返回 64，旧 `--require-no-tools` 提示「已移除，忽略」后继续。
 
 `aiw write . 1200 task.txt --worktree`（点名写座位也可用）：只用于写任务，与 `--ro`、review/draft 或只读座位同用返回 64；workdir 必须在有 HEAD 提交的 Git 仓库内。
-从当前 HEAD 创建 `aiw/<run-id>` 分支及 `<STATE>/worktrees/<run-id>`（同名分支返回 64，不覆盖）；子目录映射到同一相对路径，写锁、顶替链、提示词、沙箱与改动统计均使用新目录。未提交改动不会带入，stderr 最多列 10 个文件。
+从当前 HEAD 创建 `aiw/<run-id>` 分支及 `<STATE>/worktrees/<run-id>`（同名分支返回 64，不覆盖）；子目录映射到同一相对路径，写锁、顶替链、提示词、沙箱与改动统计均使用新目录。未提交改动不会带入，stderr 最多列 10 个文件。带 `--attach` 时先在原 workdir 按全部附件规则预检；附件未跟踪、已修改或已暂存（相对 HEAD 有任何差异）返回 64，提示先提交或去掉 `--worktree`，不创建 worktree、分支或元数据；通过后在 worktree 读取对应已提交文件。
 成功、失败、超时都在 stderr 报告路径、分支、相对初始 HEAD 的 `git diff --stat` 及未暂存/未跟踪文件数；账本增加 `worktree`、`worktree_branch`，普通单不增加。
-保留 worktree，不自动 commit/merge/删除；检查并提交后可用 `git -C <原仓库> merge --ff-only aiw/<run-id>`，不可快进时用 diff/cherry-pick；保存改动后用 `git worktree remove <路径>` 和 `git branch -D aiw/<run-id>` 清理。
+创建时原子写入 `<STATE>/worktrees/<run-id>.json`（路径、分支、源仓库、初始 HEAD、UTC 创建时间）。本单无已跟踪/暂存/未跟踪改动且分支未前进时即时清理；有改动则保留，不自动 commit/merge。检查并提交后可用 `git -C <原仓库> merge --ff-only aiw/<run-id>`，不可快进时用 diff/cherry-pick；每个 `--worktree` 单报告后及 `aiw gc` 扫描：跳过持写锁目录，已合并且干净的删除，超过固定 7 天的先保存相对初始 HEAD 的二进制补丁到 `<STATE>/worktrees/archive/<run-id>.patch` 再删除（失败保留）；在初始 HEAD 上用 `git apply --binary <补丁>` 恢复。被忽略文件不计入干净判断、不存档到补丁，清理使用强制删除以一并移除它们。源仓库丢失时残留目录整体保存到同目录的 `<run-id>.files/`。
 
 `--net` 默认不开，只对 `adapter="codex"` 座位的写单有效，在 prompt 前添加 `-c sandbox_workspace_write.network_access=true`，开放网络和本地端口；与 `--ro`（含只读座位）同用或用于非 codex 座位返回 64 并说明。
 
@@ -325,7 +325,7 @@ worker 只接受 `--ro --worktree --net --no-fallback --no-findings --allow-nest
 
 `aiw route --check` 同时检查指令里的座位是否存在、panel 名单是否等于默认名单去掉对应主会话座位。
 
-`aiw gc` 同时按文件 mtime 清理 `STATE/tui/` 中过期的普通文件，跳过软链。默认清理 `STATE/runs/`、`STATE/panels/`、`STATE/maps/` 下 mtime 早于 30 天的直接子目录；`STATE/codex-home/sessions/YYYY/MM/DD/` 则按目录名日期清理早于本机时区截止日的整日目录（截止当天保留，不看 mtime），不触碰 codex-home 下其他文件。`aiw gc 7 --dry-run` 仅列出预计删除数量和空间。跳过软链，保留账本、熔断、计数、路由日志及锁文件；实际删除不可恢复。
+`aiw gc` 同时按文件 mtime 清理 `STATE/tui/` 中过期的普通文件，跳过软链。默认清理 `STATE/runs/`、`STATE/panels/`、`STATE/maps/` 下 mtime 早于 30 天的直接子目录；`STATE/codex-home/sessions/YYYY/MM/DD/` 则按目录名日期清理早于本机时区截止日的整日目录（截止当天保留，不看 mtime），不触碰 codex-home 下其他文件。`STATE/worktrees/archive/` 的 `.patch` 普通文件与 `.files` 目录也按指定天数和 mtime 清理；worktree 扫描固定 7 天，不受 gc 天数参数影响。无元数据目录仅列出不删。`aiw gc 7 --dry-run` 仅报告，不存档或删除。跳过软链，保留账本、熔断、计数、路由日志及锁文件；实际删除不可恢复。
 
 所有座位每次实际运行都在 `state/runs/<时间>-<座位>-<pid>/` 留下完整 prompt（含附件）的 `task.txt`、全文 `output.md` 和只保留末尾 200KB 的 `stderr.txt`；CLI 失败、超时、中断也保存已取得的 stdout（可能为空），agent-use 有答复时保存全文，并保留 `result/` 结果目录（含 `status.json`）。账本记录 `run_dir`。中断也归档并记账本（SIGINT 130、SIGTERM 124）。成功且全文写入成功时 stderr 最后一行为 `[ai-worker] 全文：<run_dir>/output.md`；失败且最后一次尝试有运行目录时为 `[ai-worker] 排查：<run_dir>`。成功但 output.md 写入失败时末行给出排查目录并说明全文只在上面的输出里。stdout 不混入路径；归档写入失败只警告，不改变派单结果。
 

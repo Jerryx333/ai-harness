@@ -7,6 +7,7 @@ from support import (
     check,
     fake_agent_use,
     findings_fixture,
+    git_template,
     json,
     latest_provider,
     os,
@@ -336,10 +337,21 @@ def test_state_contract():
             rows = [json.loads(x) for x in (path.parent.parent / 'seat-ledger.jsonl').read_text().splitlines()]
             ledger_fields = {'ts', 'host', 'session', 'seat', 'actual', 'kind', 'rc', 'secs', 'err_tail', 'substituted', 'via'}
             check(ledger_fields <= rows[-1].keys(), f'账本字段缺失: {rows[-1]}')
+            check(not {'worktree', 'worktree_branch'} & rows[-1].keys(), '普通单含 worktree 字段')
         finally:
             if p.poll() is None:
                 p.terminate()
                 p.communicate(timeout=10)
+
+        repo = git_template(t / 'contract-repo', {'tracked': 'base\n'})
+        r = sh([sys.executable, str(REPO / 'ai_worker.py'), 'codex', str(repo), '10',
+                str(t / 'prompt.md'), '--worktree', '--no-fallback', '--no-findings'],
+               env=dict(env, FAKE_CODEX='ok'))
+        check(r.returncode == 0, r.stderr)
+        row = json.loads((Path(env['AIW_STATE']) / 'seat-ledger.jsonl').read_text().splitlines()[-1])
+        check(ledger_fields | {'worktree', 'worktree_branch'} <= row.keys(), str(row))
+        check(row['worktree'] == str(Path(env['AIW_STATE']).resolve() / 'worktrees' / Path(row['run_dir']).name)
+              and row['worktree_branch'] == 'aiw/' + Path(row['worktree']).name, str(row))
 
         for claude_session, expected_session in ((None, 'codex-thread'),
                                                   ('claude-session', 'claude-session')):

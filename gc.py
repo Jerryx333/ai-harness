@@ -26,12 +26,22 @@ def main() -> int:
     cutoff = time.time() - int(days[0] if days else 30) * 86400
     dry = "--dry-run" in args
     state = Path(getenv("AIW_STATE", Path(__file__).resolve().parent / "state"))
+    from ai_worker import sweep_worktrees
+    sweep_worktrees(dry_run=dry, state=state, output=sys.stdout)
     count = size = 0
     candidates = []
     tui = state / "tui"
     if not tui.is_symlink() and tui.is_dir():
         for path in sorted(tui.iterdir()):
             if not path.is_symlink() and path.is_file() and path.stat().st_mtime < cutoff:
+                candidates.append(path)
+    archive = state / "worktrees" / "archive"
+    if not archive.parent.is_symlink() and not archive.is_symlink() and archive.is_dir():
+        for path in sorted(archive.glob("*.patch")):
+            if not path.is_symlink() and path.is_file() and path.stat().st_mtime < cutoff:
+                candidates.append(path)
+        for path in sorted(archive.glob("*.files")):
+            if not path.is_symlink() and path.is_dir() and path.stat().st_mtime < cutoff:
                 candidates.append(path)
     for name in ("runs", "panels", "maps"):
         parent = state / name
@@ -73,7 +83,7 @@ def main() -> int:
                 path.unlink()
         count += 1
         size += amount
-    label = '个目录/文件' if any(path.parent == tui for path in candidates) else '个目录'
+    label = '个目录/文件' if any(path.is_file() for path in candidates) else '个目录'
     print(f"{'预计删除' if dry else '已删除'} {count} {label}，{'预计释放' if dry else '释放'} {size} 字节")
     return 0
 

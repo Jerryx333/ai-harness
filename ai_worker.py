@@ -6,7 +6,7 @@
 
 用法：
     aiw <seat> <workdir> <timeout_s> <prompt_file> [--ro] [--worktree] [--net] [--no-fallback] [--no-findings] [--attach 文件 ...] [--effort low|medium|high]
-        --worktree 只用于写任务：从当前 HEAD 创建 aiw/<run-id> 和 state/worktrees/<run-id>；结束后保留并报告合并/清理命令。
+        --worktree 只用于写任务：从当前 HEAD 创建 aiw/<run-id> 和 state/worktrees/<run-id>；结束后报告；无改动即时清理，已合并或过期 worktree 自动扫描清理。
         --attach 可重复，路径相对 workdir；CLI 座位收校验后的文件清单，其它座位收内联全文。
         拒绝 .env/密钥/证书类文件、二进制文件、workdir 之外的文件；附件合计上限 200KB。
     aiw doctor            # 每个座位：可执行文件路径、版本、熔断状态、主机名
@@ -1167,13 +1167,28 @@ def create_task_worktree(workdir: str, run_dir: Path):
         for name in names[:10]:
             print(f"  {name!r}", file=sys.stderr)
     path = STATE.resolve() / "worktrees" / run_dir.name
-    relative = Path(workdir).relative_to(root)
+    relative = Path(workdir).resolve().relative_to(root)
     path.parent.mkdir(parents=True, exist_ok=True)
-    worktree_git(root, "worktree", "add", "-b", branch, str(path), head)
+    metadata = {"path": str(path), "branch": branch, "source_root": str(root),
+                "base_head": head, "created_at": dt.datetime.now(dt.timezone.utc).isoformat()}
+    lock_path = STATE / ("lock-" + hashlib.sha1(str(path).encode()).hexdigest()[:12])
+    with lock_path.open("a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        atomic_write_bytes(path.parent / (path.name + ".json"), json.dumps(metadata, ensure_ascii=False).encode())
+        worktree_git(root, "worktree", "add", "-b", branch, str(path), head)
     return str(path / relative), {"worktree": str(path), "worktree_branch": branch}, root, head
 
 
 def report_task_worktree(fields, root, head):
+    try:
+        _report_task_worktree(fields, root, head)
+    except (OSError, ValueError, subprocess.SubprocessError) as e:
+        print(f"[ai-worker] worktree 清理失败，保留待检查：{e}", file=sys.stderr)
+    finally:
+        sweep_worktrees(exclude={fields["worktree"]})
+
+
+def _report_task_worktree(fields, root, head):
     path, branch = fields["worktree"], fields["worktree_branch"]
     print(f"[ai-worker] worktree：{path}\n[ai-worker] 分支：{branch}", file=sys.stderr)
     try:
@@ -1184,6 +1199,13 @@ def report_task_worktree(fields, root, head):
         print(f"[ai-worker] 未暂存文件数：{sum(bool(p) for p in unstaged)}；未跟踪文件数：{sum(bool(p) for p in untracked)}", file=sys.stderr)
     except (OSError, subprocess.SubprocessError) as e:
         print(f"[ai-worker] 无法统计 worktree diff：{e}", file=sys.stderr)
+    if (worktree_git(root, "rev-parse", branch).stdout.decode().strip() == head
+            and not worktree_git(path, "diff", head, "--").stdout
+            and not worktree_git(path, "diff", "--cached", head, "--").stdout
+            and not worktree_status(path)):
+        remove_task_worktree(root, path, branch, Path(str(path) + ".json"), force=True)
+        print("[ai-worker] 本单无改动，worktree 已清理", file=sys.stderr)
+        return
     qroot, qpath, qbranch = map(shlex.quote, (str(root), path, branch))
     print(f"[ai-worker] 合并：先在 worktree 检查并提交；可快进时 git -C {qroot} merge --ff-only {qbranch}；"
           f"不可快进时用 git -C {qpath} diff {head} 或 cherry-pick 已提交的提交。", file=sys.stderr)
@@ -1201,6 +1223,141 @@ def atomic_write_bytes(path: Path, data: bytes) -> None:
     finally:
         if temporary is not None:
             temporary.unlink(missing_ok=True)
+
+
+def worktree_status(path):
+    return worktree_git(path, "status", "--porcelain=v1", "-z",
+                        "--untracked-files=all").stdout
+
+
+def remove_task_worktree(root, path, branch, metadata, force=False):
+    worktree_git(root, "worktree", "remove", *(["--force"] if force else []), str(path))
+    worktree_git(root, "branch", "-D", branch)
+    metadata.unlink(missing_ok=True)
+
+
+def archive_task_worktree(path, head, destination):
+    if destination.parent.is_symlink() or destination.is_symlink():
+        raise ValueError("存档路径是软链")
+    # A binary diff only records gitlinks, not the files inside submodules.
+    if any(entry.startswith(b"160000 ") for entry in
+           worktree_git(path, "ls-files", "--stage", "-z").stdout.split(b"\0")):
+        raise ValueError("含子模块，补丁无法保存其文件，保留 worktree")
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(dir=destination.parent) as temporary:
+        env = repository_git_env()
+        env["GIT_INDEX_FILE"] = str(Path(temporary) / "index")
+        def git(*args):
+            return subprocess.run(["git", *args], cwd=path, env=env,
+                                  capture_output=True, check=True, timeout=20).stdout
+        git("read-tree", "HEAD")
+        git("add", "-A", "--", ".")
+        if any(entry.startswith(b"160000 ") for entry in git("ls-files", "--stage", "-z").split(b"\0")):
+            raise ValueError("含嵌套仓库，补丁无法保存其文件，保留 worktree")
+        patch = git("diff", "--cached", "--binary", "--full-index", head, "--")
+        if not patch:
+            # Compare trees independently before accepting an empty archive.
+            tree = git("write-tree").strip()
+            if tree != git("rev-parse", head + "^{tree}").strip():
+                raise ValueError("空存档但 tree 不同")
+        atomic_write_bytes(destination, patch)
+
+
+def sweep_worktrees(days=7, dry_run=False, *, now=None, exclude=(), state=None, output=None):
+    """Best effort: never propagate Git/metadata failures into a dispatch result."""
+    try:
+        _sweep_worktrees(days, dry_run, now=now, exclude=exclude, state=state, output=output)
+    except (OSError, ValueError, subprocess.SubprocessError) as e:
+        print(f"[ai-worker] worktree 扫描失败，保留待检查：{e}",
+              file=sys.stderr if output is None else output)
+
+
+def _sweep_worktrees(days, dry_run, *, now, exclude, state, output):
+    state = Path(state) if state is not None else STATE
+    parent = state.resolve() / "worktrees"
+    output = sys.stderr if output is None else output
+    def report(message):
+        print(f"[ai-worker] {message}", file=output)
+    if parent.is_symlink() or not parent.is_dir():
+        return
+    now = now or dt.datetime.now(dt.timezone.utc)
+    excluded = {str(Path(p).resolve()) for p in exclude}
+    for metadata in sorted(parent.glob("*.json")):
+        try:
+            if metadata.is_symlink():
+                raise ValueError("元数据是软链")
+            data = json.loads(metadata.read_text())
+            path = Path(data["path"])
+            # Metadata may never authorize deleting outside this direct child.
+            if (path.is_symlink() or path.resolve().parent != parent
+                    or path.name + ".json" != metadata.name or data["branch"] != "aiw/" + path.name):
+                raise ValueError("元数据路径/分支不安全")
+            if str(path.resolve()) in excluded:
+                continue
+            root, branch, head = Path(data["source_root"]), data["branch"], data["base_head"]
+            key = str(path.resolve())
+            if path.is_dir() and root.is_dir():
+                key = os.path.realpath(os.fsdecode(worktree_git(path, "rev-parse", "--show-toplevel").stdout).removesuffix("\n"))
+            lock_path = state / ("lock-" + hashlib.sha1(key.encode()).hexdigest()[:12])
+            # Dry-run must not even create lock files.
+            if dry_run and not lock_path.exists():
+                lock = tempfile.TemporaryFile()
+            else:
+                lock = lock_path.open("a")
+            with lock:
+                try:
+                    fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                except BlockingIOError:
+                    report(f"跳过 {path}：写锁正在使用")
+                    continue
+                if not root.is_dir() or not path.is_dir():
+                    if dry_run:
+                        report(f"将清理残留 {path}（源仓库或目录不存在）")
+                        continue
+                    if root.is_dir():
+                        worktree_git(root, "worktree", "prune")
+                    if path.exists():
+                        # Without the source objects, a patch cannot be generated.
+                        # Preserve the complete remaining files rather than lose edits.
+                        destination = parent / "archive" / (path.name + ".files")
+                        if destination.parent.is_symlink():
+                            raise ValueError("存档目录是软链")
+                        destination.parent.mkdir(exist_ok=True)
+                        if destination.exists():
+                            raise ValueError(f"残留存档已存在：{destination}")
+                        shutil.move(str(path), str(destination))
+                        report(f"残留存档 {destination}；恢复：复制存档目录中的文件")
+                    metadata.unlink()
+                    report(f"清理残留 {path}")
+                    continue
+                tip = worktree_git(root, "rev-parse", branch).stdout.decode().strip()
+                merged = False
+                if tip != head:
+                    probe = subprocess.run(["git", "merge-base", "--is-ancestor", branch, "HEAD"],
+                                           cwd=root, env=repository_git_env(), capture_output=True, timeout=20)
+                    if probe.returncode not in (0, 1):
+                        raise subprocess.CalledProcessError(probe.returncode, probe.args, stderr=probe.stderr)
+                    merged = probe.returncode == 0 and not worktree_status(path)
+                created = dt.datetime.fromisoformat(data["created_at"])
+                expired = now - created > dt.timedelta(days=days)
+                if not merged and not expired:
+                    report(f"跳过 {path}：未合并或有改动，未超过 {days} 天")
+                    continue
+                destination = parent / "archive" / (path.name + ".patch")
+                if dry_run:
+                    report(f"将清理 {path}：" + ("已合并且干净" if merged else f"过期，先存档 {destination}"))
+                    continue
+                if not merged:
+                    archive_task_worktree(path, head, destination)
+                    report(f"存档 {destination}；恢复：在 {head} 上 git apply --binary {shlex.quote(str(destination))}")
+                remove_task_worktree(root, path, branch, metadata, force=True)
+                report(f"清理 {path}（{'已合并且干净' if merged else '过期已存档'}）")
+        except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as e:
+            report(f"跳过 {metadata}：存档/清理失败，保留待检查：{e}")
+    if output is not sys.stderr:
+        for path in sorted(parent.iterdir()):
+            if path.name != "archive" and path.is_dir() and not (path.parent / (path.name + ".json")).exists():
+                report(f"跳过 {path}：没有元数据")
 
 
 def save_baseline(run_dir: Path, baseline_status: bytes | None):
@@ -1769,6 +1926,31 @@ def read_attachments(workdir: str, paths: list[str]) -> list[tuple[str, bytes]]:
     return parts
 
 
+def validate_worktree_attachments(workdir, paths):
+    files = read_attachments(workdir, paths)
+    if not files:
+        return []
+    root = Path(os.fsdecode(worktree_git(workdir, "rev-parse", "--show-toplevel").stdout).removesuffix("\n")).resolve()
+    workdir = Path(workdir).resolve()
+    for raw, (rel, data) in zip(paths, files):
+        # Check both the named path (possibly a symlink) and its resolved target.
+        named = Path(os.path.abspath(Path(workdir) / raw)).relative_to(root).as_posix()
+        resolved = (Path(workdir) / rel).relative_to(root).as_posix()
+        message = f"--worktree 只能附加已提交的文件：{raw}，请先提交或去掉 --worktree"
+        for name in {named, resolved}:
+            spec = ":(literal)" + name
+            try:
+                worktree_git(root, "ls-files", "--error-unmatch", "--", spec)
+                worktree_git(root, "diff", "--exit-code", "HEAD", "--", spec)
+                worktree_git(root, "diff", "--cached", "--exit-code", "HEAD", "--", spec)
+                committed = worktree_git(root, "cat-file", "blob", "HEAD:" + name).stdout
+            except subprocess.CalledProcessError as e:
+                raise AttachError(message) from e
+            if name == resolved and committed != data:
+                raise AttachError(message)
+    return [rel for rel, _ in files]
+
+
 def render_attachments(files: list[tuple[str, bytes]], kind: str = "agent_use") -> str:
     if not files:
         return ""
@@ -1983,12 +2165,16 @@ def _dispatch(inflight: Path | None, attempt: dict, *, before_execute=None, stac
         return 64
     worktree_fields, task_run_dir = {}, None
     if "--worktree" in flags:
-        task_run_dir = new_run_dir(seat)
         try:
+            attach = validate_worktree_attachments(workdir, attach)
+            task_run_dir = new_run_dir(seat)
             with deferred_signals():
                 workdir, worktree_fields, source_root, source_head = create_task_worktree(workdir, task_run_dir)
                 stack.callback(report_task_worktree, worktree_fields, source_root, source_head)
                 Path(workdir).mkdir(parents=True, exist_ok=True)
+        except AttachError as e:
+            print(f"[ai-worker] {e}", file=sys.stderr)
+            return 64
         except (ValueError, OSError, subprocess.SubprocessError) as e:
             reason = os.fsdecode(e.stderr).strip() if isinstance(e, subprocess.CalledProcessError) and e.stderr else str(e)
             print(f"[ai-worker] --worktree 创建失败：{reason}", file=sys.stderr)

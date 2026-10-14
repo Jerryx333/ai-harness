@@ -139,7 +139,7 @@ worker 在首次写 JSON 前创建或打开同名 `<pid>.lock` 并持有 `fcntl.
 
 worker 创建时原子写入同级 `<run-id>.json`，含 `path`（工作树根目录绝对路径）、`branch`、`source_root`（源仓库根目录）、`base_head`（初始 HEAD 提交）、`created_at`（带 UTC 时区的 ISO 8601 创建时间）。本单无已跟踪/暂存改动、无未跟踪的非忽略文件且分支未前进时即时清理。worker 报告后及 `gc.py` 扫描跳过持写锁目录；已合并且干净的清理，超过固定 7 天的先由 worker 保存相对初始 HEAD 的二进制补丁 `archive/<run-id>.patch` 再强制删除工作树、分支和元数据，存档失败保留。被忽略文件不计入干净判断、不存档到补丁，删除工作树时一并删除。在初始 HEAD 上用 `git apply --binary <补丁>` 恢复。
 
-源仓库丢失、无法生成补丁时，worker 将残留目录整体保存为 `archive/<run-id>.files/`（包含残留文件），再删除元数据。`gc.py` 按指定天数（默认 30 天）与 mtime 清理过期的 `*.patch` 普通文件及 `*.files` 目录，目录删除方式同 runs；跳过软链，`--dry-run` 只报告，不存档或删除。展示端只读。
+源仓库丢失时，worker 将残留目录整体保存为 `archive/<run-id>.files/`（包含残留文件），再删除元数据；含子模块或嵌套仓库等无法生成补丁的情况保留工作树待检查。`gc.py` 按指定天数（默认 30 天）与 mtime 清理过期的 `*.patch` 普通文件及 `*.files` 目录，目录删除方式同 runs；跳过软链，`--dry-run` 只报告，不存档或删除。展示端只读。
 
 ## panels/<YYYYmmdd-HHMMSS>-<pid>/
 

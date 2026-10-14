@@ -176,7 +176,7 @@ def worktree_ignored_immediate_cleanup():
         check(not (path.parent / 'archive').exists(), '被忽略文件被存档')
 
 
-def attachment_dispatch(mode, *, worktree=True):
+def attachment_dispatch(mode, *, worktree=True, directory_alias=False):
     with tempfile.TemporaryDirectory() as td:
         root = Path(td).resolve()
         repo = git_template(root / 'repo', {'sub/note.txt': 'committed attachment\n'})
@@ -191,6 +191,9 @@ def attachment_dispatch(mode, *, worktree=True):
                 note.write_text('committed attachment\n')
         elif mode == 'binary':
             note.write_bytes(b'bad\x00attachment')
+        if directory_alias:
+            alias = root / 'alias'; alias.symlink_to(repo, target_is_directory=True)
+            note = alias / note.relative_to(repo)
         prompt = root / 'prompt'; prompt.write_text('test')
         state = root / 'state'
         branches = git(repo, 'for-each-ref', 'refs/heads')
@@ -203,6 +206,7 @@ def attachment_dispatch(mode, *, worktree=True):
             message = ('附件是二进制文件' if mode == 'binary' else
                        f'--worktree 只能附加已提交的文件：{note}，请先提交或去掉 --worktree')
             check(r.returncode == 64 and message in r.stderr, r.stderr)
+            check('--worktree 创建失败' not in r.stderr, r.stderr)
             check(not (state / 'worktrees').exists(), '预检失败创建了目录/元数据')
             check(git(repo, 'for-each-ref', 'refs/heads') == branches, '预检失败创建了分支')
             check(git(repo, 'worktree', 'list', '--porcelain') == trees, '预检失败创建了 worktree')
@@ -237,6 +241,14 @@ def worktree_attach_committed():
     attachment_dispatch('committed')
 
 
+def worktree_attach_absolute_directory_symlink_committed():
+    attachment_dispatch('committed', directory_alias=True)
+
+
+def worktree_attach_absolute_directory_symlink_untracked():
+    attachment_dispatch('untracked', directory_alias=True)
+
+
 def attach_untracked_without_worktree():
     attachment_dispatch('untracked', worktree=False)
 
@@ -245,6 +257,8 @@ CASES = {fn.__name__: fn for fn in (
     worktree_ignored_immediate_cleanup, worktree_attach_untracked_rejected,
     worktree_attach_modified_rejected, worktree_attach_staged_rejected,
     worktree_attach_source_validation, worktree_attach_committed, attach_untracked_without_worktree,
+    worktree_attach_absolute_directory_symlink_committed,
+    worktree_attach_absolute_directory_symlink_untracked,
     worktree_empty_dispatch_cleanup, worktree_dirty_metadata, worktree_merged_cleanup,
     worktree_recent_retained, worktree_expired_binary_restore, worktree_archive_failure_retained,
     worktree_locked_skipped, worktree_missing_source_cleanup, worktree_missing_directory_prune,

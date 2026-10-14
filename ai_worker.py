@@ -1930,12 +1930,20 @@ def validate_worktree_attachments(workdir, paths):
     files = read_attachments(workdir, paths)
     if not files:
         return []
-    root = Path(os.fsdecode(worktree_git(workdir, "rev-parse", "--show-toplevel").stdout).removesuffix("\n")).resolve()
-    workdir = Path(workdir).resolve()
+    try:
+        root = Path(os.fsdecode(worktree_git(workdir, "rev-parse", "--show-toplevel").stdout).removesuffix("\n")).resolve()
+        workdir = Path(workdir).resolve()
+    except (OSError, RuntimeError, ValueError, subprocess.SubprocessError) as e:
+        raise AttachError("--worktree 附件无法确定仓库根目录，请检查工作目录") from e
     for raw, (rel, data) in zip(paths, files):
         # Check both the named path (possibly a symlink) and its resolved target.
-        named = Path(os.path.abspath(Path(workdir) / raw)).relative_to(root).as_posix()
-        resolved = (Path(workdir) / rel).relative_to(root).as_posix()
+        # Resolve directory aliases, but keep the final symlink name for Git checks.
+        try:
+            path = workdir / raw
+            named = (path.parent.resolve() / path.name).relative_to(root).as_posix()
+            resolved = (workdir / rel).relative_to(root).as_posix()
+        except (OSError, RuntimeError, ValueError) as e:
+            raise AttachError(f"--worktree 附件路径无法映射到仓库内：{raw}") from e
         message = f"--worktree 只能附加已提交的文件：{raw}，请先提交或去掉 --worktree"
         for name in {named, resolved}:
             spec = ":(literal)" + name

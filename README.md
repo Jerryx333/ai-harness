@@ -120,7 +120,7 @@ aiw 负责把任务交给座位；agent-use 负责调用注册的 provider；age
 
 | 命令 | 用途与示例 |
 | --- | --- |
-| `aiw <座位> <目录> <秒数> <prompt文件> [--ro] [--worktree] [--net]` | 派一单：`aiw review . 900 task.txt --ro`。`--ro` 要求只读；`--worktree` 从当前 HEAD 创建独立分支/worktree 派写单，结束后保留并报告合并与清理命令；`--net` 给 Codex 改代码的单开放网络，默认关闭。 |
+| `aiw <座位> <目录> <秒数> <prompt文件> [--ro] [--worktree] [--net]` | 派一单：`aiw review . 900 task.txt --ro`。`--ro` 要求只读；`--worktree` 从当前 HEAD 创建独立分支/worktree 派写单，保留时报告合并与清理命令。无改动即时清理；已合并且干净的自动清理；超过 7 天未合并的先存档补丁到 `state/worktrees/archive/` 再清理（被忽略文件不存档，删除时一并删除）；`--net` 给 Codex 改代码的单开放网络，默认关闭。 |
 | `aiw panel` | 同一个问题问几家，收集独立意见：`aiw panel . 600 task.txt --prior prior.md`。`--prior` 传入你自己的判断；看完逐条决定接受、驳回或暂缓，不按多数票。至少两家给出意见才算会诊成功，默认名单不足两家时不派单、返回 1；显式指定单家仍展示结果并返回 1。输出格式和选项见[参考手册](docs/reference.zh-CN.md#命令)。 |
 | `aiw map` | 对每个文件执行同一要求：`aiw map . 600 task.txt src/a.py src/b.py`；默认用 `draft` 角色，最多并发 3 单。 |
 | `aiw goal init / verify` | 用 `aiw goal init docs/goals/demo.json` 建清单；修改示例任务、`verify` 命令和 `paths`，再跑 `aiw goal verify docs/goals/demo.json --full`。 |

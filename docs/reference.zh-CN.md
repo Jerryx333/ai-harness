@@ -334,7 +334,7 @@ worker 只接受 `--ro --net --no-fallback --no-findings --allow-nested --attach
 
 ## 主会话用 Codex
 
-运行 `aiw tui [codex 参数...]` 可在 tmux 底栏每 15 秒显示本会话派单摘要，需要安装 tmux（`brew install tmux`）和可选组件 aiw-board。不在 tmux 时新建会话，codex 退出后会话结束；已在 tmux 时使用当前会话，仅修改该会话的底栏选项。首单前显示 `○ 派单空闲`；codex 里 `/new` 换线程后，下一次派单才切到新会话。派单仅写状态映射，不连接 tmux socket。
+运行 `aiw tui [codex 参数...]` 可在 tmux 底栏每 15 秒显示本会话派单摘要，需要安装 tmux（`brew install tmux`）和可选组件 aiw-board。不在 tmux 时新建会话，派单摘要左对齐显示在底栏，隐藏窗口标签，codex 退出后会话结束；已在 tmux 时使用当前会话，仅修改该会话的底栏选项。首单前显示 `○ 派单空闲 │ 今日 0 单`（需已装 aiw-board）；codex 里 `/new` 换线程后，下一次派单才切到新会话。派单仅写状态映射，不连接 tmux socket。
 
 `install.sh` 发现本机有 Codex 时会顺带接入：`~/.codex/AGENTS.md` 写入标记块（内容来自 `AGENTS.harness.md`，块外内容不动），`~/.codex/hooks.json` 加同一个派单钩子（Codex 下次启动会请你确认信任）。
 

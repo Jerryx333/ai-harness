@@ -23,12 +23,12 @@ def status(tui_id):
         try:
             thread = (state / 'tui' / tui_id).read_text().strip()
         except OSError:
-            return idle
-        if not thread:
-            return idle
+            thread = ''
         board = shutil.which('aiw-board')
         if not board:
-            return '派单 ?（未安装 aiw-board）'
+            return '派单 ?（未安装 aiw-board）' if thread else idle
+        if not thread:
+            thread = 'aiw-tui-' + tui_id
         result = subprocess.run([board, 'statusline'], input=json.dumps({'session_id': thread}),
                                 capture_output=True, text=True, timeout=10)
         return result.stdout.splitlines()[0] if result.stdout else '派单 ?'
@@ -58,7 +58,11 @@ def launch(args):
         name = 'aiw-' + tui_id
         command = 'exec ' + shlex.join(environment + ['AIW_TUI_ID=' + tui_id, 'codex', *args])
         argv = ['tmux', 'new-session', '-s', name, command]
-        for key, value in options:
+        for key, value in [('status', 'on'), ('status-interval', '15'),
+                           ('status-justify', 'left'), ('status-style', 'bg=default,fg=colour250'),
+                           ('status-left', '#(' + callback + ')'), ('status-left-length', '200'),
+                           ('status-right', ''), ('window-status-format', ''),
+                           ('window-status-current-format', '')]:
             argv += [';', 'set-option', '-t', name, key, value]
         os.execvp('tmux', argv)
 

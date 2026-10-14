@@ -61,6 +61,17 @@ def tui_status():
         board = b / 'aiw-board'
         board.write_text(f'#!{sys.executable}\nimport sys\nfrom pathlib import Path\nPath({str(t / "stdin")!r}).write_text(sys.stdin.read())\nprint("summary  ")\nprint("ignored")\n')
         board.chmod(0o755)
+        (folder / 'empty').write_text(' \n')
+        for ident in ('missing', 'empty', 'ok'):
+            r = sh(cmd + [ident], env=env)
+            check(r.returncode == 0 and r.stdout == 'summary  \n', repr(r))
+            session = 'thread' if ident == 'ok' else 'aiw-tui-' + ident
+            check(json.loads((t / 'stdin').read_text()) == {'session_id': session}, 'board stdin')
+        (t / 'stdin').unlink()
+        for ident in ('../escape', ''):
+            r = sh(cmd + [ident], env=env)
+            check(r.returncode == 0 and r.stdout == '○ 派单空闲\n', repr(r))
+            check(not (t / 'stdin').exists(), 'invalid id called board')
         r = sh(cmd + ['ok'], env=env)
         check(r.returncode == 0 and r.stdout == 'summary  \n', repr(r))
         check(json.loads((t / 'stdin').read_text()) == {'session_id': 'thread'}, 'board stdin')
@@ -93,15 +104,21 @@ def tui_launch():
         launch = argv[3]
         parsed = shlex.split(launch)
         check(parsed[-len(args):] == args and parsed[-len(args)-1] == 'codex', launch)
-        expected = [('status', 'on'), ('status-interval', '15'), ('status-left', ''), ('status-right-length', '200')]
+        callback = argv[argv.index('status-left') + 1]
+        expected = [('status', 'on'), ('status-interval', '15'), ('status-justify', 'left'),
+                    ('status-style', 'bg=default,fg=colour250'), ('status-left', callback),
+                    ('status-left-length', '200'), ('status-right', ''),
+                    ('window-status-format', ''), ('window-status-current-format', '')]
+        expected_argv = []
         for key, value in expected:
-            check([';', 'set-option', '-t', argv[2], key, value] == argv[argv.index(key)-4:argv.index(key)+2], str(argv))
-        callback = argv[-1]
+            expected_argv += [';', 'set-option', '-t', argv[2], key, value]
+        check(argv[4:] == expected_argv and '-g' not in argv, str(argv))
         check(callback.startswith('#(') and callback.endswith(')'), callback)
         callback_args = shlex.split(callback[2:-1])
         check(callback_args[-3:-1] == [str(repo.resolve() / 'bin/aiw'), 'tui-status'], callback)
         tui_id = callback_args[-1]
         check(all(c.isalnum() or c in '_-' for c in tui_id), tui_id)
+        check(argv[2] == 'aiw-' + tui_id, str(argv))
         check('AIW_TUI_ID=' + tui_id in parsed, launch)
         check(sh(['/bin/sh', '-c', launch], env=env).returncode == 0, launch)
         check(json.loads(result.read_text()) == [args, tui_id, env['AIW_STATE']], result.read_text())

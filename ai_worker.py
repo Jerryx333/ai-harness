@@ -1520,6 +1520,22 @@ def agent_use_response_model(attempt: dict) -> str | None:
     return attempt.get("actual_model") or attempt.get("selected_model") or attempt.get("requested_model")
 
 
+_AGENT_USE_WORKSPACE_SUPPORT = {}
+
+
+def agent_use_supports_workspace(script: Path) -> bool:
+    try:
+        path = script.resolve()
+        mtime = path.stat().st_mtime_ns
+        cached = _AGENT_USE_WORKSPACE_SUPPORT.get(path)
+        if cached is None or cached[0] != mtime:
+            cached = (mtime, "--access" in path.read_text(encoding="utf-8"))
+            _AGENT_USE_WORKSPACE_SUPPORT[path] = cached
+        return cached[1]
+    except (OSError, UnicodeError):
+        return False
+
+
 def run_agent_use_files(cfg, script, task, out_dir, run_dir, workdir, timeout, ro=True, text=False) -> dict:
     argv = [sys.executable, "-B", str(script), str(task), str(out_dir),
             "--order", cfg["provider"], "--timeout", str(timeout)]
@@ -1530,6 +1546,9 @@ def run_agent_use_files(cfg, script, task, out_dir, run_dir, workdir, timeout, r
     if agent_use_workspace(cfg) and text:
         argv.append("--require-no-tools")
     elif agent_use_workspace(cfg):
+        if not agent_use_supports_workspace(script):
+            return {"rc": 1, "out": "", "secs": 0, "kind": "incompatible_agent_use",
+                    "err": "agent-use 版本过旧，不支持 workspace；运行 aiw sync 或去掉座位的 workspace 配置"}
         argv += ["--workdir", str(Path(workdir).resolve()), "--access", "ro" if ro or cfg.get("ro_only") else "rw"]
     elif cfg.get("require_no_tools"):
         argv.append("--require-no-tools")
@@ -2165,12 +2184,12 @@ def call_via() -> str:
     return "direct"
 
 
-def record_findings(workdir, seat, actual, via, ro, prompt_id, run_dir, parsed, changes):
+def record_findings(workdir, seat, actual, via, ro, prompt_id, run_dir, parsed, changes, text=False):
     """账本已落盘；Git 查询和记录写入均在信号延迟区之外。"""
     try:
         common = findings.common_fields(workdir, seat=seat, actual=actual, via=via, ro=ro,
                                         prompt_id=prompt_id, run_dir=run_dir, type="answers",
-                                        kind=SEATS["seats"][actual].get("kind"))
+                                        kind=SEATS["seats"][actual].get("kind"), text=text)
         rows = []
         limit = findings.config()["field_max"]
         if parsed is not None:
@@ -2451,14 +2470,14 @@ def _dispatch(inflight: Path | None, attempt: dict, *, before_execute=None, stac
                                     fixed = findings.sanitize(parsed["fixed"], 300)
                                     if not body.strip():
                                         r.update(kind="empty", rc=2, err=r["err"] + "\n只有记录块，没有正文")
-                                    elif record_findings(workdir, seat, s, via, ro, prompt_id, r.get("run_dir"), parsed, changes):
+                                    elif record_findings(workdir, seat, s, via, ro, prompt_id, r.get("run_dir"), parsed, changes, text=text):
                                         r["out"] = body
                                     else:
                                         parsed = None
                                 elif error:
                                     print(f"[ai-worker] 观察记录块格式不对，已忽略：{error}", file=sys.stderr)
                                 elif not ro and not changes.failed:
-                                    record_findings(workdir, seat, s, via, ro, prompt_id, r.get("run_dir"), None, changes)
+                                    record_findings(workdir, seat, s, via, ro, prompt_id, r.get("run_dir"), None, changes, text=text)
                             except Exception as error:
                                 parsed = None
                                 r["out"] = raw_output
@@ -2530,6 +2549,9 @@ def _dispatch(inflight: Path | None, attempt: dict, *, before_execute=None, stac
                     return 64
                 if r["kind"] == "paid":
                     continue  # 永久停用已落盘，按不可用继续原顶替链
+                if r["kind"] == "incompatible_agent_use":
+                    print(f"[{s}] {r['err']}；按顶替链换下一家（不熔断）", file=sys.stderr)
+                    continue
                 if r["kind"] == "locked":
                     unlock_hint = (SEATS["seats"][s].get("preflight") or {}).get("unlock_hint") or "凭据库锁着：请在你自己的终端解锁所用的凭据工具（pinentry 需要 TTY，不能用 ! 前缀），解锁后重派"
                     print(f"[{s}] {unlock_hint}（不熔断、不顶替）", file=sys.stderr)

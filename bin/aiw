@@ -89,8 +89,11 @@ case "$cmd" in
     source "${H}/agent_use_setup.sh"
     aiw_git -C "${H}" pull --ff-only
     aiw_agent_use_paths
-    if aiw_is_git_repo "$AU"; then aiw_pull_optional "$AU" agent-use; fi
-    if aiw_is_git_repo "$ADAPTERS"; then aiw_pull_optional "$ADAPTERS" agent-use-adapters; fi
+    if aiw_is_git_repo "$AU" && ! aiw_pull_optional "$AU" agent-use; then
+      echo '核心更新失败，跳过适配器更新以免版本错配'
+    elif aiw_is_git_repo "$ADAPTERS"; then
+      aiw_pull_optional "$ADAPTERS" agent-use-adapters || :
+    fi
     exit 0
     ;;
   help|-h|--help) sed -n '2,/^set -euo pipefail/{ /^#/p; }' "$0" | sed 's/^# \{0,1\}//' ;;

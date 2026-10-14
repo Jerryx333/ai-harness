@@ -28,13 +28,14 @@ aiw_pull_optional() {
     echo "✓ $2 已更新（pull --ff-only）"
   else
     echo "⚠ $2 更新失败，继续（可自行检查仓库）"
+    return 1
   fi
 }
 
 aiw_install_repo() {
   if [ -e "$1" ] || [ -L "$1" ]; then
     if aiw_is_git_repo "$1"; then
-      aiw_pull_optional "$1" "$2"
+      aiw_pull_optional "$1" "$2" || :  # 安装时拉取失败照常继续；sync 才据返回值跳过适配器
     else
       echo "⚠ $2 目录不是 git 仓库，跳过该仓库后续步骤"
       return 1

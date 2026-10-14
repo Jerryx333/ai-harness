@@ -315,7 +315,7 @@ def common_fields(workdir: str, **dispatch) -> dict:
             "repo": repo, "repo_rel": os.path.relpath(Path(workdir).resolve(), root) if root else None,
             "commit": _git(workdir, "rev-parse", "--verify", "HEAD") if root else None,
             "branch": _git(workdir, "symbolic-ref", "--quiet", "--short", "HEAD") if root else None,
-            "rules_hash": digest.hexdigest()[:12], "effective_hash": effective_hash(_settings()), "partial_context": kind == "agent_use" and not cfg.get("workspace", False)}
+            "rules_hash": digest.hexdigest()[:12], "effective_hash": effective_hash(_settings()), "partial_context": kind == "agent_use" and (not cfg.get("workspace", False) or bool(dispatch.get("text")))}
 TEXT_FIELDS = ("guess", "deviation", "abandoned", "fixed",
                "observation", "expected", "evidence", "location")
 def record(rows: list[dict], *, strict=False) -> dict:

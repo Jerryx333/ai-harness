@@ -86,7 +86,7 @@ worker 在首次写 JSON 前创建或打开同名 `<pid>.lock` 并持有 `fcntl.
 | err_tail | 错误输出最后 300 个字符，流水展示最后一行；跳过记录可能缺失 |
 | substituted | 布尔值，actual 是否不同于 seat，用于顶替成功统计；跳过或旧记录可能缺失 |
 
-例如 `kind=timeout, rc=1` 表示子进程报告超时；`kind=format, rc=0` 表示子进程成功退出但产出不合格，都不算成功。aiw 最终退出码由 [ai_worker.py 的 main() 结果决策分支](../ai_worker.py#L1702) 决定：`ok` → 0，`timeout` → 124，`format` / `empty` → 2，`locked` / `fatal` / 其它失败 → 1；`paid`、`transient` 和熔断类（`auth`、`quota`、`ratelimit`、`not_installed`、`incompatible`、`unavailable`、`verify`）继续顶替链，由后续结果决定，链耗尽返回 1。信号中断的退出码见下文兼容性说明。
+例如 `kind=timeout, rc=1` 表示子进程报告超时；`kind=format, rc=0` 表示子进程成功退出但产出不合格，都不算成功。aiw 最终退出码由 [ai_worker.py 的 main() 结果决策分支](../ai_worker.py#L1702) 决定：`ok` → 0，`timeout` → 124，`format` / `empty` → 2，`locked` / `fatal` / 其它失败 → 1；`paid`、`transient`、`incompatible_agent_use` 和熔断类（`auth`、`quota`、`ratelimit`、`not_installed`、`incompatible`、`unavailable`、`verify`）继续顶替链，由后续结果决定，链耗尽返回 1。信号中断的退出码见下文兼容性说明。
 
 账本还可能含 prompt、ro、model、detail 等字段，展示端不能假设所有事件都有同一组键。以下也是可能出现的字段，展示端不依赖它们：
 
@@ -182,10 +182,10 @@ snapshot 同样新增 `effective_hash` 和布尔 `local_config`（是否使用�
 
 `snapshot.fingerprint` 与 doctor 的单行指纹共享结构：`harness`、`agent_use` 为短 HEAD（dirty 加 `*`）；`registry` 含 `source`（env/user/repo）、`sha256`、`git`；`local` 含 seats/route/claude/agents 四个 SHA256 前 12 位；`local_git` 为按仓库根去重后排序的 HEAD 列表；`effective_hash` 为行为配置哈希。缺失分量为 `-`（无本地 Git 仓库时 `local_git=["-"]`），不存路径。
 
-agent-use 协议不兼容的账本 `kind=incompatible` 对应 breaker 的 `not_installed` 类型。未知 reason、缺少预期 credits 的诊断复用现有 `source=worker,type=observation` 记录，不新增 findings 字段，写入失败静默跳过。
+agent-use 协议不兼容的账本 `kind=incompatible` 对应 breaker 的 `not_installed` 类型。`kind=incompatible_agent_use` 表示本机 agent-use 不支持 workspace 参数；不启动子进程、不熔断，继续顶替链，链耗尽返回 1。可运行 `aiw sync` 或去掉座位的 workspace 配置。未知 reason、缺少预期 credits 的诊断复用现有 `source=worker,type=observation` 记录，不新增 findings 字段，写入失败静默跳过。
 
 ## tui/<AIW_TUI_ID>
 
 纯文本一行，保存 Codex 主会话的线程 ID。`aiw tui` 生成随机标识并通过环境传给 codex，标识只接受 `[A-Za-z0-9_-]+`。ai_worker 在派单发布在途记录时，若会话来自 `CODEX_THREAD_ID` 且 `AIW_NESTED` 不为 `1`，先写同目录临时文件再原子 replace；写失败仅警告，不阻断派单。`aiw tui-status` 读取此文件，将 `{"session_id": "<id>"}` 送给可选组件 `aiw-board statusline`。首单前没有映射，显示空闲；`aiw gc` 按文件 mtime 和指定天数清理，支持 `--dry-run`。
 
-workspace agent_use 写单与 CLI 写单共用 `changed_files`、`baseline-status.txt` 和文件变化汇报；ro 不增加改动字段。findings 的 `partial_context` 仅对非 workspace agent_use 为 true，并按实际执行座位判断。snapshot 对启用 workspace 的 agent_use 座位形状记录 `workspace: true`，缺省形状保持不变。
+workspace agent_use 写单与 CLI 写单共用 `changed_files`、`baseline-status.txt` 和文件变化汇报；ro 不增加改动字段。findings 的 `partial_context` 按实际执行座位和本次模式判断：agent_use 在非 workspace 或本次 `--text`（含 draft/map 自动启用）时为 true，workspace review 时为 false。snapshot 对启用 workspace 的 agent_use 座位形状记录 `workspace: true`，缺省形状保持不变。

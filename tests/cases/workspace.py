@@ -1,5 +1,5 @@
 """Offline agent-use workspace seat contracts."""
-from support import (Path, REPO, check, fake_agent_use, git_template, json, os,
+from support import (FINDINGS_BLOCK, Path, REPO, check, fake_agent_use, git_template, json, os,
                      sys, tempfile, worker_call, inprocess_sh as sh)
 from unittest.mock import patch
 
@@ -211,7 +211,96 @@ def workspace_findings_context():
     check('workspace' not in snapshot.seat_shape({'kind': 'agent_use', 'provider': 'text'}), 'text snapshot changed')
 
 
+
+def workspace_sync_core_failure():
+    import shutil
+    with tempfile.TemporaryDirectory() as td:
+        t = Path(td).resolve(); repo = t / 'aiw'; (repo / 'bin').mkdir(parents=True)
+        for name in ('bin/aiw', 'agent_use_setup.sh', 'env_compat.py'):
+            shutil.copyfile(REPO / name, repo / name)
+        core = t / 'core'; core.mkdir()
+        adapters = t / 'adapters'; adapters.mkdir()
+        bins = t / 'bin'; bins.mkdir(); log = t / 'git-calls'
+        git = bins / 'git'
+        git.write_text('''#!/bin/sh
+if [ "$3" = rev-parse ]; then
+  [ "$2" = "$AGENT_USE_HOME" ] && [ "$CORE_MODE" = nongit ] && exit 1
+  echo "$2"; exit 0
+fi
+printf '%s\\n' "$2" >> "$GIT_CALLS"
+[ "$2" = "$AGENT_USE_HOME" ] && [ "$CORE_MODE" = fail ] && exit 1
+exit 0
+''')
+        git.chmod(0o755)
+        env = dict(os.environ, PATH=str(bins) + os.pathsep + os.environ['PATH'],
+                   AGENT_USE_HOME=str(core), AIW_ADAPTERS_HOME=str(adapters),
+                   AIW_PYTHON=sys.executable, GIT_CALLS=str(log))
+        for mode, expected in [('fail', [repo, core]), ('ok', [repo, core, adapters]),
+                               ('nongit', [repo, adapters])]:
+            env['CORE_MODE'] = mode
+            log.write_text('')
+            r = sh(['bash', str(repo / 'bin/aiw'), 'sync'], env=env)
+            check(r.returncode == 0, r.stdout + r.stderr)
+            check(log.read_text().splitlines() == list(map(str, expected)),
+                  'sync 更新顺序错误: ' + log.read_text())
+            check(('核心更新失败，跳过适配器更新以免版本错配' in r.stdout) == (mode == 'fail'), r.stdout)
+
+
+def workspace_old_agent_use_fallback():
+    with tempfile.TemporaryDirectory() as td:
+        t = Path(td); cmd, env, _ = fixture(t)
+        script = Path(env['AGENT_USE_HOME']) / 'scripts/run_agent.py'
+        script.write_text(script.read_text().replace('"--access", choices=', '"--legacy-access", dest="access", choices='))
+        local = Path(env['AIW_CONFIG']); cfg = json.loads(local.read_text())
+        cfg['fallback']['workspace'] = ['text']; local.write_text(json.dumps(cfg))
+        r = sh(cmd + ['--no-findings'], env=env)
+        check(r.returncode == 0 and 'agent-use 版本过旧，不支持 workspace' in r.stderr, r.stderr)
+        rows = [json.loads(line) for line in (t / 'state/seat-ledger.jsonl').read_text().splitlines()]
+        check([(row['actual'], row['kind']) for row in rows] ==
+              [('workspace', 'incompatible_agent_use'), ('text', 'ok')], rows)
+        check([c['order'] for c in calls(t)] == ['text'], calls(t))
+        breaker = t / 'state/breaker.json'
+        check(not breaker.exists() or 'workspace' not in json.loads(breaker.read_text()), '旧版本触发熔断')
+        # The same old script still accepts text mode on a workspace seat.
+        r = sh(cmd + ['--text', '--no-findings'], env=env)
+        check(r.returncode == 0 and calls(t)[-1]['order'] == 'generic', r.stderr)
+
+
+def workspace_capability_cache():
+    import ai_worker as w
+    with tempfile.TemporaryDirectory() as td:
+        script = Path(td) / 'run_agent.py'; script.write_text('old')
+        check(not w.agent_use_supports_workspace(script), 'old script accepted')
+        with patch.object(Path, 'read_text', side_effect=AssertionError('cache missed')):
+            check(not w.agent_use_supports_workspace(script), 'cached old script accepted')
+        mtime = script.stat().st_mtime_ns
+        script.write_text('--access')
+        os.utime(script, ns=(mtime + 1000000000, mtime + 1000000000))
+        check(w.agent_use_supports_workspace(script), 'mtime change not detected')
+        other = Path(td) / 'other.py'; other.write_text('old')
+        os.utime(other, ns=(mtime + 1000000000, mtime + 1000000000))
+        check(not w.agent_use_supports_workspace(other), 'cache ignored path')
+
+
+def workspace_findings_execution_mode():
+    with tempfile.TemporaryDirectory() as td:
+        t = Path(td); cmd, env, wd = fixture(t)
+        output = t / 'output'; output.write_text('正文\n' + FINDINGS_BLOCK)
+        env['FAKE_FINDINGS_OUTPUT'] = str(output)
+        (wd / 'code.py').write_text('print(1)')
+        for seat, flags, partial in [('draft', [], True), ('workspace', ['--text'], True),
+                                      ('review', [], False)]:
+            cmd[2] = seat
+            r = sh(cmd + flags + ['--attach', 'code.py'], env=env)
+            check(r.returncode == 0, r.stderr)
+            rows = [json.loads(line) for line in (t / 'state/findings/records.jsonl').read_text().splitlines()]
+            latest = [row for row in rows if row['run_dir'] == rows[-1]['run_dir']]
+            check(latest and all(row['partial_context'] is partial for row in latest),
+                  f'{seat} partial_context 错误: {latest}')
+
+
 CASES = {fn.__name__: fn for fn in (workspace_role_write, workspace_access_ro_rw,
     workspace_text_unchanged, workspace_draft_text, workspace_explicit_text,
     workspace_text_net_conflict, workspace_text_fallback, workspace_config_conflict, workspace_fallback_skips_text,
-    workspace_panel_map, workspace_findings_context)}
+    workspace_panel_map, workspace_findings_context, workspace_sync_core_failure,
+    workspace_old_agent_use_fallback, workspace_capability_cache, workspace_findings_execution_mode)}

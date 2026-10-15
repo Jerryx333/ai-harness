@@ -329,60 +329,11 @@ done
 source "${H}/agent_use_setup.sh"
 aiw_agent_use_paths
 if [ "$WITH_AGENT_USE" = 1 ]; then
-  ADAPTERS_INSTALLED=0
   aiw_install_repo "$AU" agent-use "${AIW_AGENT_USE_REPO:-https://github.com/Jerryx333/agent-use.git}" || :
   if aiw_install_repo "$ADAPTERS" agent-use-adapters "${AIW_ADAPTERS_REPO:-https://github.com/Jerryx333/agent-use-adapters.git}"; then
     if bash "$ADAPTERS/scripts/install.sh"; then
       echo "✓ agent-use-adapters 注册表安装完成"
-      ADAPTERS_INSTALLED=1
     fi
-  fi
-  if [ "$ADAPTERS_INSTALLED" = 1 ]; then
-    "$PY" - "$STAMP" <<'PYEOF'
-import json, os, shutil, sys
-from pathlib import Path
-p = Path(os.environ.get('AIW_CONFIG') or Path.home() / '.config/aiw/seats.local.json').expanduser()
-try:
-    # Resolve existing links before choosing backup/temp paths and replacing.
-    # strict=True rejects dangling links without creating their missing targets.
-    if p.is_symlink():
-        try:
-            p = p.resolve(strict=True)
-        except FileNotFoundError:
-            raise ValueError('软链断开')
-    else:
-        p = p.resolve()
-    old = p.read_text(encoding='utf-8') if p.exists() else None
-    data = json.loads(old) if old is not None else {}
-    if not isinstance(data, dict):
-        raise ValueError('顶层必须是对象')
-    for key in ('seats', 'fallback'):
-        if key in data and not isinstance(data[key], dict):
-            raise ValueError(key + ' 必须是对象')
-    seats = data.setdefault('seats', {})
-    fallback = data.setdefault('fallback', {})
-    changed = False
-    if 'opencode' not in seats:
-        seats['opencode'] = {'kind': 'agent_use', 'provider': 'opencode', 'model': '',
-                             'label': 'OpenCode 免费模型（agent-use）',
-                             'free_only': True, 'free_guard': True}
-        changed = True
-    if 'opencode' not in fallback:
-        fallback['opencode'] = []
-        changed = True
-    if changed:
-        p.parent.mkdir(parents=True, exist_ok=True)
-        if old is not None:
-            shutil.copy2(p, p.with_name(p.name + '.bak-' + sys.argv[1]))
-        tmp = p.with_name(p.name + '.tmp-aiw')
-        tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
-        tmp.replace(p)
-    print(f'✓ {p} ' + ('补充 OpenCode 本地座位 / fallback' if changed else '已有 OpenCode 座位 / fallback，无需改动'))
-except (OSError, ValueError, RuntimeError) as exc:
-    print(f'⚠ {p} 未改动（{exc}），请自行检查本地座位配置')
-PYEOF
-  else
-    echo '⚠ 未添加 OpenCode 座位，因为生效注册表不是 agent-use-adapters 的；若你的注册表已有 opencode provider，可按指南手工添加座位。'
   fi
 fi
 # 6. 体检（失败不中断安装）
@@ -391,5 +342,6 @@ echo
 echo
 echo "完成。下一步：按需完成各 CLI 的官方登录（如 codex login），然后 aiw doctor"
 if [ "$WITH_AGENT_USE" = 0 ] && [ ! -f "$AU/scripts/run_agent.py" ]; then
-  echo '· 想把更多模型（如免费的 OpenCode）接进来，可重跑 install.sh --with-agent-use（会克隆 agent-use 和 agent-use-adapters）。'
+  echo '· 想把更多模型接进来，可重跑 install.sh --with-agent-use（会克隆 agent-use 和 agent-use-adapters）。'
 fi
+echo '· 使用 agent-use 座位前，请自行在 ~/.config/aiw/seats.local.json（或 AIW_CONFIG）中添加座位，示例见 https://github.com/Jerryx333/aiw/blob/main/docs/guide.zh-CN.md#接入更多模型可选'

@@ -802,24 +802,20 @@ def install_agent_use_fresh_repeat():
         registry = home / '.config/agent-use/dispatcher.json'
         check(registry.is_symlink(), '未运行适配器安装')
         config = home / '.config/aiw/seats.local.json'
-        data = json.loads(config.read_text())
-        check(data == {'seats': {'opencode': {'kind': 'agent_use', 'provider': 'opencode',
-              'model': '', 'label': 'OpenCode 免费模型（agent-use）', 'free_only': True,
-              'free_guard': True}}, 'fallback': {'opencode': []}}, str(data))
-        before = config.read_bytes()
+        check(not config.exists(), '安装创建了本地座位配置')
         out = ecosystem_install(home, env, '--with-agent-use', '--claude-hook=settings')
         check(out.count('已更新（pull --ff-only）') == 2, out)
-        check(config.read_bytes() == before and not list(config.parent.glob('*.bak-*')), '重复安装改动座位')
-        # Default sibling path and backup convention, preserving unrelated values.
+        # Default sibling path, preserving unrelated values.
         env.pop('AIW_ADAPTERS_HOME')
         registry.unlink()
+        config.parent.mkdir(parents=True, exist_ok=True)
         config.write_text(json.dumps({'custom': [1, 2], 'seats': {'codex': {'label': 'custom'}},
                                      'fallback': {'codex': []}}))
         ecosystem_install(home, env, '--with-agent-use')
         data = json.loads(config.read_text())
         check((home / 'ecosystem/agent-use-adapters/.git').is_dir(), '默认同级目录错误')
         check(data['custom'] == [1, 2] and data['seats']['codex'] == {'label': 'custom'}
-              and data['fallback']['codex'] == [] and list(config.parent.glob('*.bak-*')), '未保留其它键或备份')
+              and data['fallback']['codex'] == [], '未保留其它键')
 
 
 def install_agent_use_preserves_config():
@@ -834,44 +830,6 @@ def install_agent_use_preserves_config():
         before = config.read_bytes()
         ecosystem_install(home, env, '--with-agent-use')
         check(config.read_bytes() == before, '已有 opencode / 其它键被改动')
-        for invalid in ('{bad', '[]', '{"seats": []}', '{"fallback": []}'):
-            config.write_text(invalid)
-            out = ecosystem_install(home, env, '--with-agent-use')
-            check(config.read_text() == invalid and '⚠' in out and '未改动' in out, out)
-
-
-def install_agent_use_symlink_config():
-    with tempfile.TemporaryDirectory() as td:
-        home, env, _, _ = ecosystem_fixture(Path(td))
-        config = home / '.config/aiw/seats.local.json'
-        config.parent.mkdir(parents=True)
-        target = home / 'private-config/seats.json'
-        target.parent.mkdir()
-        original = {'extra': {'keep': [1]}, 'seats': {'codex': {'label': 'custom'}},
-                    'fallback': {'codex': ['custom']}}
-        target.write_text(json.dumps(original))
-        before = target.read_bytes()
-        config.symlink_to('../../private-config/seats.json')
-        link = os.readlink(config)
-        ecosystem_install(home, env, '--with-agent-use')
-        check(config.is_symlink() and os.readlink(config) == link, '座位软链被替换')
-        data = json.loads(target.read_text())
-        check(data['seats']['opencode']['provider'] == 'opencode'
-              and data['fallback']['opencode'] == [], str(data))
-        del data['seats']['opencode'], data['fallback']['opencode']
-        check(data == original, '其它键被修改')
-        backups = list(target.parent.glob(target.name + '.bak-*'))
-        check(len(backups) == 1 and backups[0].read_bytes() == before, '真实目标目录缺少原文件备份')
-        check(not list(config.parent.glob('*.bak-*'))
-              and not list(config.parent.glob('*.tmp-aiw'))
-              and not list(target.parent.glob('*.tmp-aiw')), '备份/临时文件位置或清理错误')
-        # A successful no-op adapter install must still add missing fallback.
-        data = json.loads(target.read_text())
-        del data['fallback']['opencode']
-        target.write_text(json.dumps(data))
-        out = ecosystem_install(home, env, '--with-agent-use')
-        check('Already installed' in out and config.is_symlink()
-              and json.loads(target.read_text())['fallback']['opencode'] == [], out)
 
 
 def install_agent_use_dangling_symlink_config():
@@ -882,10 +840,9 @@ def install_agent_use_dangling_symlink_config():
         target = home / 'private-config/missing.json'
         config.symlink_to(target)
         link = os.readlink(config)
-        out = ecosystem_install(home, env, '--with-agent-use')
+        ecosystem_install(home, env, '--with-agent-use')
         check(config.is_symlink() and os.readlink(config) == link, '断链被替换')
         check(not target.exists() and not target.parent.exists(), '创建了断链目标')
-        check('⚠' in out and '软链断开' in out and '未改动' in out, out)
         check(not list(config.parent.glob('*.bak-*'))
               and not list(config.parent.glob('*.tmp-aiw')), '断链产生了备份或临时文件')
 
@@ -901,28 +858,28 @@ def install_agent_use_registry_conflict():
         config.write_text('{"extra": [1], "seats": {"custom": {"kind": "cli"}}, "fallback": {}}')
         before = config.read_bytes()
         out = ecosystem_install(home, env, '--with-agent-use')
-        warning = '⚠ 未添加 OpenCode 座位，因为生效注册表不是 agent-use-adapters 的；若你的注册表已有 opencode provider，可按指南手工添加座位。'
-        check('fixture registry conflict: refusing replacement' in out and warning in out, out)
+        check('fixture registry conflict: refusing replacement' in out, out)
         check(registry.read_text() == '{"custom": true}', '注册表被覆盖')
         check(config.read_bytes() == before, '冲突时新增了座位 / fallback 或修改了配置')
         # Non-repository directories must not run their installer.
         shutil.rmtree(home / 'ecosystem/adapters/.git')
         out = ecosystem_install(home, env, '--with-agent-use')
         check('目录不是 git 仓库' in out and 'fixture registry conflict' not in out, out)
-        check(warning in out and config.read_bytes() == before, '适配器仓库无效时修改了座位')
+        check(config.read_bytes() == before, '适配器仓库无效时修改了座位')
         shutil.rmtree(home / 'ecosystem/adapters')
         env['AIW_ADAPTERS_REPO'] = str(home / 'missing-adapters-origin')
         config.unlink()
         out = ecosystem_install(home, env, '--with-agent-use')
-        check('克隆失败' in out and warning in out and not config.exists(), out)
+        check('克隆失败' in out and not config.exists(), out)
 
 
 def install_doctor_agent_use_hint():
     with tempfile.TemporaryDirectory() as td:
         home, env, _, _ = ecosystem_fixture(Path(td))
         out = ecosystem_install(home, env)
+        install_hint = '想把更多模型接进来'
+        check(install_hint in out, out)
         hint = '想把更多模型（如免费的 OpenCode）接进来'
-        check(hint in out, out)
         repo = home / '.claude/aiw'
         command = ['bash', str(repo / 'bin/aiw'), 'doctor']
         missing = sh(command, env=env)
@@ -932,7 +889,7 @@ def install_doctor_agent_use_hint():
         script.write_text('# core')
         present = sh(command, env=env)
         check(present.returncode == missing.returncode and hint not in present.stdout, present.stdout)
-        check(hint not in ecosystem_install(home, env), '核心存在仍建议安装')
+        check(install_hint not in ecosystem_install(home, env), '核心存在仍建议安装')
         script.unlink()
         config = home / '.config/aiw/seats.local.json'
         config.parent.mkdir(parents=True)
@@ -988,8 +945,6 @@ def install_sync_foreign_git_env():
         check(out.count('已克隆') == 2, out)
         check(caller_snapshot() == before, '安装克隆修改了调用方仓库')
         check((home / 'adapter-installs').read_text() == 'installed\n', '未识别适配器仓库')
-        check('opencode' in json.loads((home / '.config/aiw/seats.local.json').read_text())['seats'],
-              '未安装可选座位')
         checkouts = (home / 'ecosystem/agent-use', home / 'ecosystem/adapters')
         for upstream in (core, adapters):
             git_history(upstream, [('install update', {'marker': 'install updated'},
@@ -1182,7 +1137,6 @@ CASES = {case.__name__: case for case in (
     doctor_readonly,
     install_agent_use_fresh_repeat,
     install_agent_use_preserves_config,
-    install_agent_use_symlink_config,
     install_agent_use_dangling_symlink_config,
     install_agent_use_registry_conflict,
     install_doctor_agent_use_hint,

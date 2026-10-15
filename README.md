@@ -20,6 +20,7 @@ pi / omp 主会话会自动识别；安装时向 `~/.pi/agent/AGENTS.md` / `~/.o
 ## 装上之后有什么不同
 
 - **按你手里的东西配。** 主会话用哪个 CLI 都行；改代码、评审、起草三类活各派给谁，在一个本地配置文件里排好候选顺序，第一个不可用就用下一个；任何能在终端里跑的模型或 CLI 都能接进来（经 agent-use），不用改代码。见[自定义](docs/guide.zh-CN.md#自定义)和[角色配置](docs/guide.zh-CN.md#角色与单家安装)。
+- **主会话 token 花费能降一截。** 本机日常约 300 单（改 3+ 文件）主会话花费的中位数约为自己改的四分之一；4 单配对对照（空会话）省约三分之一、每单多等 10–20 分钟、两家盲评质量持平。省多少看情况，细节见下面 FAQ。
 - 主会话用强模型，体力活派给同一家更省的模型：比如 Codex 主会话用 GPT-6 Astra、派单用 GPT-6.1 Sol，或 Claude 主会话用 Fable、派单用 Opus 5.5（[Codex 定价](https://developers.openai.com/codex/pricing)：每百万 token，GPT-6 Astra 输入 250 / 输出 1,250 credits，GPT-6.1 Sol 输入 50 / 输出 250 credits）。这是举例，默认配置可改。同一账号下所有模型共用额度，派单不会多出额度。Claude Pro/Max 还有 5 小时限额和周限额，claude.ai 与 Claude Code 共用。
 - 主会话少装过程：派出去的活在别处读文件、跑命令，读过的文件和命令输出不进主会话，主会话只收结果。
 - 多一道交叉评审：改代码和评审可以由不同模型做；`aiw panel` 收集多家独立意见。
@@ -34,7 +35,7 @@ pi / omp 主会话会自动识别；安装时向 `~/.pi/agent/AGENTS.md` / `~/.o
 - **某家一挂、一限流，活就卡住。** agent-use 会按你排好的顺序自动换下一家，活不会断。
 - **别的模型交回来的东西靠不靠谱？** 每次都留存原文和过程记录，结果一律当待审稿，由主会话核对后才算数。
 
-只想接 Codex、Claude Code、OpenCode 这几家常见 CLI？[agent-use-adapters](https://github.com/Jerryx333/agent-use-adapters) 已经写好适配器。安装 aiw 时加一个参数就能一起装好，还会补上 OpenCode 免费模型座位：`~/.claude/aiw/install.sh --with-agent-use`。手工接入步骤见[使用指南](docs/guide.zh-CN.md#接入更多模型可选)。核心默认装在 `~/.local/share/agent-use`；新路径不存在时沿用已有的 `~/code/ai/agent-use`。适配器默认在解析出的核心目录同级的 `agent-use-adapters`；可用 `AGENT_USE_HOME` / `AIW_ADAPTERS_HOME` 覆盖。
+只想接 Codex、Claude Code、OpenCode 这几家常见 CLI？[agent-use-adapters](https://github.com/Jerryx333/agent-use-adapters) 已经写好适配器。安装 aiw 时加一个参数就能一起装好，还会把 `opencode` 等 provider 注册进 agent-use：`~/.claude/aiw/install.sh --with-agent-use`。座位需要你自己在本地配置里加，见[使用指南](docs/guide.zh-CN.md#接入更多模型可选)。核心默认装在 `~/.local/share/agent-use`；新路径不存在时沿用已有的 `~/code/ai/agent-use`。适配器默认在解析出的核心目录同级的 `agent-use-adapters`；可用 `AGENT_USE_HOME` / `AIW_ADAPTERS_HOME` 覆盖。
 
 ```mermaid
 flowchart LR

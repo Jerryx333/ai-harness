@@ -72,9 +72,9 @@ One-command setup:
 ~/.claude/aiw/install.sh --with-agent-use
 ```
 
-This clones or fast-forwards the public core and [agent-use-adapters](https://github.com/Jerryx333/agent-use-adapters), and runs the adapter installer. Only a successful adapter install (including `Already installed` with exit code 0) adds the missing local `opencode` free text seat and empty fallback entry; existing seats are preserved. Adapter clone or install failures (such as registry conflicts) warn and skip seat additions while the overall install continues and the existing registry is preserved. If the active registry already has an `opencode` provider, add a seat manually using the next section. Install and log in to the CLI separately as required. Combine this option with `--claude-hook=plugin` if needed.
+This clones or fast-forwards the public core and [agent-use-adapters](https://github.com/Jerryx333/agent-use-adapters), and runs the adapter installer. A successful install registers providers such as `opencode` through adapters. To use it as a seat, add it yourself in `~/.config/aiw/seats.local.json` (or `AIW_CONFIG`); see the examples below. Adapter clone or install failures (such as registry conflicts) warn while the overall install continues and the existing registry is preserved. Install and log in to the CLI separately as required. Combine this option with `--claude-hook=plugin` if needed.
 
-The core defaults to `~/.local/share/agent-use`, retaining an existing `~/code/ai/agent-use` when the new path is absent (`AGENT_USE_HOME` overrides it); adapters default to the resolved core directory’s sibling `agent-use-adapters` (`AIW_ADAPTERS_HOME` overrides it). Seats go into `AIW_CONFIG` or `~/.config/aiw/seats.local.json`. Symlinks are preserved: backups and temporary files go in the real target directory, and the target is replaced atomically. Dangling symlinks are left unchanged with a warning. `aiw sync` also fast-forwards both installed Git repositories; their failures only warn. `free_only` labels the seat in doctor; `free_guard` disables a seat or model on evidence of charges. Free model selection is handled by the adapter; OpenCode model-level disable records currently do not filter dispatcher default/fallback models.
+The core defaults to `~/.local/share/agent-use`, retaining an existing `~/code/ai/agent-use` when the new path is absent (`AGENT_USE_HOME` overrides it); adapters default to the resolved core directory’s sibling `agent-use-adapters` (`AIW_ADAPTERS_HOME` overrides it). `aiw sync` also fast-forwards both installed Git repositories; their failures only warn. `free_only` labels the seat in doctor; `free_guard` disables a seat or model on evidence of charges. Free model selection is handled by the adapter; OpenCode model-level disable records currently do not filter dispatcher default/fallback models.
 
 For manual setup, follow these steps:
 
@@ -93,6 +93,23 @@ Use the public [agent-use core](https://github.com/Jerryx333/agent-use). Set `AG
        }
      },
      "fallback": {"local-text": []}
+   }
+   ```
+
+   If you want to use the `opencode` provider registered by adapters, add this text seat yourself (an empty `model` lets the adapter select the model):
+
+   ```json
+   {
+     "seats": {
+       "opencode": {
+         "kind": "agent_use",
+         "provider": "opencode",
+         "model": "",
+         "free_only": true,
+         "free_guard": true
+       }
+     },
+     "fallback": {"opencode": []}
    }
    ```
 

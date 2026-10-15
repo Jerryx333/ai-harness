@@ -387,7 +387,7 @@ def weekly_json():
         r = sh(command + ['--json'], env=env)
         check(r.returncode == 0 and '有 1 行解析不了' in r.stderr, repr(r))
         data = json.loads(r.stdout)
-        check(set(data) == {'host', 'days', 'since', 'generated_at', 'calls', 'router', 'kinds', 'efforts', 'seats', 'repos', 'substituted_ok', 'substitute_limits', 'coverage'}, str(data))
+        check(set(data) == {'host', 'days', 'since', 'generated_at', 'calls', 'router', 'kinds', 'efforts', 'seats', 'repos', 'substituted_ok', 'substitute_limits', 'coverage', 'quality'}, str(data))
         check(data['host'] == socket.gethostname() and data['days'] == 7 and data['calls'] == 9, str(data))
         since, generated = (dt.datetime.fromisoformat(data[k]) for k in ('since', 'generated_at'))
         check(since.tzinfo is not None and generated.tzinfo is not None and generated - since == dt.timedelta(days=7), str(data))
@@ -647,7 +647,7 @@ def weekly_coverage():
             check(result.returncode == 0, result.stderr)
             data = json.loads(result.stdout)
             check({'coverage', 'host', 'days', 'since', 'generated_at', 'calls', 'router', 'kinds',
-                   'efforts', 'seats', 'repos', 'substituted_ok', 'substitute_limits'} == set(data), str(data))
+                   'efforts', 'seats', 'repos', 'substituted_ok', 'substitute_limits', 'quality'} == set(data), str(data))
             return data['coverage']
         coverage = read()
         check(coverage['level'] == '无数据' and any('seat-ledger.jsonl 不存在' == r for r in coverage['reasons']), str(coverage))
@@ -671,6 +671,193 @@ def weekly_coverage():
         check(read()['level'] == '无数据', 'collector was not reset')
 
 
+def seat_quality_rating():
+    import datetime as dt
+    with tempfile.TemporaryDirectory() as td:
+        t = Path(td)
+        env = dict(os.environ, AIW_STATE=str(t), CLAUDE_CODE_SESSION_ID='quality-session', AIW_NESTED='0')
+        now = dt.datetime.now().astimezone().isoformat()
+        ledger = [dict(ts=now, seat='requested', actual='executor', run_dir=str(t / 'runs' / rid),
+                       session='quality-session', rc=0, kind='ok', ro=False, prompt='prompt head', secs=1)
+                  for rid in ('one', 'two', 'three', 'pending')]
+        # 重复 run 取最后执行行。
+        ledger.insert(0, dict(ledger[0], actual='old'))
+        ledger.append(dict(ledger[-1], run_dir=str(t / 'runs/other'), session='other'))
+        (t / 'seat-ledger.jsonl').write_text(''.join(json.dumps(r) + '\n' for r in ledger))
+        command = [str(REPO / 'bin/aiw'), 'rate']
+        for value in ('one', str(t / 'runs/two'), str(t / 'runs/three/output.md')):
+            r = sh(command + [value, 'ok', '--note', '已核对'], env=env)
+            check(r.returncode == 0 and 'executor' in r.stdout, repr(r))
+        r = sh(command + ['one', 'fixed'], env=env)
+        check(r.returncode == 0, repr(r))
+        from rating import latest_ratings
+        ratings = latest_ratings(t)
+        check(ratings['one']['rating'] == 'fixed' and ratings['two']['note'] == '已核对'
+              and ratings['one']['task_class'] == 'write' and ratings['one']['role'] is None, str(ratings))
+        check(sh(command + ['unknown', 'ok'], env=env).returncode == 2, 'unknown run')
+        r = sh(command + ['--pending'], env=env)
+        check(r.returncode == 0 and 'pending\t' in r.stdout and 'one\t' not in r.stdout
+              and 'other\t' not in r.stdout and 'prompt head' in r.stdout, repr(r))
+        from ai_worker import auto_prompt_prefix
+        run = t / 'runs/pending'; run.mkdir(parents=True)
+        body = '主会话正文开头：修正座位质量评分显示。' + '正文' * 100
+        # 历史日期和其它时区的自动前缀也须跳过，不依赖评分时的本机日期。
+        prefix = auto_prompt_prefix(dt.datetime(2020, 1, 2, tzinfo=dt.timezone.utc))
+        (run / 'task.txt').write_text(prefix + body)
+        r = sh(command + ['--pending'], env=env)
+        check(r.returncode == 0 and r.stdout.rstrip('\n').split('\t')[-1] == body[:100]
+              and '今天是' not in r.stdout and '不要断言它不存在' not in r.stdout, repr(r))
+        (run / 'task.txt').write_text(body)
+        r = sh(command + ['--pending'], env=env)
+        check(r.stdout.rstrip('\n').split('\t')[-1] == body[:100], repr(r))
+        check('other\t' in sh(command + ['--pending', '--session', 'other'], env=env).stdout, 'session filter')
+        sh(command + ['pending', 'discard'], env=env)
+        check(sh(command + ['--pending'], env=env).stdout.strip() == '无待评分派单', 'empty pending')
+        check(sh(command + ['one', 'ok'], env=dict(env, AIW_NESTED='1')).returncode == 64, 'nested rate')
+        check(sh(command + ['--pending'], env=dict(env, AIW_NESTED='1')).returncode == 64, 'nested pending')
+
+
+def weekly_quality():
+    import datetime as dt
+    with tempfile.TemporaryDirectory() as td:
+        t = Path(td)
+        repo = t / 'repo'; repo.mkdir()
+        check(sh(['git', 'init', '-q', str(repo)]).returncode == 0, 'git init')
+        (repo / 'file').write_text('keep\n')
+        generated = dt.datetime.now().astimezone()
+        old = (generated - dt.timedelta(hours=49)).isoformat()
+        recent = generated.isoformat()
+        rows, ratings = [], []
+        for actual, count in [('good', 10), ('bad', 10), ('small', 1)]:
+            for i in range(count):
+                run = t / 'runs' / f'{actual}-{i}'; run.mkdir(parents=True)
+                evidence = dict(workdir=str(repo), base_head='test', files={'file': ['keep', 'gone'], 'missing': ['lost']}, truncated=False)
+                (run / 'changes.json').write_text(json.dumps(evidence))
+                row = dict(ts=old, seat=actual, actual=actual, kind='ok', rc=0, secs=1,
+                           run_dir=str(run), ro=False, verify=dict(passed=1, total=2))
+                if actual == 'good':
+                    row['ro'] = True  # 旧行推断 review，不做存活检查
+                rows.append(row)
+                ratings.append(dict(run_id=run.name, rating='ok' if actual != 'bad' or i < 7 else 'discard'))
+        # 最后一次评分覆盖旧评分；跳过 verify 不进分母。
+        ratings.insert(0, dict(run_id='good-0', rating='discard'))
+        rows[0]['verify'] = dict(passed=None, total=100, skipped=True)
+        for rid, stamp, workdir in [('young', recent, str(repo)), ('absent', old, str(t / 'absent'))]:
+            run = t / 'runs' / rid; run.mkdir()
+            (run / 'changes.json').write_text(json.dumps(dict(workdir=workdir, files={'file': ['keep']})))
+            rows.append(dict(rows[-1], run_dir=str(run), ts=stamp))
+        rows += [dict(rows[0], actual='draft', text=True),
+                 {k: v for k, v in dict(rows[0], actual='unknown').items() if k != 'ro'},
+                 dict(rows[0], actual='excluded', freecheck=True),
+                 dict(rows[0], actual='excluded', kind='skipped_disabled')]
+        (t / 'seat-ledger.jsonl').write_text(''.join(json.dumps(r) + '\n' for r in rows))
+        env = dict(os.environ, AIW_STATE=str(t))
+        cmd = [sys.executable, str(REPO / 'weekly.py')]
+        r = sh(cmd + ['--json'], env=env)
+        check(r.returncode == 0 and all(q['rated'] == 0 for q in json.loads(r.stdout)['quality']), repr(r))
+        text = sh(cmd, env=env).stdout
+        lines = {line.split(' × ')[0][2:]: line for line in text.splitlines() if ' × ' in line and line.startswith('- ')}
+        check(all('评分覆盖率 0.0%） · 未评分' in line and '采纳率' not in line
+                  and '返工率' not in line and 'ok 0' not in line for line in lines.values()), text)
+        check('verify' not in lines['draft'] and '改动存活率' not in lines['good']
+              and '无数据' not in '\n'.join(lines.values()), text)
+        check('verify 通过率 50.0%（样本不足）（3/6）' in lines['small']
+              and '改动存活率 33.3%（样本不足）（样本 1）' in lines['small'], text)
+        (t / 'seat-ratings.jsonl').write_text(''.join(json.dumps(r) + '\n' for r in ratings))
+        r = sh(cmd + ['--json'], env=env)
+        quality = {q['actual']: q for q in json.loads(r.stdout)['quality']}
+        good, bad, small = (quality[k] for k in ('good', 'bad', 'small'))
+        check(good['rated'] == 10 and good['adoption_rate'] == 1 and good['rework_rate'] == 0
+              and good['verify_passed'] == 9 and good['verify_total'] == 18 and good['verify_rate'] == .5
+              and good['suggestions'] == ['good 做 review 质量稳定，可多派'], str(good))
+        check(bad['adoption_rate'] == .7 and bad['rework_rate'] == .3
+              and abs(bad['survival_rate'] - 1/3) < 1e-8 and bad['survival_samples'] == 10
+              and bad['suggestions'] == ['建议该类任务少派 bad'], str(bad))
+        check(small['successful'] == 3 and small['survival_samples'] == 1 and not small['suggestions'], str(small))
+        check(quality['draft']['task_class'] == 'draft' and quality['unknown']['task_class'] == 'unknown'
+              and 'excluded' not in quality, str(quality))
+        text = sh(cmd, env=env).stdout
+        check('## 按座位 × 任务类别的质量' in text and '样本不足' in text
+              and '建议该类任务少派 bad' in text and 'good 做 review 质量稳定，可多派' in text, text)
+        lines = {line.split(' × ')[0][2:]: line for line in text.splitlines() if ' × ' in line and line.startswith('- ')}
+        check('评分覆盖率 33.3%）' in lines['small']
+              and '采纳率 100.0%（样本不足）' in lines['small']
+              and '返工率 0.0%（样本不足）' in lines['small']
+              and 'ok 1 / fixed 0 / rework 0 / discard 0' in lines['small'], text)
+        check('样本不足' not in lines['bad'] and '样本不足' not in lines['good']
+              and 'verify' not in lines['draft'] and '改动存活率' not in lines['draft'], text)
+        # 写单采纳率达标，但足量存活证据低于 80%，不能建议多派。
+        for rating in ratings:
+            rating['rating'] = 'fixed'
+        (t / 'seat-ratings.jsonl').write_text(''.join(json.dumps(r) + '\n' for r in ratings))
+        quality = {q['actual']: q for q in json.loads(sh(cmd + ['--json'], env=env).stdout)['quality']}
+        check(not quality['bad']['suggestions'], str(quality['bad']))
+        for run in (t / 'runs').iterdir():
+            evidence = run / 'changes.json'
+            evidence.write_text(json.dumps(dict(workdir=str(repo), files={'file': ['keep']})))
+        quality = {q['actual']: q for q in json.loads(sh(cmd + ['--json'], env=env).stdout)['quality']}
+        check(quality['bad']['suggestions'] == ['bad 做 write 质量稳定，可多派'], str(quality['bad']))
+
+
+def changes_evidence():
+    from support import fake_bins
+    with tempfile.TemporaryDirectory() as td:
+        t = Path(td)
+        bins = fake_bins(t)
+        cmd, env, wd = worker_call(t, AIW_STATE=str(t / 'state'), FAKE_CODEX='write', AIW_NESTED='0')
+        env['PATH'] = str(bins) + os.pathsep + env['PATH']
+        sh(['git', 'init', '-q', str(wd)])
+        (wd / 'tracked').write_text('original\n')
+        sh(['git', '-C', str(wd), 'add', '.'])
+        sh(['git', '-C', str(wd), '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'base'])
+        # 已脏的 changed 行不算本单新增；created 中的 new 也预先存在。
+        (wd / 'tracked').write_text('changed\npreexisting dirty\n')
+        (wd / 'created').write_text('new\n')
+        cmd[2] = 'codex'; cmd.remove('--ro')
+        cmd += ['--no-fallback', '--no-findings']
+        r = sh(cmd, env=env)
+        row = json.loads((t / 'state/seat-ledger.jsonl').read_text().splitlines()[-1])
+        evidence = json.loads((Path(row['run_dir']) / 'changes.json').read_text())
+        check(r.returncode == 0 and evidence['files'] == {} and not evidence['truncated']
+              and evidence['workdir'] == str(wd.resolve()) and evidence['base_head']
+              and row['role'] is None and row['task_class'] == 'write', repr(r) + str(evidence))
+        (wd / 'tracked').write_text('original\n')
+        (wd / 'created').unlink()
+        r = sh(cmd, env=env)
+        row = json.loads((t / 'state/seat-ledger.jsonl').read_text().splitlines()[-1])
+        evidence = json.loads((Path(row['run_dir']) / 'changes.json').read_text())
+        check(r.returncode == 0 and evidence['files'] == {'tracked': ['changed'], 'created': ['new']}, str(evidence))
+        # 证据上限及错误隔离，不依赖真实供应商。
+        import ai_worker as w
+        from unittest.mock import patch
+        run = t / 'evidence'; run.mkdir()
+        with w.WorkChanges(str(wd), False) as changes:
+            (wd / 'many-lines').write_text(''.join(f'line-{i}\n' for i in range(5001)))
+            changes.save_evidence(run)
+        evidence = json.loads((run / 'changes.json').read_text())
+        check(evidence['truncated'] and sum(map(len, evidence['files'].values())) == 5000, str(evidence.keys()))
+        (wd / 'many-lines').unlink()
+        with w.WorkChanges(str(wd), False) as changes:
+            for i in range(201):
+                (wd / f'extra-{i:03}').write_text('new line\n')
+            changes.save_evidence(run)
+            evidence = json.loads((run / 'changes.json').read_text())
+            check(evidence['truncated'] and len(evidence['files']) == 200, str(evidence.keys()))
+            with patch.object(w, 'save_json', side_effect=OSError('test evidence failure')):
+                changes.save_evidence(run)  # 只警告，不抛出。
+        # worktree 从仓库子目录派单时证据路径相对 source_root。
+        from support import git_template
+        repo = git_template(t / 'source', {'sub/tracked': 'base\n'})
+        with patch.object(w, 'STATE', t / 'worktree-state'):
+            wd2, fields, source, head = w.create_task_worktree(str(repo / 'sub'), t / 'run-worktree')
+            with w.WorkChanges(wd2, False) as changes:
+                (Path(wd2) / 'tracked').write_text('base\nadded\n')
+                changes.save_evidence(run, source)
+            evidence = json.loads((run / 'changes.json').read_text())
+            check(evidence['workdir'] == str(source) and evidence['base_head'] == head
+                  and evidence['files'] == {'sub/tracked': ['added']}, str(evidence))
+
+
 CASES = {case.__name__: case for case in (
     codex_tokens_rollout,
     codex_tokens_fallback,
@@ -685,4 +872,7 @@ CASES = {case.__name__: case for case in (
     weekly_via,
     weekly_seat_stats,
     weekly_mixed_ledger,
+    seat_quality_rating,
+    weekly_quality,
+    changes_evidence,
 )}

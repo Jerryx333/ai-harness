@@ -61,7 +61,7 @@ aiw assigns work to seats; agent-use calls registered providers; agent-use-adapt
 - In the author's daily use (about 300 tasks, not a controlled experiment), for tasks touching 3 or more files the median main-conversation cost when assigning was about a quarter of doing it directly. The gap is likely due to long sessions: everyday sessions often carry 100k–300k+ tokens of context, and every turn of editing code yourself is billed at that size.
 - Small edits to 1–2 files have no comparison data; doing them yourself is usually cheaper.
 
-To see your actual usage, use `aiw tokens` (local Claude Code main-session usage and context breakdown) and `aiw weekly` (assignment success rates and token totals).
+To see your actual usage, use `aiw tokens` (local Claude Code main-session usage and context breakdown) and `aiw weekly` (assignment success rates, seat quality by task class, and token totals).
 
 **How long does an assignment take?** It depends on the work. Medians from one week on the author's machine:
 
@@ -135,6 +135,7 @@ You need macOS (the only tested OS), Python 3.11+, and logged-in Claude Code or 
 | `aiw map` | Apply one instruction per file: `aiw map . 600 task.txt src/a.py src/b.py`; defaults to the `draft` role, up to 3 jobs. |
 | `aiw goal init / verify` | Create a checklist with `aiw goal init docs/goals/demo.json`; edit its example tasks, `verify` commands and `paths`, then run `aiw goal verify docs/goals/demo.json --full`. |
 | `aiw doctor` | Check seats and setup: `aiw doctor`; `aiw doctor --fingerprint` prints a fingerprint (version/hash summary). |
+| `aiw rate` | Rate an assignment: `aiw rate <run> ok\|fixed\|rework\|discard [--note text]`; find unrated runs with `aiw rate --pending`. |
 | `aiw note` | Save an observation: `aiw note . "Check failed" --expected "Check passes" --evidence "test output"`. |
 | `aiw sync` | Update this aiw checkout using `git pull --ff-only`: `aiw sync`; cannot merge divergent history. Installed agent-use and agent-use-adapters checkouts are updated too. Rerun the installer to refresh installed rules/hooks. |
 | `aiw gc` | Delete old run/panel/map archives (30 days by default); preview first: `aiw gc 30 --dry-run`. |
@@ -145,7 +146,7 @@ You need macOS (the only tested OS), Python 3.11+, and logged-in Claude Code or 
 - Include the goal, context, scope, constraints and verification commands; supply text seats with material via `--attach`.
 - Treat results as drafts: inspect changes, check sources, run tests and read the actual-seat line.
 - Before a panel, write your judgment and archive it with `--prior`; accept, reject or defer each opinion. Use `aiw goal` for large task lists.
-- Use `aiw tokens` for local Claude Code usage and `aiw weekly` for assignment success rates and token totals.
+- Use `aiw tokens` for local Claude Code usage and `aiw weekly` for assignment success rates, seat quality by task class, and token totals.
 
 See [best practices](docs/best-practices.md) for task templates, a recommended configuration and a daily workflow.
 

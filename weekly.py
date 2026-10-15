@@ -187,6 +187,95 @@ def repo_key(row):
     return None, "unknown"
 
 
+def survival(row, generated):
+    """缺证据不计零；每单按记录的去重行求比例。"""
+    try:
+        stamp = dt.datetime.fromisoformat(row['ts']).astimezone()
+        if generated - stamp < dt.timedelta(hours=48):
+            return None
+        evidence = json.loads((Path(row['run_dir']) / 'changes.json').read_text(encoding='utf-8'))
+        root = Path(evidence['workdir'])
+        if not root.is_dir():
+            return None
+        survived, total = 0, 0
+        for name, lines in evidence['files'].items():
+            path = root / name
+            # 证据只允许仓库内路径。
+            if not path.resolve().is_relative_to(root.resolve()):
+                return None
+            try:
+                current = {line.strip() for line in path.read_text(encoding='utf-8').splitlines()}
+            except FileNotFoundError:
+                current = set()
+            total += len(lines)
+            survived += sum(line in current for line in lines)
+        return survived / total if total else None
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+
+
+def quality_stats(attempts, generated):
+    from rating import latest_ratings, run_id, task_class, RATINGS
+    ratings = latest_ratings(STATE)
+    groups = {}
+    for row in attempts:
+        if row.get('kind') == 'ok':
+            groups.setdefault((row['actual'], task_class(row)), []).append(row)
+    result = []
+    for (actual, category), group in sorted(groups.items()):
+        counts = Counter(ratings[run_id(row['run_dir'])]['rating'] for row in group
+                         if row.get('run_dir') and run_id(row['run_dir']) in ratings)
+        rated = sum(counts.values())
+        verifies = [r['verify'] for r in group if isinstance(r.get('verify'), dict)
+                    and not r['verify'].get('skipped')
+                    and type(r['verify'].get('passed')) is int
+                    and type(r['verify'].get('total')) is int and r['verify']['total'] > 0]
+        verify_total = sum(v['total'] for v in verifies)
+        verify_passed = sum(v['passed'] for v in verifies)
+        lives = [value for row in group if category == 'write'
+                 and (value := survival(row, generated)) is not None]
+        adoption = (counts['ok'] + counts['fixed']) / rated if rated else None
+        rework = (counts['rework'] + counts['discard']) / rated if rated else None
+        live = sum(lives) / len(lives) if lives else None
+        suggestions = []
+        if rated >= 10:
+            if rework >= .3:
+                suggestions.append(f'建议该类任务少派 {actual}')
+            if adoption >= .9 and (len(lives) < 10 or live >= .8):
+                suggestions.append(f'{actual} 做 {category} 质量稳定，可多派')
+        result.append(dict(actual=actual, task_class=category, successful=len(group), rated=rated,
+                           coverage=rated / len(group), ratings={key: counts[key] for key in RATINGS},
+                           adoption_rate=adoption, rework_rate=rework,
+                           verify_passed=verify_passed, verify_total=verify_total,
+                           verify_rate=verify_passed / verify_total if verify_total else None,
+                           survival_rate=live, survival_samples=len(lives), suggestions=suggestions))
+    return result
+
+
+def print_quality(quality):
+    def ratio(value, samples):
+        label = f'{value * 100:.1f}%' if value is not None else '无数据'
+        return label + ('（样本不足）' if samples < 10 else '')
+    print('\n## 按座位 × 任务类别的质量')
+    for row in quality:
+        parts = [f"- {row['actual']} × {row['task_class']}: 成功单 {row['successful']} · 已评分 {row['rated']}"
+                 f"（评分覆盖率 {row['coverage'] * 100:.1f}%）"]
+        if row['rated']:
+            parts.extend([' / '.join(f'{key} {value}' for key, value in row['ratings'].items()),
+                          f"采纳率 {ratio(row['adoption_rate'], row['rated'])}",
+                          f"返工率 {ratio(row['rework_rate'], row['rated'])}"])
+        else:
+            parts.append('未评分')
+        if row['verify_total']:
+            parts.append(f"verify 通过率 {ratio(row['verify_rate'], row['verify_total'])}（{row['verify_passed']}/{row['verify_total']}）")
+        if row['survival_samples']:
+            parts.append(f"改动存活率 {ratio(row['survival_rate'], row['survival_samples'])}（样本 {row['survival_samples']}）")
+        print(' · '.join(parts))
+    suggestions = [suggestion for row in quality for suggestion in row['suggestions']]
+    for suggestion in suggestions or ['暂无足够数据给建议']:
+        print(f'- {suggestion}')
+
+
 def report(days):
     generated = dt.datetime.now().astimezone()
     since = generated - dt.timedelta(days=days)
@@ -221,7 +310,7 @@ def report(days):
             "kinds": dict(Counter(r["kind"] for r in calls).most_common()),
             "efforts": [{"seat": seat, "effort": effort, "n": n} for (seat, effort), n in
                         sorted(Counter((r["seat"], r["effort"]) for r in calls if r.get("effort") is not None).items())],
-            "seats": seats, "repos": repos,
+            "seats": seats, "repos": repos, "quality": quality_stats(attempts, generated),
             "substituted_ok": sum(bool(r.get("substituted")) and r["kind"] == "ok" for r in calls),
             "substitute_limits": substitute_limits(), "coverage": coverage_summary(coverage_sources)}
     text_data = {"calls": calls, "ledger": led,
@@ -268,6 +357,7 @@ def print_report(data, text_data):
               f" · 成功单中位耗时 {elapsed} · 失败分布 {distribution}"
               f" · direct {sources['direct']} · panel {sources['panel']} · "
               f"map {sources['map']} · 未记录 {sources['unknown']}")
+    print_quality(data["quality"])
     print("\n## 按仓库")
     for r in data["repos"]:
         elapsed = f"{r['median_ok_secs']:g}s" if r['median_ok_secs'] is not None else "无数据"

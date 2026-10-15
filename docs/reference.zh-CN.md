@@ -544,3 +544,25 @@ agent-use 的 `status.json` 必须声明整数 `protocol_version: 1`。缺失或
 三个报告的 coverage 均含 `sources`、`level` 和 `reasons`：所有来源不存在或窗口内有效行合计为 0 时为「无数据」；否则有预期来源缺失、解析失败或被跳过时为「部分」，其余为「完整」。例外：tokens 的转录根目录不存在时，无论账本是否有有效行，均为「无数据」。reasons 记录缺失、坏行、跳过或窗口无有效行的原因。文本打印「数据覆盖：」及固定说明「覆盖只说明读到多少，不代表结论可信度」，无数据时也会打印；没有读到与没有发生须分别理解。
 
 `aiw weekly` 的「token（codex 类座位）」小节按账本 token 元数据展示派单的 rollout 合计及覆盖率，同时区分 stderr 兜底、tokens=null 和旧记录；始终展示 codex、codex-sol（无尝试时显示「无数据」），再按名字排序追加窗口内账本行中出现过 tokens 键的 actual（含别名座位及 tokens=null / stderr 记录），没有 tokens 键的普通座位不展示。尝试数及用量仍只计 rc 非 null 的记录。展示及汇总不依赖当前座位配置，配置改动不会改变历史报告；Claude 主会话用量通过 `aiw tokens` 测量。「按仓库」小节按 repo、workdir、未记录分组展示成功率、超时和中位数；`--json` 输出派单统计 JSON，token 和改进缓冲区小节仅在文本模式输出。JSON 顶层新增 `coverage`，统计 seat-ledger.jsonl 和 router-log.jsonl 的窗口内有效行与坏行，原有字段保留；文本 coverage 还覆盖读取的 findings 本机记录、quarantine、status 和当前假设快照（快照 rows 为 0）。
+
+
+## 派单质量评分：aiw rate
+
+```bash
+aiw rate <run> ok|fixed|rework|discard [--note 文本]
+aiw rate --pending [--days N] [--session ID]
+```
+
+主会话核对产物后评分：ok=直接采纳，fixed=主会话小修后采纳，rework=要返工或重派，discard=丢弃不用。run 接受 run-id、run_dir 的绝对/相对路径或其中的 output.md 路径；按账本 run_dir 的 basename 查最后一条执行行，不要求运行目录仍存在。未知 run 返回 2；`AIW_NESTED=1` 拒绝评分和查询，返回 64。成功输出 run_id、actual 和评分。
+
+评分独立加锁追加到 `state/seat-ratings.jsonl`，字段为 ts、host、session、run_id、seat、actual、role、task_class、rating、note；同一 run_id 以最后一次评分为准。`--pending` 默认近 2 天，有当前会话 ID 时只列当前会话，可用 `--session ID` 指定；列出 kind=ok、非 freecheck 且未评分的执行单，包含 run_id、actual、task_class、时间和 prompt 头，无待评分单时打印「无待评分派单」。
+
+新账本行增加可选 role（用户的 write/review/draft 别名，直接点名座位为 null）、task_class。类别按 ro=false → write、text=true → draft、否则 review 推断；旧行没有 ro 时为 unknown。旧账本不改写。
+
+写类成功单在 run_dir 保存 `changes.json`：workdir、base_head、files（相对路径映射到本单新增非空白行，strip 后去重）、truncated。脏文件使用开工时的文本基线（≤256KB），其余使用开工 HEAD 的内容，不存在视为空；不可用的脏基线、二进制和读失败文件跳过。最多 200 文件、5000 行，超出置 truncated；保存异常只警告，不影响派单和记账。worktree 单的 workdir 指向 source_root，路径相对该源仓库根目录。
+
+`aiw weekly [days=7] [--json]` 在成功率之后展示「按座位 × 任务类别的质量」，JSON 新增 quality。窗口按执行时间，只计 rc 非 null、kind=ok、非 freecheck 的执行单；按 actual × task_class 分组，展示成功单、已评分数/覆盖率、四档计数、采纳率=(ok+fixed)/已评分、返工率=(rework+discard)/已评分、实际执行 verify 的 passed/total 合计通过率（skipped 不入分母）。缺评分文件照常报告。
+
+改动存活率只统计写类、距现在至少 48 小时且有 changes.json 的单：记录行在 workdir 当前文件中 strip 后仍出现即存活；文件删除则其行不存活；workdir 不存在或证据缺失不计样本。空证据不计样本，组内取各单比例平均，并显示样本数。它测量记录行的留存，不等于语义正确性；truncated 单只测已记录部分。runs 默认 30 天 GC，证据可能随之清理。
+
+每项比率的分母/样本数不足 10 时标「样本不足」。评分 ≥10 时，返工率 ≥30% 建议该类少派该座位；采纳率 ≥90% 且存活率在有至少 10 个样本时 ≥80%，建议多派；存活样本不足 10 时不限制多派条件。无达标组显示「暂无足够数据给建议」。建议不自动改变派单顺序。

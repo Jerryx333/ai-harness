@@ -88,6 +88,7 @@ def role_review_forces_ro():
         check(r.returncode == 0 and 'read-only' in json.loads(r.stdout), r.stdout+r.stderr)
         rows = [json.loads(line) for line in (t/'fallback-state/seat-ledger.jsonl').read_text().splitlines()]
         check(rows[-1]['actual'] == 'codex' and rows[-1]['ro'] is True, rows)
+        check(all(row['role'] == 'review' and row['task_class'] == 'review' for row in rows), rows)
 
 
 def role_write_codex_main_refused():

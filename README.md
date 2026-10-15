@@ -61,7 +61,7 @@ aiw 负责把任务交给座位；agent-use 负责调用注册的 provider；age
 - 作者日常使用（约 300 个需求，不是对照实验）：改 3 个文件以上的需求，派单时主会话花费的中位数约为自己改的四分之一。差距可能来自长会话：平时会话常带着十几万到几十万的上下文，自己改代码的每一轮都按这个量计费。
 - 改 1–2 个文件的小活没有对照数据，通常自己做更划算。
 
-想看自己的实际用量：`aiw tokens`（本机 Claude Code 主会话用量和上下文构成）、`aiw weekly`（派单成功率和 token 汇总）。
+想看自己的实际用量：`aiw tokens`（本机 Claude Code 主会话用量和上下文构成）、`aiw weekly`（派单成功率、按座位 × 任务类别的质量和 token 汇总）。
 
 **派一单要等多久？** 看活的类型。按作者本机一周的记录（中位数）：
 
@@ -135,6 +135,7 @@ aiw 负责把任务交给座位；agent-use 负责调用注册的 provider；age
 | `aiw map` | 对每个文件执行同一要求：`aiw map . 600 task.txt src/a.py src/b.py`；默认用 `draft` 角色，最多并发 3 单。 |
 | `aiw goal init / verify` | 用 `aiw goal init docs/goals/demo.json` 建清单；修改示例任务、`verify` 命令和 `paths`，再跑 `aiw goal verify docs/goals/demo.json --full`。 |
 | `aiw doctor` | `aiw doctor` 检查座位和安装；`aiw doctor --fingerprint` 输出一行配置指纹，即版本和哈希摘要，便于比较。 |
+| `aiw rate` | 给派单评分：`aiw rate <run> ok\|fixed\|rework\|discard [--note 文本]`；`aiw rate --pending` 查看待评分单。 |
 | `aiw note` | 保存观察：`aiw note . "检查失败" --expected "检查通过" --evidence "测试输出"`。 |
 | `aiw sync` | `aiw sync` 用 `git pull --ff-only` 更新 aiw 仓库，不能合并分叉历史；已安装的 agent-use 和 agent-use-adapters 也一并更新；更新已安装规则/钩子需重跑安装。 |
 | `aiw gc` | 删除旧的派单、会诊、批处理归档，默认保留 30 天；先预览：`aiw gc 30 --dry-run`。 |
@@ -145,7 +146,7 @@ aiw 负责把任务交给座位；agent-use 负责调用注册的 provider；age
 - 每单写清目标、上下文、范围、约束和验收命令；文本座位需要用 `--attach` 带上材料。
 - 产出当待审稿：看改动、核对出处、跑测试，并看「实际执行方」。
 - 会诊先写自己的判断，用 `--prior` 归档；逐条接受、驳回或暂缓，大任务用 `aiw goal` 清单。
-- 用 `aiw tokens` 看本机 Claude Code 用量，用 `aiw weekly` 看派单成功率和 token 汇总。
+- 用 `aiw tokens` 看本机 Claude Code 用量，用 `aiw weekly` 看派单成功率、按座位 × 任务类别的质量和 token 汇总。
 
 任务单模板、推荐配置和一天的用法见[最佳实践](docs/best-practices.zh-CN.md)。
 

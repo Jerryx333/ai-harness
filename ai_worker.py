@@ -47,6 +47,25 @@ from pathlib import Path
 
 from harness_ids import format_run_id
 
+AUTO_PROMPT_PREFIX = (
+    "今天是 {date_context}。"
+    "你不认识的模型、版本、产品或事件，标「未核实」，不要断言它不存在。"
+)
+
+
+def auto_prompt_prefix(local_time):
+    return AUTO_PROMPT_PREFIX.format(
+        date_context=f"{local_time:%Y-%m-%d}（{local_time:%Z %z}，本机时区）") + "\n\n"
+
+
+def strip_auto_prompt_prefix(prompt):
+    header, separator, body = prompt.partition("\n\n")
+    start, _, end = AUTO_PROMPT_PREFIX.partition("{date_context}")
+    if separator and header.startswith(start) and header.endswith(end):
+        return body
+    return prompt
+
+
 PANEL_FORMAT = """
 
 会诊回答格式要求：
@@ -625,7 +644,77 @@ class WorkChanges:
                     capture_output=True, check=True, timeout=20).stdout
             except (OSError, subprocess.SubprocessError) as e:
                 print(f"[ai-worker] 无法保存开工快照：{e}", file=sys.stderr)
+        self.baseline_lines = {}
+        if not self.ro and not self.failed:
+            try:
+                for name in self.before['files']:
+                    # 缺失、过大或二进制的脏基线不能退回 HEAD，以免把原有脏行算作新增。
+                    self.baseline_lines[name] = None
+                    path = Path(self.workdir) / name
+                    try:
+                        if not path.is_symlink() and path.is_file() and path.stat().st_size <= 256 * 1024:
+                            raw = path.read_bytes()
+                            if b'\0' not in raw:
+                                self.baseline_lines[name] = raw.decode('utf-8').splitlines()
+                    except (OSError, UnicodeError):
+                        continue
+            except Exception as error:
+                print(f"[ai-worker] 警告：保存改动基线失败：{error}", file=sys.stderr)
         return self
+
+    def save_evidence(self, run_dir, source_root=None):
+        try:
+            from collections import Counter
+            self.fields()
+            files, total, truncated = {}, 0, False
+            root = subprocess.run(['git', 'rev-parse', '--show-toplevel'], cwd=self.workdir,
+                                  env=repository_git_env(), capture_output=True, check=True,
+                                  timeout=20).stdout.decode().strip()
+            for _, name in self.changes:
+                path = Path(self.workdir) / name
+                if path.is_symlink() or not path.is_file():
+                    continue
+                if name in self.baseline_lines:
+                    before = self.baseline_lines[name]
+                    if before is None:
+                        continue
+                else:
+                    rel = os.path.relpath(path, root)
+                    result = subprocess.run(['git', 'show', f"{self.before['head']}:{rel}"],
+                                            cwd=self.workdir, env=repository_git_env(),
+                                            capture_output=True, timeout=20)
+                    if b'\0' in result.stdout:
+                        continue
+                    try:
+                        before = result.stdout.decode('utf-8').splitlines() if result.returncode == 0 else []
+                    except UnicodeError:
+                        continue
+                try:
+                    raw = path.read_bytes()
+                    if b'\0' in raw:
+                        continue
+                    after = raw.decode('utf-8').splitlines()
+                except (OSError, UnicodeError):
+                    continue
+                extra = Counter(line.strip() for line in after if line.strip())
+                extra.subtract(line.strip() for line in before if line.strip())
+                lines = [line for line, count in extra.items() if count > 0]
+                if not lines:
+                    continue
+                if len(files) >= 200 or total >= 5000:
+                    truncated = True
+                    break
+                if len(lines) > 5000 - total:
+                    lines = lines[:5000 - total]
+                    truncated = True
+                evidence_name = os.path.relpath(path, root) if source_root else name
+                files[evidence_name] = lines
+                total += len(lines)
+            save_json(Path(run_dir) / 'changes.json', dict(
+                workdir=str(Path(source_root or self.workdir).resolve()),
+                base_head=self.before.get('head'), files=files, truncated=truncated))
+        except Exception as error:
+            print(f"[ai-worker] 警告：保存 changes.json 失败：{error}", file=sys.stderr)
 
     def fields(self):
         if self.ro:
@@ -2263,6 +2352,7 @@ def _dispatch(inflight: Path | None, attempt: dict, *, before_execute=None, stac
     if "--worktree" in flags and ("--ro" in flags or seat in ("review", "draft")):
         print("[ai-worker] --worktree 只用于写任务", file=sys.stderr)
         return 64
+    role = None
     if seat in ('write', 'review', 'draft'):
         role = seat
         try:
@@ -2298,6 +2388,7 @@ def _dispatch(inflight: Path | None, attempt: dict, *, before_execute=None, stac
         flags.add("--ro")
     text_fields = {"text": True} if text else {}
     ro = "--ro" in flags or SEATS["seats"].get(seat, {}).get("ro_only", False)
+    text_fields.update(role=role, task_class="write" if not ro else "draft" if text else "review")
     if seat not in SEATS["seats"]:
         print(f"[ai-worker] 未知座位 {seat}；可用：{', '.join(SEATS['seats'])}", file=sys.stderr)
         return 64
@@ -2355,8 +2446,7 @@ def _dispatch(inflight: Path | None, attempt: dict, *, before_execute=None, stac
     prompt_id = hashlib.sha1((prompt + render_attachments(attachment_files)).encode()).hexdigest()[:10]
     # 只在派单入口注入一次；顶替复用 prompt，freecheck 直接调用 run_seat 不经过这里。
     local_time = dt.datetime.now().astimezone()
-    prompt = (f"今天是 {local_time:%Y-%m-%d}（{local_time:%Z %z}，本机时区）。"
-              "你不认识的模型、版本、产品或事件，标「未核实」，不要断言它不存在。\n\n" + prompt)
+    prompt = auto_prompt_prefix(local_time) + prompt
     via = call_via()
     collect = (findings.config()["collect"] and via == "direct" and "--no-findings" not in flags
                and not ((text_only_seat(seat) or (text and agent_use_workspace(SEATS["seats"][seat]))) and not attach))
@@ -2522,6 +2612,8 @@ def _dispatch(inflight: Path | None, attempt: dict, *, before_execute=None, stac
                     finally:
                         if token:
                             finish_substitute(token, success)
+                    if not ro and r['kind'] == 'ok' and r.get('run_dir'):
+                        changes.save_evidence(r['run_dir'], source_root if worktree_fields else None)
                     ledger({**text_fields, **repo_fields, **change_fields, **verify_fields, **({"agent_use_versions": r["agent_use_versions"]} if "agent_use_versions" in r else {}), **({"findings_n": len(parsed["observations"])} if parsed is not None else {}), "via": via, **effort_fields, "seat": seat, "actual": s, "prompt": prompt_id, "ro": ro, "model": r.get("model") or SEATS["seats"][s].get("model") or "default",
                             "run_dir": r.get("run_dir"),
                             "kind": r["kind"], "rc": r["rc"], "secs": r["secs"], "substituted": s != seat,

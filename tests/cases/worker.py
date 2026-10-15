@@ -1227,6 +1227,42 @@ def error_patterns():
         check(classify(1, '', text) == kind, f'误分类: {text}')
     check(classify(0, '有产出', '说明文档里提到 pinentry') == 'ok', '成功回答不应误判库锁')
     check(classify(1, '', 'pinentry\n' + 'ordinary error\n' * 15) == 'other', '只看末尾 15 行')
+    capacity = 'ERROR: Selected model is at capacity. Please try a different model.'
+    for text, kind in [
+            ('echo: upstream_quota / quota.json / 额度\n' + capacity, 'transient'),
+            (capacity, 'transient'), ('ERROR: Server is OVERLOADED', 'transient'),
+            ('at capacity', 'transient'), ('overloaded', 'transient'),
+            ('ERROR: at capacity; quota exceeded', 'transient'),
+            ('echo: quota\nERROR: You\'ve hit your usage limit', 'quota'),
+            ('echo: pinentry unauthorized quota 429 JSONDecodeError\nERROR: stream disconnected', 'other'),
+            ('ERROR: pinentry at capacity', 'locked'),
+            ('ERROR: unauthorized at capacity', 'auth'),
+            ('quota exceeded', 'quota'), ('rate limit', 'ratelimit'), ('JSONDecodeError', 'format')]:
+        check(classify(1, '', text) == kind, f'误分类: {text}')
+    check(classify(1, 'quota 额度', capacity) == 'transient', 'stdout 回显不应覆盖 ERROR 报错')
+    check(classify(1, '', capacity + '\n' + 'ordinary error\n' * 15) == 'other', 'ERROR 也只看末尾 15 行')
+
+
+def codex_capacity():
+    with tempfile.TemporaryDirectory() as td:
+        t = Path(td)
+        bins = fake_bins(t)
+        (bins / 'codex').write_text('#!/bin/sh\n[ "$1" = --version ] && { echo fake; exit 0; }\n'
+                                   'echo "echo: upstream_quota / quota.json / 额度" >&2\n'
+                                   'echo "ERROR: Selected model is at capacity. Please try a different model." >&2\nexit 1\n')
+        local = t / 'seats.json'
+        write_legacy_local(local, {'fallback': {'codex': ['claude']}})
+        prompt = t / 'prompt'; prompt.write_text('只回复 OK')
+        state = t / 'state'
+        env = dict(os.environ, AIW_STATE=str(state), AIW_CONFIG=str(local),
+                   CODEX_BIN=str(bins / 'codex'), CLAUDE_BIN=str(bins / 'claude'))
+        result = sh([sys.executable, str(REPO / 'ai_worker.py'), 'codex', str(t), '30',
+                     str(prompt), '--ro', '--no-findings'], env=env)
+        rows = [json.loads(line) for line in (state / 'seat-ledger.jsonl').read_text().splitlines()]
+        check(result.returncode == 0 and [(r['actual'], r['kind']) for r in rows]
+              == [('codex', 'transient'), ('claude', 'ok')] and rows[1]['substituted'], result.stderr + str(rows))
+        breaker = state / 'breaker.json'
+        check('codex' not in (json.loads(breaker.read_text()) if breaker.exists() else {}), '满载不应熔断 codex')
 
 
 
@@ -1614,6 +1650,7 @@ CASES = {case.__name__: case for case in (
     agent_use_cwd,
     nested_dispatch,
     error_patterns,
+    codex_capacity,
     codex_locked_runtime,
     codex_nested_env_policy,
     codex_preflight,

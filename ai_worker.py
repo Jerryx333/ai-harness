@@ -73,6 +73,7 @@ except ConfigError as error:
 
 LOCKED_PAT = re.compile(r"pinentry|provider auth command|vault is locked|agent not running|unlock required|^[\w./-]+: (?:vault (?:is )?)?locked\b", re.I | re.M)
 AUTH_PAT = re.compile(r"(authentication_required|not logged in|unauthorized|(?=[^\n]*\b401\b)[^\n]*(?:auth|unauthor|login|token)|login required|请先登录|未登录|invalid.*token|token.*expired)", re.I)
+CAPACITY_PAT = re.compile(r"at capacity|overloaded", re.I)
 QUOTA_PAT = re.compile(r"(quota|insufficient_quota|usage limit|额度|用量已达|(?=[^\n]*\bcredits?\b)[^\n]*(?:limit|exceeded|insufficient|余额|balance is too low))", re.I)
 RATE_PAT = re.compile(r"(rate.?limit|429|too many requests|限流|请稍后)", re.I)
 FORMAT_PAT = re.compile(r"(validation_failed|JSONDecodeError)", re.I)
@@ -949,7 +950,9 @@ def classify(rc: int, out: str, err: str) -> str:
 
     成功（rc=0 且有产出）直接算 ok：模型回答里谈到 quota / 401 / token 不代表调用失败
     （2026-10-07 codex-sol 评审本文件时回答里引用了这些正则，被误判 quota 熔断）。
-    codex 的 stderr 会回显整段对话，所以只取最后 15 行。
+    codex 的 stderr 会回显整段对话，所以只取最后 15 行；若有 ERROR: 开头的行，
+    后续正则只匹配这些明确报错行，排除对话回显；否则保持末尾匹配逻辑。
+    at capacity / overloaded 在 locked、auth 之后、quota 之前判为 transient，可顶替、不熔断。
     """
     if rc == 127:
         return "not_installed"
@@ -957,11 +960,14 @@ def classify(rc: int, out: str, err: str) -> str:
         return "ok"
     # 失败时 stdout 不是模型回答，有的 CLI（claude -p）把错误写在 stdout，一起看末尾
     tail = err.strip().splitlines()[-15:] + (out.strip().splitlines()[-15:] if rc != 0 else [])
-    text = "\n".join(tail)
+    errors = [line for line in tail if line.startswith("ERROR:")]
+    text = "\n".join(errors or tail)
     if LOCKED_PAT.search(text):
         return "locked"
     if AUTH_PAT.search(text):
         return "auth"
+    if CAPACITY_PAT.search(text):
+        return "transient"
     if QUOTA_PAT.search(text):
         return "quota"
     if RATE_PAT.search(text):
@@ -2250,7 +2256,7 @@ def _dispatch(inflight: Path | None, attempt: dict, *, before_execute=None, stac
         return 64
     seat, workdir, timeout_s, prompt_file = args
     verify = values.get("verify", [])
-    verify_timeout = values.get("verify_timeout", 600)
+    verify_timeout = values.get("verify_timeout", 1200)
     if verify and ("--ro" in flags or seat in ("review", "draft")):
         print("[ai-worker] --verify 只用于写任务", file=sys.stderr)
         return 64
@@ -2577,13 +2583,13 @@ def _dispatch(inflight: Path | None, attempt: dict, *, before_execute=None, stac
                     hint = SEATS["seats"][s].get("login_hint", "") if r["kind"] in ("auth", "not_installed", "verify") else ""
                     print(f"[{s}] {r['kind']}，熔断。{hint}", file=sys.stderr)
                     continue
-                # transient 是 agent-use 明确报告的供应商单次失败，可安全换家，不熔断。
+                # transient 是明确的供应商单次失败（含 CLI 满载），可安全换家，不熔断。
                 if r["kind"] == "transient":
                     if r.get("reason") == "outside_free_window":
                         outside_free_window = True
                     if r.get("reason") == "promotion_expired":
                         promotion_expired = True
-                    print(f"[{s}] reason={r['reason']}，按顶替链换下一家", file=sys.stderr)
+                    print(f"[{s}] reason={r.get('reason', r['kind'])}，按顶替链换下一家", file=sys.stderr)
                     continue
                 if r["kind"] in ("format", "empty"):
                     print(f"[{s}] 跑完但产出不合格（{r['kind']}），不自动改派；检查 prompt 或人工处理。", file=sys.stderr)

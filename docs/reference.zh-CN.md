@@ -326,7 +326,7 @@ worker 只接受 `--ro --text --worktree --net --no-fallback --no-findings --all
 成功、失败、超时都在 stderr 报告路径、分支、相对初始 HEAD 的 `git diff --stat` 及未暂存/未跟踪文件数；账本增加 `worktree`、`worktree_branch`，普通单不增加。
 创建时原子写入 `<STATE>/worktrees/<run-id>.json`（路径、分支、源仓库、初始 HEAD、UTC 创建时间）。本单无已跟踪/暂存/未跟踪改动且分支未前进时即时清理；有改动则保留，不自动 commit/merge。检查并提交后可用 `git -C <原仓库> merge --ff-only aiw/<run-id>`，不可快进时用 diff/cherry-pick；每个 `--worktree` 单报告后及 `aiw gc` 扫描：跳过持写锁目录，已合并且干净的删除，超过固定 7 天的先保存相对初始 HEAD 的二进制补丁到 `<STATE>/worktrees/archive/<run-id>.patch` 再删除（失败保留）；在初始 HEAD 上用 `git apply --binary <补丁>` 恢复。被忽略文件不计入干净判断、不存档到补丁，清理使用强制删除以一并移除它们。源仓库丢失时残留目录整体保存到同目录的 `<run-id>.files/`。
 
-写单可重复传 `--verify '<命令>'`，如 `aiw write . 1200 prompt.md --verify 'python3 -m unittest' --verify 'git diff --check'`。`--verify-timeout <秒>` 默认 600，必须为正整数，按单条命令计时；空命令、与 `--ro` 同用、只读座位或 review/draft 角色使用均返回 64，不派单。
+写单可重复传 `--verify '<命令>'`，如 `aiw write . 1200 prompt.md --verify 'python3 -m unittest' --verify 'git diff --check'`。`--verify-timeout <秒>` 默认 1200，必须为正整数，按单条命令计时；空命令、与 `--ro` 同用、只读座位或 review/draft 角色使用均返回 64，不派单。
 
 派单（含顶替链）最终 rc=0 且产出合格后，aiw 在主会话环境继承自身环境，按顺序以非 login 的 `bash -c` 运行验收，stdout/stderr 合并；不加执行方沙箱，可联网与监听端口，子进程通过 `os.nice(10)` 降优先级。某条失败或超时也继续后续命令；全部通过返回 0，有失败或超时返回 4。执行方失败、超时或产出不合格不跑验收，保留原退出码；仅当至少一个执行方实际运行过且最终未成功时，stdout 写「执行方未成功，跳过 aiw 验收」。
 
@@ -471,6 +471,8 @@ python3 tests/mutation_check.py credentials locked  # 只运行指定变异
 ## 本地配置
 
 本地 `seats.local.json` 可为座位配置 `preflight`（`argv`、`config_file`、`config_mentions`）检查凭据工具；可选字符串 `preflight.unlock_hint` 自定义库锁时派单与 doctor 显示的解锁提示，未配置时显示通用提示。库锁不熔断、不顶替。
+
+CLI 失败分类取输出末尾 15 行，若有 `ERROR:` 开头的行则只匹配这些报错行，排除对话回显；`at capacity` / `overloaded`（不区分大小写）在 locked/auth 之后、quota 之前判为 `transient`，换下一家、不熔断。
 
 个人规则可放在 `~/.config/aiw/CLAUDE.personal.md` 和 `~/.config/aiw/AGENTS.personal.md`。建议保存在私人同步仓库，并软链到这些路径，再运行 `install.sh`。公开规则在前，个人规则在后，冲突以个人规则为准。
 

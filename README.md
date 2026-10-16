@@ -6,7 +6,7 @@
 
 支持 Claude Code、Codex、pi、omp 当主会话。
 
-<p align="center"><img src="assets/session.svg" alt="会话示例：你照常提需求，钩子提示该派给谁，主会话写单派出去，验收后提交" width="820"></p>
+<p align="center"><img src="assets/demo-session.svg" alt="会话示例：你照常提需求，钩子提示该派给谁，主会话写单派出去，验收后提交" width="900"></p>
 
 ## 为什么选它
 

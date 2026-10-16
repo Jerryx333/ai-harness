@@ -12,6 +12,8 @@
 | Codex | 空（改文件自己做） | claude → codex-sol | codex-sol → claude |
 | 未识别（default） | codex → claude-write | codex-sol → claude | codex-sol → claude |
 
+pi / omp 主会话会自动识别；安装时向 `~/.pi/agent/AGENTS.md` / `~/.omp/agent/AGENTS.md` 写派单规则（`AIW_NO_PI=1` / `AIW_NO_OMP=1` 跳过），不加派单钩子。公开默认三个角色候选为空，需本地配置座位；`main_exclude` 默认禁止派给四个 GPT/Claude 座位，覆盖角色、顶替、panel 和点名派单。
+
 按顺序取首个存在、bin 可找到（尊重 CODEX_BIN/CLAUDE_BIN）、未停用且没有当前 auth/not_installed 熔断的座位。全部不可用返回 rc=2，列出每个候选原因，提示接入 agent-use 文本座位；Codex 主会话 write 列表为空时提示「Codex 主会话改文件请自己做」。review/draft 强制只读，包括写能力的顶替座位。`roles` 本地覆盖对象递归合并、列表整体替换；review/draft 解析时跳过非只读 CLI 候选并说明原因，doctor 同样警告；可使用只读 CLI 或 agent_use 座位（文本/workspace），角色名不能与座位或内置命令冲突。
 
 只装 Codex 时，主会话自己改代码，review/draft 使用另一 Codex 会话。只装 Claude Code 时，write 使用 claude-write，review/draft 使用 claude。两家都装时 review 会落到另一家模型；只装一家时是同一家另开上下文，不等于跨家族复核。

@@ -6,6 +6,10 @@
 
 Works with Claude Code, Codex, pi and omp as the main session.
 
+The 40-second tour below was made with [motion-use](https://github.com/leeguooooo/motion-use); every line in its terminal is real aiw output from one dispatched task.
+
+https://github.com/user-attachments/assets/b36de332-0783-4ff2-861c-26210eacbd93
+
 <p align="center"><img src="assets/demo-session.en.svg" alt="Session example: you ask as usual, a hook suggests a seat, the main session dispatches a task, verifies and commits" width="900"></p>
 
 ## Why aiw

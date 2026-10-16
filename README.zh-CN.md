@@ -6,6 +6,10 @@
 
 支持 Claude Code、Codex、pi、omp 当主会话。
 
+下面这支 40 秒的介绍片用 [motion-use](https://github.com/leeguooooo/motion-use) 制作，片中终端里的每一行都来自一次真实派单的 aiw 输出。
+
+https://github.com/user-attachments/assets/6cdf7ba6-5d0a-4783-9633-83842a1dc385
+
 <p align="center"><img src="assets/demo-session.svg" alt="会话示例：你照常提需求，钩子提示该派给谁，主会话写单派出去，验收后提交" width="900"></p>
 
 ## 为什么选它

@@ -2,7 +2,7 @@
 # 安装 / 更新 aiw 到本机。幂等：重复跑不会重复追加，改动前先备份。
 #   git clone <仓库> ~/.claude/aiw && ~/.claude/aiw/install.sh
 #   --claude-hook=settings|plugin：默认 settings；plugin 删除 settings 中的派单钩子，交给插件管理。
-#   --with-agent-use：同时安装 / 更新公开核心、现成适配器并添加本地 OpenCode 座位。
+#   --with-agent-use：同时安装 / 更新公开核心、现成适配器并注册 provider（座位需自行在本地配置添加）。
 # 做六件事：
 #   1. ~/.claude/CLAUDE.md 引入 @~/.claude/aiw/CLAUDE.md（已有内容保留）
 #   2. ~/.claude/settings.json 加 UserPromptSubmit 派单钩子（其它设置保留）

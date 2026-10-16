@@ -106,6 +106,9 @@ def select_modules(changed, root_sources, case_sources):
         else:
             hits = {name for name, text in case_sources.items()
                     if path in text or Path(path).name in text}
+        # Installation entry points share the install/uninstall regression module.
+        if path in {"install.sh", "uninstall.sh"} and "install_doctor" in case_sources:
+            hits.add("install_doctor")
         for name in sorted(hits):
             reasons.setdefault(name, []).append(path)
         if not hits and not is_document(path):

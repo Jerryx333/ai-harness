@@ -48,13 +48,13 @@ def selection_fallbacks_and_case_files():
 
 
 def selection_documents_and_known_paths():
-    cases = {"readme": "README.md", "install": "install.sh bin/aiw seats.json router-rules.json"}
+    cases = {"readme": "README.md", "install": "install.sh uninstall.sh bin/aiw seats.json router-rules.json"}
     for path in ("docs/x.md", "assets/x.png", "LICENSE", ".github/x.yml", ".coderabbit.yaml"):
         result = selector.select_modules([path], {}, cases)
         check(not result.reasons and not result.fallback, str(result))
     result = selector.select_modules(["README.md"], {}, cases)
     check(result.reasons == {"readme": ["README.md"]} and not result.fallback, str(result))
-    for path in ("bin/aiw", "install.sh", "seats.json", "router-rules.json"):
+    for path in ("bin/aiw", "install.sh", "uninstall.sh", "seats.json", "router-rules.json"):
         result = selector.select_modules([path], {}, cases)
         check(result.reasons == {"install": [path]} and not result.fallback, str(result))
 
@@ -148,6 +148,8 @@ def selection_real_repo_unknown_file():
     import select_cases
     unknown = select_cases.select_from_repo(root, ["foo.toml"], modules)
     check(unknown.fallback is not None, f"未知文件须退回全量：{unknown}")
+    uninstall = select_cases.select_from_repo(root, ["uninstall.sh"], modules)
+    check("install_doctor" in uninstall.reasons and not uninstall.fallback, str(uninstall))
     own = select_cases.select_from_repo(root, ["tokens.py"], modules)
     check("select_cases" not in own.reasons and "weekly_tokens" in own.reasons, own.reasons)
 

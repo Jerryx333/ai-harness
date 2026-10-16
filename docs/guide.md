@@ -143,7 +143,15 @@ Clone the same public repository on each machine. Keep settings/rules in your ow
 
 ## Uninstall
 
-No uninstall option. Undo these changes; keep unrelated settings:
+Run the uninstall script (add `--dry-run` to preview):
+
+```bash
+~/.claude/aiw/uninstall.sh
+```
+
+It removes aiw imports, assignment hooks, AGENTS blocks and the PATH entry added by the installer, and deletes only symlinks pointing to this checkout. Changes get `.bak-*` backups; invalid JSON stops all changes. It is safe to run again. The checkout, `state/`, `~/.config/aiw/`, agent-use / agent-use-adapters and plugin hooks are preserved. If you installed the aiw plugin, disable it in Claude Code.
+
+You can also undo these changes manually; keep unrelated settings:
 
 - Remove the aiw import and its personal-rule import from `~/.claude/CLAUDE.md`.
 - Remove only hooks whose command contains `aiw/route.py` from `~/.claude/settings.json` and, if installed, `~/.codex/hooks.json`; keep valid JSON. Remove the `aiw:begin` through `aiw:end` block from `~/.codex/AGENTS.md`, `~/.pi/agent/AGENTS.md`, and `~/.omp/agent/AGENTS.md` when present.

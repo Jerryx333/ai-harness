@@ -14,7 +14,7 @@
 | 进程 | 不起服务、不常驻，派单时才运行 |
 | 对你环境的改动 | Claude Code：`~/.claude/CLAUDE.md` 加一行引用，`settings.json` 加一个提示钩子<br>Codex：`~/.codex/AGENTS.md` 加一段规则，`hooks.json` 加一个提示钩子<br>pi / omp：`~/.pi/agent/AGENTS.md` / `~/.omp/agent/AGENTS.md` 加一段规则，不加钩子<br>Codex、pi、omp 只在本机装了时才改，改前都先备份 |
 | 日常命令 | 4 个：`aiw doctor`、`aiw review`、`aiw write`、`aiw draft` |
-| 不想用了 | 手动撤销上面这些改动并删掉命令软链，清单见[卸载](docs/guide.zh-CN.md#卸载) |
+| 不想用了 | 执行 `~/.claude/aiw/uninstall.sh` 即可（可先 `--dry-run` 预览），见[卸载](docs/guide.zh-CN.md#卸载) |
 
 不改习惯：照常用 Claude Code 或 Codex，遇到适合派出去的活它会提示，派不派由你定。
 

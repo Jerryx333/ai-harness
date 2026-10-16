@@ -2,86 +2,69 @@
 
 [中文](README.md) | [English](README.en.md)
 
-**Your main model plans and verifies; reading code, running commands and drafting go to other models.**
-For people who use Claude Code, Codex, pi or omp as their main tool and keep hitting usage limits or filling their context.
+**Spend fewer main-session tokens: hand off reading code, editing files and running tests; the main session only writes tasks and verifies.**
 
-<p align="center"><img src="assets/hero.en.webp" alt="aiw: the main session plans, models share the work, the main session verifies" width="760"></p>
+Works with Claude Code, Codex, pi and omp as the main session.
 
-## How light is it?
+<p align="center"><img src="assets/session.en.svg" alt="Session example: you ask as usual, a hook suggests a seat, the main session dispatches a task, verifies and commits" width="820"></p>
 
-| | |
+## Why aiw
+
+- **Fewer main-session tokens**: the work happens elsewhere; only results come back. In the author's paired comparison the main session spent about a third less; in everyday long sessions, tasks touching 3+ files cost about a quarter of doing them directly.
+- **Nothing for you to manage**: chat as usual. The main session decides whether to dispatch, to whom and how to verify. To switch models or add seats, just tell the main session; it edits the local configuration and checks it with `aiw doctor`.
+- **Minimal footprint**: a few lines in the CLIs you have installed, backed up first; to remove it, run `~/.claude/aiw/uninstall.sh`.
+- **Lightweight**: no service, nothing resident; it runs only when work is dispatched. Needs only Python 3.11+.
+
+<details>
+<summary>Exactly what installation changes</summary>
+
+| Main session | Changes |
 | --- | --- |
-| Processes | No service, nothing resident; runs only when you assign work |
-| Changes to your setup | Claude Code: one import line in `~/.claude/CLAUDE.md`, one hint hook in `settings.json`<br>Codex: a rules block in `~/.codex/AGENTS.md`, one hint hook in `hooks.json`<br>pi / omp: a rules block in `~/.pi/agent/AGENTS.md` / `~/.omp/agent/AGENTS.md`, no hook<br>Codex, pi and omp are touched only if installed; everything is backed up first |
-| Everyday commands | 4: `aiw doctor`, `aiw review`, `aiw write`, `aiw draft` |
-| Stop using it | Run `~/.claude/aiw/uninstall.sh` (preview with `--dry-run`); see [Uninstall](docs/guide.md#uninstall) |
+| Claude Code | One import line in `~/.claude/CLAUDE.md`, one hint hook in `settings.json` |
+| Codex | A rules block in `~/.codex/AGENTS.md`, one hint hook in `hooks.json` |
+| pi / omp | A rules block in `~/.pi/agent/AGENTS.md` / `~/.omp/agent/AGENTS.md`, no hook |
 
-Keep your workflow: use Claude Code or Codex as usual. When work is suitable to hand off, it suggests who should take it; you decide.
+It also creates the `~/.local/bin/aiw` symlink. Codex, pi and omp are touched only if installed. Preview the uninstaller with `--dry-run`; see [what the installer changes](docs/guide.md#what-the-installer-changes) and [Uninstall](docs/guide.md#uninstall).
 
-## Three steps
+</details>
 
-You need macOS (the only tested OS), Python 3.11+, and logged-in Claude Code or Codex CLI (at least one).
+## Install
+
+You need macOS (the only tested OS) and logged-in Claude Code or Codex CLI (at least one).
 
 ```bash
-# 1. Install (clone to this exact location)
 git clone https://github.com/Jerryx333/aiw.git ~/.claude/aiw && ~/.claude/aiw/install.sh
+aiw doctor   # open a new terminal first if PATH changed
+```
 
-# 2. Check (open a new terminal first if PATH changed)
-aiw doctor
+Then keep working as usual; there are no commands to learn.
 
-# 3. First assignment: a read-only look at this repository
+<details>
+<summary>Try one assignment by hand</summary>
+
+```bash
 printf '%s\n' 'Read this repository. Explain its entry points with file references. Do not edit files.' > /tmp/aiw-review.txt
 aiw review "$HOME/.claude/aiw" 900 /tmp/aiw-review.txt --ro
 ```
 
-The result prints to your terminal. `[ai-worker] 实际执行方：…` ("actual seat") names the seat that did the work; `[ai-worker] 全文：…` ("full text") points to the saved result.
-
-<p align="center"><img src="assets/demo.gif" alt="First aiw assignment: see which role a request routes to, check role resolution, run a read-only review" width="760"><br><sub>A real run (terminal output is in Chinese); about one minute of waiting was cut.</sub></p>
-
-<details>
-<summary>What install changes, what to look at, what to do on failure</summary>
-
-- See the [guide](docs/guide.md#what-the-installer-changes) for changed files and backups. Log in with each CLI's official method: `codex login`, or run `claude` and enter `/login`. Codex may ask you to trust the new hook when it next starts; doctor's configuration warnings do not change its exit code.
-- Every assignment keeps its task (`task.txt`), full result (`output.md`) and error output (`stderr.txt`) under `state/runs/<time>-<seat>-…/` in the aiw checkout. When a fallback kicks in, the actual seat differs from the one you asked for.
-- On failure the last line says 排查 ("troubleshoot") and points to the run directory; start with its `stderr.txt`.
-- Afterwards, when you type a request like "list the edge cases" in the main session, it also receives a hint (actual output with the public defaults; hints are currently in Chinese):
-
-  ```text
-  [派单] 本条判定为【小段文本草稿】：只出文本草稿，交给 `aiw draft <workdir> 600 <prompt文件> --ro [--attach 文件]`，公开默认不顶替；产物待主会话核对。
-  ```
-
-</details>
-
-## Everyday commands
-
-`.` is your project, `task.txt` holds instructions, timeouts are seconds.
-
-| Command | What it does |
-| --- | --- |
-| `aiw write . 1200 task.txt` | Edit code (a Codex main session edits files itself and skips this) |
-| `aiw review . 900 task.txt` | Read-only review, finding code in a repository |
-| `aiw draft . 600 task.txt` | Drafts, rewrites, summaries |
-| `aiw doctor` | Shows which model each role resolves to and checks the install |
-
-A **role** (write / review / draft) resolves to the first available **seat** (a model or CLI that can take an assignment). Defaults are in [roles and single CLI installations](docs/guide.md#roles-and-single-cli-installations), along with notes on pi / omp main sessions.
-
-## Why use it
-
-- **Your main model's allowance runs out**: reading large files, digging through logs and running tests are expensive; hand them to a cheaper model in the same family, another subscription or a free model.
-- **Your context fills up**: file contents and command output stay elsewhere; the main conversation receives only results.
-- **Another review**: different models can write and review code.
-
-<details>
-<summary>What changes after installation, in detail</summary>
-
-- **Configure it around what you have.** Use any CLI for the main session. In one local file, order candidates for edits, reviews and drafts; if the first is unavailable, use the next. Any model or CLI that runs in a terminal can connect through agent-use without code changes. See [customization](docs/guide.md#customize).
-- Use a strong model in the main session and a cheaper one for routine work: for example, GPT-6 Astra with GPT-6.1 Sol in Codex, or Fable with Opus 5.5 in Claude ([Codex pricing](https://developers.openai.com/codex/pricing): credits per million tokens, GPT-6 Astra input 250 / output 1,250; GPT-6.1 Sol input 50 / output 250). These are examples; you can change the defaults. All models on the same account share the allowance; assignments do not create extra allowance. Claude Pro/Max also have five-hour and weekly limits shared by claude.ai and Claude Code.
-- `aiw panel` collects independent opinions from several models.
-- If a model is unavailable, it can try the next one; execution fallback chains are empty by default. Set alternatives and their order in [local configuration](docs/guide.md#customize).
+The result prints to your terminal: `[ai-worker] 实际执行方：…` ("actual seat") names the seat that did the work; `[ai-worker] 全文：…` ("full text") points to the saved result. Every run keeps its task, full result and error output under `state/runs/` in the aiw checkout; on failure the last line says 排查 ("troubleshoot") instead, so start with that directory's `stderr.txt`. Codex may ask you to trust the new hook when it next starts.
 
 </details>
 
 ## Questions you may have
+
+<details>
+<summary>Which models can it dispatch to? Do I configure it?</summary>
+
+No. A single installed CLI comes with a default split; to adjust it, tell the main session, which edits the local configuration (`~/.config/aiw/seats.local.json`) and runs `aiw doctor`. You can:
+
+- Use a strong model in the main session and a cheaper one for routine work: for example, GPT-6 Astra with GPT-6.1 Sol in Codex, or Fable with Opus 5.5 in Claude ([Codex pricing](https://developers.openai.com/codex/pricing): credits per million tokens, GPT-6 Astra input 250 / output 1,250; GPT-6.1 Sol input 50 / output 250). All models on one account share the allowance; dispatching does not create extra allowance.
+- Order candidates for edits, reviews and drafts; if the first is unavailable, the next is used. Any model that runs in a terminal can connect through agent-use.
+- Have different models write and review code for a second check; `aiw panel` collects independent opinions.
+
+See [customization](docs/guide.md#customize) and [roles and single CLI installations](docs/guide.md#roles-and-single-cli-installations).
+
+</details>
 
 <details>
 <summary>Will quality suffer?</summary>
@@ -152,10 +135,14 @@ If the rules feel too forceful, override them with personal rules, or remove `@~
 ## Advanced (optional)
 
 <details>
-<summary>More commands: panels, batches, checklists, ratings, updates, cleanup</summary>
+<summary>Manual dispatch and all commands (the main session uses them; you need not)</summary>
 
 | Command | Purpose and example |
 | --- | --- |
+| `aiw write . 1200 task.txt` | Edit code (a Codex main session edits files itself) |
+| `aiw review . 900 task.txt` | Read-only review, finding code |
+| `aiw draft . 600 task.txt` | Drafts, rewrites, summaries |
+| `aiw doctor` | Shows which model each role resolves to and checks the install |
 | `aiw <seat> . 900 task.txt` | Assign to a named seat; common flags: `--ro` read-only, `--worktree` writes in an independent worktree, `--net` opens the network for Codex writes; details in the [reference manual](docs/reference.zh-CN.md#命令) (Chinese) |
 | `aiw panel` | Collect independent opinions: `aiw panel . 600 task.txt --prior prior.md`; pass your own judgment with `--prior`, then accept, reject or defer each opinion, without majority voting |
 | `aiw map` | Apply one instruction per file: `aiw map . 600 task.txt src/a.py src/b.py` |

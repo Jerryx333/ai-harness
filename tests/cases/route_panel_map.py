@@ -1,6 +1,8 @@
 """route panel map regression cases."""
 from __future__ import annotations
 
+from cases.dispatch_switch import CASES as DISPATCH_CASES
+
 from support import (
     FAKE_AGENT_USE,
     Path,
@@ -864,3 +866,5 @@ CASES = {case.__name__: case for case in (
     route_cross_session,
     handoff_cli,
 )}
+
+CASES.update(DISPATCH_CASES)

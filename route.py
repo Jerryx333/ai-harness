@@ -29,6 +29,7 @@ import tempfile
 from pathlib import Path
 
 import findings
+import dispatch
 # Validate before importing worker (which also serves non-hook commands).
 from seats_config import ConfigError, load_seats, ROLE_NAMES, BUILTIN_COMMANDS
 try:
@@ -293,6 +294,7 @@ def main() -> int:
     hook = "--hook" in sys.argv
     ctx, context_text = None, ""
     cross_session = False
+    dispatch_off, dispatch_until = False, None
     try:
         config = load_seats(HERE)
     except ConfigError as error:
@@ -329,6 +331,7 @@ def main() -> int:
         main_ = main_ or ("codex" if "turn_id" in payload else "claude")
         ctx, context_text = context_hint(payload)
         cross_session = msg.lstrip().startswith("<cross-session-message")
+        dispatch_off, dispatch_until = dispatch.is_off(STATE)
     else:
         msg = " ".join(args) if args else sys.stdin.read()
     try:
@@ -351,12 +354,15 @@ def main() -> int:
             f.write(json.dumps({"ts": dt.datetime.now().astimezone().isoformat(timespec="seconds"), "host": socket.gethostname(),
                                 "project": res["project"], "rule": res["rule"], "source": res.get("source"),
                                 "escape": res["escape"], "len": len(msg), "ctx": ctx,
+                                **({"dispatch_off": True} if dispatch_off else {}),
                                 **({"cross_session": True} if cross_session else {})}, ensure_ascii=False) + "\n")
     except OSError:
         pass
     if hook:
         context = ["[派单] " + res["instruction"]] if res["instruction"] else []
-        hint = findings.hint_text() if not cross_session else ""
+        if dispatch_off:
+            context = [f"[派单已关闭] 用户已用 aiw off 关闭派单（{dispatch.until_text(dispatch_until)}），本会话所有工作由主会话自己完成，不调用 aiw write/review/draft/panel/goal、不运行对照实验；用户点名派单时照做。"]
+        hint = findings.hint_text() if not cross_session and not dispatch_off else ""
         if hint:
             context.append(hint)
         if context_text:

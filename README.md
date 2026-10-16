@@ -137,6 +137,7 @@ aiw 负责把任务交给座位；agent-use 负责调用注册的 provider；age
 | `aiw map` | 对每个文件执行同一要求：`aiw map . 600 task.txt src/a.py src/b.py`；默认用 `draft` 角色，最多并发 3 单。 |
 | `aiw goal init / verify` | 用 `aiw goal init docs/goals/demo.json` 建清单；修改示例任务、`verify` 命令和 `paths`，再跑 `aiw goal verify docs/goals/demo.json --full`。 |
 | `aiw doctor` | `aiw doctor` 检查座位和安装；`aiw doctor --fingerprint` 输出一行配置指纹，即版本和哈希摘要，便于比较。 |
+| `aiw off [30m/2h/3d/forever]` / `aiw on` / `aiw status` | 关闭派单提示（默认至本地次日零点）、恢复、查看状态；仍可点名派单。 |
 | `aiw rate` | 给派单评分：`aiw rate <run> ok\|fixed\|rework\|discard [--note 文本]`；`aiw rate --pending` 查看待评分单。 |
 | `aiw note` | 保存观察：`aiw note . "检查失败" --expected "检查通过" --evidence "测试输出"`。 |
 | `aiw sync` | `aiw sync` 用 `git pull --ff-only` 更新 aiw 仓库，不能合并分叉历史；已安装的 agent-use 和 agent-use-adapters 也一并更新；更新已安装规则/钩子需重跑安装。 |

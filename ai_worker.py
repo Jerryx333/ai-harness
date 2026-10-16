@@ -1963,6 +1963,8 @@ def _doctor() -> int:
     print(f"Discord 频道：{discord_channel() or '未配置'}；钥匙串{'有' if keychain_token() else '无'}；待发通知：{pending_count(readonly=True)}")
     print("待发通知由 aiw freecheck 或下一次通知补发。")
     print(f"host: {socket.gethostname()}   aiw: {HERE}   state: {STATE}")
+    from dispatch import status_text
+    print(status_text(STATE))
     print(f"顶替上限（每日，仅成功顶替计数）：{substitute_limits()}")
     if os.environ.get("AIW_CODEX_SHARED_HOME") == "1":
         print(f"  Codex 执行方 home: {STATE / 'codex-home'}（已关闭，AIW_CODEX_SHARED_HOME=1）")

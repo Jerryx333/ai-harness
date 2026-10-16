@@ -137,6 +137,7 @@ You need macOS (the only tested OS), Python 3.11+, and logged-in Claude Code or 
 | `aiw map` | Apply one instruction per file: `aiw map . 600 task.txt src/a.py src/b.py`; defaults to the `draft` role, up to 3 jobs. |
 | `aiw goal init / verify` | Create a checklist with `aiw goal init docs/goals/demo.json`; edit its example tasks, `verify` commands and `paths`, then run `aiw goal verify docs/goals/demo.json --full`. |
 | `aiw doctor` | Check seats and setup: `aiw doctor`; `aiw doctor --fingerprint` prints a fingerprint (version/hash summary). |
+| `aiw off [30m/2h/3d/forever]` / `aiw on` / `aiw status` | Pause dispatch hints (until the next local midnight by default), resume, or check status; explicit assignments still work. |
 | `aiw rate` | Rate an assignment: `aiw rate <run> ok\|fixed\|rework\|discard [--note text]`; find unrated runs with `aiw rate --pending`. |
 | `aiw note` | Save an observation: `aiw note . "Check failed" --expected "Check passes" --evidence "test output"`. |
 | `aiw sync` | Update this aiw checkout using `git pull --ff-only`: `aiw sync`; cannot merge divergent history. Installed agent-use and agent-use-adapters checkouts are updated too. Rerun the installer to refresh installed rules/hooks. |

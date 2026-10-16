@@ -254,6 +254,10 @@ agent_use 座位通过本地配置接入 [agent-use](https://github.com/Jerryx33
 
 ## 命令
 
+### 派单开关：off / on / status
+
+`aiw off` 关闭派单至本地时区次日 00:00；`aiw off 30m|2h|3d` 指定时长，`aiw off forever` 关闭直到 `aiw on`。`aiw status` 查看状态，off/on 后也会打印状态。状态保存在 `$AIW_STATE/dispatch.json`（默认仓库 `state/dispatch.json`），过期或损坏视为开启。关闭时钩子暂停派单和缓冲区提示，保留上下文提示；直接调用 `aiw write/review/draft/panel/goal` 仍可执行。
+
 ```
 aiw <seat> <workdir> <timeout_s> <prompt_file> [--ro] [--text] [--worktree] [--net] [--no-fallback] [--attach 文件 ...]
 aiw panel <workdir> <timeout_s> <prompt_file> [seat ...] [--attach 文件 ...] [--prior 文件] [--free] [--full]

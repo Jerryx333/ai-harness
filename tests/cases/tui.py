@@ -170,7 +170,7 @@ def tui_launch():
         codex.chmod(0o755)
         # Exercise a repository entry path containing spaces as well.
         repo = t / 'repo space'; (repo / 'bin').mkdir(parents=True)
-        for name in ('tui.py', 'env_compat.py', 'bin/aiw'):
+        for name in ('tui.py', 'dispatch.py', 'env_compat.py', 'bin/aiw'):
             shutil.copy(REPO / name, repo / name)
         env = dict(os.environ, PATH=str(b), AIW_PYTHON=sys.executable, AIW_STATE=str(t / 'state space'))
         env.pop('TMUX', None)

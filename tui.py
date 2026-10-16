@@ -12,6 +12,7 @@ import sys
 import tomllib
 import uuid
 
+from dispatch import is_off
 from env_compat import getenv, valid_tui_id
 
 HERE = Path(__file__).resolve().parent
@@ -216,7 +217,8 @@ def status(tui_id, pane_path=None, session=None):
 
 
 def _dispatch_status(tui_id):
-    idle = '○ 派单空闲'
+    off, _ = is_off(Path(getenv('AIW_STATE', HERE / 'state')))
+    idle = '派单已关闭' if off else '○ 派单空闲'
     try:
         if not valid_tui_id(tui_id):
             return idle
@@ -224,14 +226,17 @@ def _dispatch_status(tui_id):
         thread = mapping[0].strip() if mapping else ''
         board = shutil.which('aiw-board')
         if not board:
-            return '派单 ?（未安装 aiw-board）' if thread else idle
+            return ('派单 ?（未安装 aiw-board）' + (' ·已关闭' if off else '')) if thread else idle
         if not thread:
             thread = 'aiw-tui-' + tui_id
         result = subprocess.run([board, 'statusline'], input=json.dumps({'session_id': thread}),
                                 capture_output=True, text=True, timeout=10)
-        return result.stdout.splitlines()[0] if result.stdout else '派单 ?'
+        line = result.stdout.splitlines()[0] if result.stdout else '派单 ?'
+        if off:
+            return line.replace('派单空闲', '派单已关闭') if '派单空闲' in line else line + ' ·已关闭'
+        return line
     except Exception:
-        return '派单 ?'
+        return '派单 ? ·已关闭' if off else '派单 ?'
 
 
 def _has_status_line_override(args):

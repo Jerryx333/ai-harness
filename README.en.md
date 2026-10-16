@@ -6,7 +6,7 @@
 
 Works with Claude Code, Codex, pi and omp as the main session.
 
-<p align="center"><img src="assets/session.en.svg" alt="Session example: you ask as usual, a hook suggests a seat, the main session dispatches a task, verifies and commits" width="820"></p>
+<p align="center"><img src="assets/demo-session.en.svg" alt="Session example: you ask as usual, a hook suggests a seat, the main session dispatches a task, verifies and commits" width="900"></p>
 
 ## Why aiw
 

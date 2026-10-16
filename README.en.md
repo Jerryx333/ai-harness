@@ -14,7 +14,7 @@ For people who use Claude Code, Codex, pi or omp as their main tool and keep hit
 | Processes | No service, nothing resident; runs only when you assign work |
 | Changes to your setup | Claude Code: one import line in `~/.claude/CLAUDE.md`, one hint hook in `settings.json`<br>Codex: a rules block in `~/.codex/AGENTS.md`, one hint hook in `hooks.json`<br>pi / omp: a rules block in `~/.pi/agent/AGENTS.md` / `~/.omp/agent/AGENTS.md`, no hook<br>Codex, pi and omp are touched only if installed; everything is backed up first |
 | Everyday commands | 4: `aiw doctor`, `aiw review`, `aiw write`, `aiw draft` |
-| Stop using it | Undo the changes above and remove the command symlink by hand; see [Uninstall](docs/guide.md#uninstall) |
+| Stop using it | Run `~/.claude/aiw/uninstall.sh` (preview with `--dry-run`); see [Uninstall](docs/guide.md#uninstall) |
 
 Keep your workflow: use Claude Code or Codex as usual. When work is suitable to hand off, it suggests who should take it; you decide.
 

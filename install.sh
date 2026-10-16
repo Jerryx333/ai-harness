@@ -14,6 +14,7 @@
 #   6. 校验派单规则，跑一次 aiw doctor
 # 先预检所有要改的 JSON，坏了一处都不动；JSON/标记块用临时文件原子替换。
 # 兼容 macOS 自带 bash 3.2。
+# 卸载：uninstall.sh
 set -euo pipefail
 
 CLAUDE_HOOK=settings

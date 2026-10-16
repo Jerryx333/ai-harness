@@ -1202,3 +1202,117 @@ def install_pi_omp_agents():
 
 
 CASES['install_pi_omp_agents'] = install_pi_omp_agents
+
+
+def uninstall_roundtrip():
+    with tempfile.TemporaryDirectory() as td:
+        home, env = fake_home(Path(td))
+        repo = home / '.claude/aiw'
+        # Exercise the symlink installation layout as well as the checkout layout.
+        checkout = home / 'checkout'
+        repo.rename(checkout)
+        repo.symlink_to(checkout, target_is_directory=True)
+        personal = home / '.config/aiw/CLAUDE.personal.md'
+        personal.parent.mkdir(parents=True)
+        personal.write_text('personal\n')
+        md = home / '.claude/CLAUDE.md'
+        md.write_bytes(b'user rules\r\n')
+        settings = home / '.claude/settings.json'
+        original = {'model': 'user-model', 'hooks': {
+            'UserPromptSubmit': [{'hooks': [{'command': 'echo mine', 'type': 'command'}]}],
+            'Stop': [{'hooks': [{'command': 'echo stop'}]}]}}
+        settings.write_text(json.dumps(original))
+        for directory in ('.codex', '.pi/agent', '.omp/agent'):
+            folder = home / directory
+            folder.mkdir(parents=True)
+            (folder / 'AGENTS.md').write_text('user agents\n')
+        result = sh(['bash', str(repo / 'install.sh')], env=env)
+        check(result.returncode == 0, result.stdout + result.stderr)
+        # install.sh normalizes newlines; verify uninstall preserves the current bytes.
+        md.write_bytes(md.read_bytes().replace(b'user rules\n', b'user rules\r\n'))
+        state = checkout / 'state/keep'
+        state.write_text('keep')
+        # Preserve content following the block, including a second blank line.
+        agents = home / '.codex/AGENTS.md'
+        agents.write_text(agents.read_text() + '\n\nafter\n')
+        command = ['bash', str(checkout / 'uninstall.sh')]
+
+        def snapshot():
+            return {str(p.relative_to(home)): (('link', os.readlink(p)) if p.is_symlink()
+                    else ('file', p.read_bytes())) for p in home.rglob('*')
+                    if p.is_symlink() or p.is_file()}
+
+        before = snapshot()
+        result = sh(command + ['--dry-run'], env=env)
+        check(result.returncode == 0 and '将修改' in result.stdout, result.stdout + result.stderr)
+        check(snapshot() == before, 'dry-run modified files')
+        result = sh(command, env=env)
+        check(result.returncode == 0, result.stdout + result.stderr)
+        check(md.read_bytes() == b'user rules\r\n\n', repr(md.read_bytes()))
+        check(json.loads(settings.read_text()) == original, settings.read_text())
+        check(json.loads((home / '.codex/hooks.json').read_text()) == {}, 'empty hooks remain')
+        for directory in ('.codex', '.pi/agent', '.omp/agent'):
+            text = (home / directory / 'AGENTS.md').read_text()
+            check('aiw:begin' not in text and 'user agents\n' in text, text)
+        check(agents.read_text() == 'user agents\n\n\nafter\n', repr(agents.read_text()))
+        check(not (home / '.local/bin/aiw').is_symlink() and not repo.is_symlink(), 'links remain')
+        check('aiw: on PATH' not in (home / '.zshrc').read_text(), 'PATH remains')
+        check(personal.read_text() == 'personal\n' and state.read_text() == 'keep', 'local data changed')
+        # Every changed regular file has a recoverable backup; removed links leave no .bak.
+        for path in (md, settings, agents, home / '.codex/hooks.json', home / '.zshrc'):
+            check(list(path.parent.glob(path.name + '.bak-*')), f'no backup: {path}')
+        for path in (home / '.local/bin/aiw', repo):
+            check(not list(path.parent.glob(path.name + '.bak-*')), f'link backup left: {path}')
+        before = snapshot()
+        result = sh(command, env=env)
+        check(result.returncode == 0 and snapshot() == before, 'second uninstall changed files')
+
+
+def uninstall_preflight():
+    for broken in ('.claude/settings.json', '.codex/hooks.json'):
+        with tempfile.TemporaryDirectory() as td:
+            home, env = fake_home(Path(td))
+            repo = home / '.claude/aiw'
+            md = home / '.claude/CLAUDE.md'
+            md.write_text('@~/.claude/aiw/CLAUDE.md\n')
+            path = home / broken
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text('{oops')
+            before = {str(p): p.read_bytes() for p in home.rglob('*') if p.is_file()}
+            result = sh(['bash', str(repo / 'uninstall.sh')], env=env)
+            check(result.returncode != 0 and '没有做任何改动' in result.stderr, result.stdout + result.stderr)
+            check({str(p): p.read_bytes() for p in home.rglob('*') if p.is_file()} == before,
+                  'invalid JSON changed files')
+            result = sh(['bash', str(repo / 'uninstall.sh'), '--unknown'], env=env)
+            check(result.returncode == 64 and '用法' in result.stderr, result.stdout + result.stderr)
+
+
+def uninstall_preserves_foreign_entries():
+    with tempfile.TemporaryDirectory() as td:
+        home, env = fake_home(Path(td))
+        repo = home / '.claude/aiw'
+        link = home / '.local/bin/aiw'
+        link.parent.mkdir(parents=True)
+        link.symlink_to(home / 'other/bin/aiw')
+        zsh = home / '.zshrc'
+        zsh.write_text('# aiw: on PATH\nexport PATH="custom:$PATH"\n')
+        agents = home / '.codex/AGENTS.md'
+        agents.parent.mkdir()
+        agents.write_text('<!-- aiw:begin（install.sh 生成，勿手改） -->\nblock\n<!-- aiw:end -->\n\n')
+        settings = home / '.claude/settings.json'
+        settings.write_text(json.dumps({'hooks': {'UserPromptSubmit': [
+            {'hooks': [{'command': 'aiw/route.py'}], 'matcher': '*'},
+            {'hooks': [{'command': 'aiw/route.py'}, {'command': 'echo mine'}]}]}}))
+        result = sh(['bash', str(repo / 'uninstall.sh')], env=env)
+        check(result.returncode == 0 and '仓库和 state/ 保留' in result.stdout, result.stdout + result.stderr)
+        check(link.is_symlink() and os.readlink(link) == str(home / 'other/bin/aiw'), 'foreign link removed')
+        check(zsh.read_text() == 'export PATH="custom:$PATH"\n', zsh.read_text())
+        check(agents.exists() and agents.read_bytes() == b'', 'empty AGENTS removed')
+        groups = json.loads(settings.read_text())['hooks']['UserPromptSubmit']
+        check(groups == [{'hooks': [], 'matcher': '*'}, {'hooks': [{'command': 'echo mine'}]}], str(groups))
+        check(repo.is_dir(), 'checkout removed')
+
+
+CASES.update({case.__name__: case for case in (
+    uninstall_roundtrip, uninstall_preflight, uninstall_preserves_foreign_entries,
+)})

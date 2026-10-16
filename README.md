@@ -1,207 +1,207 @@
 # aiw
 
-[中文](README.md) | [English](README.en.md)
+[English](README.md) | [中文](README.zh-CN.md)
 
-**让主会话少花 token：读代码、改文件、跑测试派出去，主会话只写单和验收。**
+**Spend fewer main-session tokens: hand off reading code, editing files and running tests; the main session only writes tasks and verifies.**
 
-支持 Claude Code、Codex、pi、omp 当主会话。
+Works with Claude Code, Codex, pi and omp as the main session.
 
-<p align="center"><img src="assets/demo-session.svg" alt="会话示例：你照常提需求，钩子提示该派给谁，主会话写单派出去，验收后提交" width="900"></p>
+<p align="center"><img src="assets/demo-session.en.svg" alt="Session example: you ask as usual, a hook suggests a seat, the main session dispatches a task, verifies and commits" width="900"></p>
 
-## 为什么选它
+## Why aiw
 
-- **省主会话 token**：过程不进主会话，只收结果。作者的配对对照里主会话少花约三分之一；日常长会话中改 3 个文件以上的需求，约为自己改的四分之一。
-- **你什么都不用管**：照常聊天。派不派、派给谁、怎么验收，主会话自己定；想换模型、加座位，也跟主会话说一句，它会改本地配置并用 `aiw doctor` 检查。
-- **入侵少**：只在本机装了的 CLI 里加几行，改前都备份，不改 shell 配置；想先试命令可用 `--minimal` 只装命令。不想用了执行 `~/.claude/aiw/uninstall.sh`。
-- **轻量**：不起服务、不常驻，派单时才运行，只要 Python 3.11+。常驻规则约 1300 字；钩子只在命中派单规则的消息上加一两行提示，其余轮次不注入。
+- **Fewer main-session tokens**: the work happens elsewhere; only results come back. In the author's paired comparison the main session spent about a third less; in everyday long sessions, tasks touching 3+ files cost about a quarter of doing them directly.
+- **Nothing for you to manage**: chat as usual. The main session decides whether to dispatch, to whom and how to verify. To switch models or add seats, just tell the main session; it edits the local configuration and checks it with `aiw doctor`.
+- **Minimal footprint**: a few lines in the CLIs you have installed, backed up first, and it never edits your shell configuration; `--minimal` installs just the command. To remove it, run `~/.claude/aiw/uninstall.sh`.
+- **Lightweight**: no service, nothing resident; it runs only when work is dispatched. Needs only Python 3.11+. The resident rules are about 1,300 characters; the hook adds a one- or two-line hint only on messages that match an assignment rule and nothing otherwise.
 
 <details>
-<summary>安装具体改了哪些地方</summary>
+<summary>Exactly what installation changes</summary>
 
-| 主会话 | 改动 |
+| Main session | Changes |
 | --- | --- |
-| Claude Code | `~/.claude/CLAUDE.md` 加一行引用，`settings.json` 加一个提示钩子 |
-| Codex | `~/.codex/AGENTS.md` 加一段规则，`hooks.json` 加一个提示钩子 |
-| pi / omp | `~/.pi/agent/AGENTS.md` / `~/.omp/agent/AGENTS.md` 加一段规则，不加钩子 |
+| Claude Code | One import line in `~/.claude/CLAUDE.md`, one hint hook in `settings.json` |
+| Codex | A rules block in `~/.codex/AGENTS.md`, one hint hook in `hooks.json` |
+| pi / omp | A rules block in `~/.pi/agent/AGENTS.md` / `~/.omp/agent/AGENTS.md`, no hook |
 
-另外建 `~/.local/bin/aiw` 软链，不改 shell 配置（`~/.local/bin` 不在 PATH 时只提示）。Codex、pi、omp 只在本机装了时才改。`--minimal` 只建软链，不改以上任何文件。卸载脚本可先加 `--dry-run` 预览，细节见[安装做了什么](docs/guide.zh-CN.md#安装做了什么)和[卸载](docs/guide.zh-CN.md#卸载)。
+It also creates the `~/.local/bin/aiw` symlink and never edits your shell configuration (it only prints a hint if `~/.local/bin` is not on PATH). Codex, pi and omp are touched only if installed. `--minimal` creates just the symlink and leaves every file above alone. Preview the uninstaller with `--dry-run`; see [what the installer changes](docs/guide.md#what-the-installer-changes) and [Uninstall](docs/guide.md#uninstall).
 
 </details>
 
-## 安装
+## Install
 
-需要 macOS（目前只在 macOS 测试过）和已登录的 Claude Code 或 Codex CLI（至少一个）。
+You need macOS (the only tested OS) and logged-in Claude Code or Codex CLI (at least one).
 
 ```bash
 git clone https://github.com/Jerryx333/aiw.git ~/.claude/aiw && ~/.claude/aiw/install.sh
-aiw doctor   # 提示 ~/.local/bin 不在 PATH 时，按提示加上再新开终端
+aiw doctor   # if it says ~/.local/bin is not on PATH, add it and open a new terminal
 ```
 
-装好后照常用，不用记任何命令。
+Then keep working as usual; there are no commands to learn.
 
-只想先试命令、不动任何配置：`~/.claude/aiw/install.sh --minimal` 只装 `aiw` 命令，不改 CLAUDE.md、settings.json、Codex 配置和 shell 配置；之后想接规则和钩子，不带参数重跑即可。安装脚本从不改 shell 配置。
+To try the command without touching any configuration: `~/.claude/aiw/install.sh --minimal` installs only the `aiw` command and leaves CLAUDE.md, settings.json, Codex configuration and your shell configuration alone; rerun without the flag later to connect the rules and hooks. The installer never edits your shell configuration.
 
 <details>
-<summary>想先手动试一单</summary>
+<summary>Try one assignment by hand</summary>
 
 ```bash
-printf '%s\n' '阅读本仓库，说明入口，并引用文件位置。不要修改文件。' > /tmp/aiw-review.txt
+printf '%s\n' 'Read this repository. Explain its entry points with file references. Do not edit files.' > /tmp/aiw-review.txt
 aiw review "$HOME/.claude/aiw" 900 /tmp/aiw-review.txt --ro
 ```
 
-结果直接打印在终端：`[ai-worker] 实际执行方：…` 是真正干活的座位，`[ai-worker] 全文：…` 是存档位置。每单的任务原文、完整结果和错误输出都在 aiw 仓库的 `state/runs/` 里；失败时最后一行改为「排查」目录，先看其中的 `stderr.txt`。Codex 下次启动可能要求信任新钩子。
+The result prints to your terminal: `[ai-worker] 实际执行方：…` ("actual seat") names the seat that did the work; `[ai-worker] 全文：…` ("full text") points to the saved result. Every run keeps its task, full result and error output under `state/runs/` in the aiw checkout; on failure the last line says 排查 ("troubleshoot") instead, so start with that directory's `stderr.txt`. Codex may ask you to trust the new hook when it next starts.
 
 </details>
 
-## 常见疑问
+## Questions you may have
 
 <details>
-<summary>能派给哪些模型？要我自己配吗？</summary>
+<summary>Which models can it dispatch to? Do I configure it?</summary>
 
-不用自己配。只装一家也有默认分工；想调整就跟主会话说，它改本地配置文件（`~/.config/aiw/seats.local.json`）并跑 `aiw doctor` 检查。可以做到：
+No. A single installed CLI comes with a default split; to adjust it, tell the main session, which edits the local configuration (`~/.config/aiw/seats.local.json`) and runs `aiw doctor`. You can:
 
-- 主会话用强模型，体力活派给同一家更省的模型：比如 Codex 主会话用 GPT-6 Astra、派单用 GPT-6.1 Sol，或 Claude 主会话用 Fable、派单用 Opus 5.5（[Codex 定价](https://developers.openai.com/codex/pricing)：每百万 token，GPT-6 Astra 输入 250 / 输出 1,250 credits，GPT-6.1 Sol 输入 50 / 输出 250 credits）。同一账号下所有模型共用额度，派单不会多出额度。
-- 改代码、评审、起草三类活各排一个候选顺序，第一个不可用就用下一个；任何能在终端里跑的模型都能经 agent-use 接进来。
-- 改代码和评审交给不同模型，多一道交叉评审；`aiw panel` 收集多家独立意见。
+- Use a strong model in the main session and a cheaper one for routine work: for example, GPT-6 Astra with GPT-6.1 Sol in Codex, or Fable with Opus 5.5 in Claude ([Codex pricing](https://developers.openai.com/codex/pricing): credits per million tokens, GPT-6 Astra input 250 / output 1,250; GPT-6.1 Sol input 50 / output 250). All models on one account share the allowance; dispatching does not create extra allowance.
+- Order candidates for edits, reviews and drafts; if the first is unavailable, the next is used. Any model that runs in a terminal can connect through agent-use.
+- Have different models write and review code for a second check; `aiw panel` collects independent opinions.
 
-配置项见[自定义](docs/guide.zh-CN.md#自定义)和[角色与单家安装](docs/guide.zh-CN.md#角色与单家安装)。
-
-</details>
-
-<details>
-<summary>质量会不会降？</summary>
-
-派出去的产出都是待审稿，主会话核对文件、证据和测试结果后才算数。作者做过一次对照：4 个真实需求（各改 3–7 个文件），同一份要求分别由主会话自己改、派给 Codex 改，两边都过了现有测试。请 GPT 和 Claude 盲评，GPT 在 4 题里 3 题选了 Codex 那份，Claude 3 题选了 Claude 那份、1 题打平，评委偏向自家模型，看不出哪边更好。
+See [customization](docs/guide.md#customize) and [roles and single CLI installations](docs/guide.md#roles-and-single-cli-installations).
 
 </details>
 
 <details>
-<summary>派单本身也花主模型 token 吧？</summary>
+<summary>Will quality suffer?</summary>
 
-是的：写要求、读结果、核对都要花，所以只提示、不自动派。省多少看情况：
-
-- 上面那 4 个需求，每个都从空会话开始做：派单时主会话合计少花约三分之一，单个需求从基本持平到少一半不等；代价是每个需求多等 10–20 分钟。
-- 作者日常使用（约 300 个需求，不是对照实验）：改 3 个文件以上的需求，派单时主会话花费的中位数约为自己改的四分之一。差距可能来自长会话：平时会话常带着十几万到几十万的上下文，自己改代码的每一轮都按这个量计费。
-- 改 1–2 个文件的小活没有对照数据，通常自己做更划算。
-
-想看自己的实际用量：`aiw tokens`（本机 Claude Code 主会话用量和上下文构成）、`aiw weekly`（派单成功率、按座位 × 任务类别的质量和 token 汇总）。
+All assigned work is a draft for review. The main conversation checks files, evidence and test results before accepting it. The author ran a comparison: 4 real tasks (3–7 files each), each done once by the main conversation itself and once by assigning it to Codex, from the same instructions. Both versions passed the existing tests. In a blind review, GPT preferred the Codex version in 3 of 4 tasks and Claude preferred the Claude version in 3 (one tie). Each judge leaned toward its own model; neither side was clearly better.
 
 </details>
 
 <details>
-<summary>常驻规则和钩子会不会把上下文搞重？</summary>
+<summary>Does assigning work also use the main model's tokens?</summary>
 
-不会。常驻规则（`~/.claude/aiw/CLAUDE.md`，或 Codex 的 AGENTS 标记块）约 1300 字，细节都放在参考手册里，主会话用到时再读。钩子每轮只做一次本地正则判定（约 70 毫秒）：命中派单规则时注入一两行提示（约 100–300 字），没命中时什么都不注入；`aiw off` 关闭派单后，提示每个会话只出现一次。派出去的过程不进主会话，只收结果。
+Yes: writing instructions, reading results and checking them all use tokens, so it only suggests assignments; it does not make them automatically. How much it saves depends:
 
-</details>
+- On the 4 tasks above, each started from an empty session, assigning cut main-conversation usage by about a third in total, ranging from roughly even to half per task. The cost was 10–20 more minutes of waiting per task.
+- In the author's daily use (about 300 tasks, not a controlled experiment), for tasks touching 3 or more files the median main-conversation cost when assigning was about a quarter of doing it directly. The gap is likely due to long sessions: everyday sessions often carry 100k–300k+ tokens of context, and every turn of editing code yourself is billed at that size.
+- Small edits to 1–2 files have no comparison data; doing them yourself is usually cheaper.
 
-<details>
-<summary>派一单要等多久？</summary>
-
-按作者本机一周的记录（中位数）：改代码约 4 分钟（Codex 要读代码、改文件、跑测试）；只读评审、找代码约 2–3 分钟；只写文字时免费模型约 20 秒，Claude 约 2 分钟。派出去后主会话可以接着做别的；又小又急的活，自己做更快。
-
-</details>
-
-<details>
-<summary>会不会把我的仓库改乱？</summary>
-
-write 角色解析到 Codex 时在 Codex 沙箱里跑：只能写项目目录（在 git worktree 里还包括 `git add` 需要的 Git 目录），默认不联网。结束时列出改了哪些文件，改动留在工作区，由主会话看过再提交。只有 Claude 时用 claude-write 的受限模式和沙箱，只改工作区文件，不能 git add/commit。只读单不能改文件。
+To see your actual usage, use `aiw tokens` (local Claude Code main-session usage and context breakdown) and `aiw weekly` (assignment success rates, seat quality by task class, and token totals).
 
 </details>
 
 <details>
-<summary>会不会花钱？代码会发到哪里？</summary>
+<summary>Do the resident rules and the hook bloat the context?</summary>
 
-Codex、Claude 按你自己的账号计费。接入的免费模型可以标成只用免费档，一旦检测到收费会自动停用；但这是调用之后才检测，不保证零费用。
-
-交给哪个模型，任务要求和附带材料就发给那个模型背后的服务。只负责写文字的模型默认看不到你的代码，要你明确附上才会发过去。密码、密钥和私人数据不要交给第三方模型。
+No. The resident rules (`~/.claude/aiw/CLAUDE.md`, or the block in Codex's AGENTS.md) are about 1,300 characters; details live in the reference and are read only when needed. The hook runs one local regex check per turn (about 70 ms) and injects a one- or two-line hint (100–300 characters) only when a message matches an assignment rule; otherwise it injects nothing. After `aiw off`, the notice appears once per session. The dispatched work never enters the main session; only results come back.
 
 </details>
 
 <details>
-<summary>只装了一家能用吗？</summary>
+<summary>How long does an assignment take?</summary>
 
-能。只有 Codex：改代码主会话自己做，评审和起草派另一个 Codex 会话。只有 Claude Code：改代码派 Opus 5.5 的 `claude-write` 座位（需要 Claude Code ≥ 2.1.259；受限模式加沙箱，只能改项目目录，不能 git add/commit），评审和起草派 Opus 5.5。单家时的评审是同一家另开上下文，不是跨家族复核；会诊需要至少两家，可接 agent-use 文本座位。
-
-</details>
-
-<details>
-<summary>Fable 会不会多花钱？</summary>
-
-座位默认固定 Opus，不会自动用 Fable。Pro 计划上 Fable 按量付费；Max 上 Fable 计入常规周限额、最多占周限额一半，且消耗快于其他模型。见 [Claude 官方说明](https://support.claude.com/en/articles/15424964-claude-fable-models-on-your-plan)。
+Medians from one week on the author's machine: code changes about 4 minutes (Codex reads code, edits files and runs tests); read-only reviews and code search about 2–3 minutes; text only about 20 seconds with free models, about 2 minutes with Claude. The main conversation can keep working meanwhile. For small, urgent work, doing it yourself is faster.
 
 </details>
 
 <details>
-<summary>支持 Linux 吗？规则太强势怎么办？</summary>
+<summary>Will it mess up my repository?</summary>
 
-Linux 尚未测试，已测试 macOS。
-
-规则太强势：用个人规则覆盖，或从 `~/.claude/CLAUDE.md` 删除 `@~/.claude/aiw/CLAUDE.md`，或重装为 `install.sh --minimal` 只留 `aiw` 命令。若也不想收到派单提示，按[卸载小节](docs/guide.zh-CN.md#卸载)移除 aiw 钩子。
+When write resolves to Codex, code-change work runs in the Codex sandbox: it can write only to the project directory (in a git worktree, also the Git directories `git add` needs) and has no network by default. When it finishes, it lists the changed files. Changes stay in your working tree for the main conversation to review before committing. With Claude only, claude-write uses restricted mode and a sandbox to edit workspace files, with no git add/commit. Read-only work cannot change files.
 
 </details>
 
-## 进阶（可以不看）
+<details>
+<summary>Does it cost money? Where does my code go?</summary>
+
+Codex and Claude use your own accounts and their billing. Connected free models can be marked for free-tier use only and automatically disabled when charging is detected. Detection happens after a call, so this does not guarantee zero cost.
+
+Task instructions and attached material go to the service behind the model you assign. Models that only handle text cannot see your code by default; you must explicitly attach it. Do not send passwords, keys or private data to third-party models.
+
+</details>
 
 <details>
-<summary>手动派单与全部命令（主会话在用，你不用记）</summary>
+<summary>Can I use it with just one CLI installed?</summary>
 
-| 命令 | 用途与示例 |
+Yes. Codex only: edit code in the main session and assign reviews/drafts to another Codex session. Claude Code only: assign edits to the Opus 5.5 `claude-write` seat (requires Claude Code ≥ 2.1.259; restricted mode plus sandbox, project-directory edits only, no git add/commit), and reviews/drafts to Opus 5.5. With one family, review opens another context in that family; it is not a cross-family review. Panels require at least two seats; add an agent-use text seat if needed.
+
+</details>
+
+<details>
+<summary>Can Fable cost extra?</summary>
+
+Seats pin Opus and never automatically select Fable. On Pro, Fable is billed by usage. On Max, Fable counts toward the regular weekly limit, can use at most half of it, and consumes allowance faster than other models. See [Claude's official explanation](https://support.claude.com/en/articles/15424964-claude-fable-models-on-your-plan).
+
+</details>
+
+<details>
+<summary>Linux? Are the rules too forceful?</summary>
+
+Linux is untested; only macOS has been tested.
+
+If the rules feel too forceful, override them with personal rules, remove `@~/.claude/aiw/CLAUDE.md` from `~/.claude/CLAUDE.md`, or reinstall with `install.sh --minimal` to keep only the `aiw` command. To stop assignment suggestions too, remove the aiw hooks as described in [Uninstall](docs/guide.md#uninstall).
+
+</details>
+
+## Advanced (optional)
+
+<details>
+<summary>Manual dispatch and all commands (the main session uses them; you need not)</summary>
+
+| Command | Purpose and example |
 | --- | --- |
-| `aiw write . 1200 task.txt` | 改代码（Codex 主会话改文件自己做） |
-| `aiw review . 900 task.txt` | 只读评审、在仓库里找代码 |
-| `aiw draft . 600 task.txt` | 起草、改写、摘要 |
-| `aiw doctor` | 看各角色落到哪个模型、安装是否正常 |
-| `aiw <座位> . 900 task.txt` | 点名某个座位派单；常用开关 `--ro` 只读、`--worktree` 在独立 worktree 里派写单、`--net` 给 Codex 写单开放网络，细则见[参考手册](docs/reference.zh-CN.md#命令) |
-| `aiw panel` | 收集多家独立意见：`aiw panel . 600 task.txt --prior prior.md`，用 `--prior` 附上自己的判断，逐条接受、驳回或暂缓，不按多数票 |
-| `aiw map` | 逐文件执行同一要求：`aiw map . 600 task.txt src/a.py src/b.py` |
-| `aiw goal init / verify` | 建清单 `aiw goal init docs/goals/demo.json`，修改任务、验证命令和路径后运行 `aiw goal verify docs/goals/demo.json --full` |
-| `aiw off [30m/2h/3d/forever]` / `aiw on` / `aiw status` | 关闭派单提示（默认至本地次日零点）、恢复、查看状态；仍可点名派单 |
-| `aiw rate` | 给派单评分：`aiw rate <run> ok\|fixed\|rework\|discard [--note 文本]`；待评分单见 `aiw rate --pending` |
-| `aiw note` | 保存观察：`aiw note . "检查失败" --expected "检查通过" --evidence "测试输出"` |
-| `aiw sync` | 快进更新 aiw 及已安装的 agent-use、agent-use-adapters；更新规则/钩子需重跑安装 |
-| `aiw gc` | 清理旧归档（默认保留 30 天），先预览：`aiw gc 30 --dry-run` |
+| `aiw write . 1200 task.txt` | Edit code (a Codex main session edits files itself) |
+| `aiw review . 900 task.txt` | Read-only review, finding code |
+| `aiw draft . 600 task.txt` | Drafts, rewrites, summaries |
+| `aiw doctor` | Shows which model each role resolves to and checks the install |
+| `aiw <seat> . 900 task.txt` | Assign to a named seat; common flags: `--ro` read-only, `--worktree` writes in an independent worktree, `--net` opens the network for Codex writes; details in the [reference manual](docs/reference.zh-CN.md#命令) (Chinese) |
+| `aiw panel` | Collect independent opinions: `aiw panel . 600 task.txt --prior prior.md`; pass your own judgment with `--prior`, then accept, reject or defer each opinion, without majority voting |
+| `aiw map` | Apply one instruction per file: `aiw map . 600 task.txt src/a.py src/b.py` |
+| `aiw goal init / verify` | Create a checklist with `aiw goal init docs/goals/demo.json`; edit tasks, verification commands and paths, then run `aiw goal verify docs/goals/demo.json --full` |
+| `aiw off [30m/2h/3d/forever]` / `aiw on` / `aiw status` | Pause dispatch hints (until the next local midnight by default), resume, or check status; explicit assignments still work |
+| `aiw rate` | Rate an assignment: `aiw rate <run> ok\|fixed\|rework\|discard [--note text]`; find unrated runs with `aiw rate --pending` |
+| `aiw note` | Save an observation: `aiw note . "Check failed" --expected "Check passes" --evidence "test output"` |
+| `aiw sync` | Fast-forward aiw and installed agent-use/agent-use-adapters; rerun the installer to refresh rules/hooks |
+| `aiw gc` | Clean old archives (30 days by default); preview: `aiw gc 30 --dry-run` |
 
 </details>
 
 <details>
-<summary>接更多模型：agent-use</summary>
+<summary>Connect more models: agent-use</summary>
 
-想用其他订阅、本地或免费模型分担工作？[agent-use](https://github.com/Jerryx333/agent-use) 让终端里能用的模型都按同一种方式接进来，加几行配置即可，不用写代码；某家不可用时按你排的顺序换下一家；每次留存原文和过程记录，结果由主会话核对。
+Want other subscriptions, local models or free models to share the work? [agent-use](https://github.com/Jerryx333/agent-use) connects any model you can use in a terminal in the same way with a few configuration lines, no code; when one is unavailable it tries the next in your order; original responses and execution records are saved for the main conversation to check.
 
-[agent-use-adapters](https://github.com/Jerryx333/agent-use-adapters) 已写好 Codex、Claude Code、OpenCode 适配器。安装时用 `~/.claude/aiw/install.sh --with-agent-use` 一起装好，并把 `opencode` 等 provider 注册进 agent-use；座位需要你自己在本地配置里加。只用内置的 Codex / Claude Code 座位时不需要这两个仓库。
+[agent-use-adapters](https://github.com/Jerryx333/agent-use-adapters) has ready-made Codex, Claude Code and OpenCode adapters. Install them with `~/.claude/aiw/install.sh --with-agent-use`, which also registers providers such as `opencode` in agent-use; add seats yourself in your local configuration. Built-in Codex / Claude Code seats work without these two repositories.
 
 ```mermaid
 flowchart LR
-    main["主会话：方案与验收"] --> aiw["aiw：座位 / 角色 / 顶替"]
-    aiw --> cli["内置 CLI 座位：Codex / Claude Code"]
-    aiw --> au["agent-use：provider 调度"]
-    au --> adapters["agent-use-adapters：现成适配器"]
-    au --> custom["自定义 CLI 适配器"]
+    main["Main session: plan and verify"] --> aiw["aiw: seats / roles / fallback"]
+    aiw --> cli["Built-in CLI seats: Codex / Claude Code"]
+    aiw --> au["agent-use: provider dispatch"]
+    au --> adapters["agent-use-adapters: ready-made adapters"]
+    au --> custom["Custom CLI adapter"]
     adapters --> tools["Codex / Claude Code / OpenCode CLI"]
-    custom --> other["你的 CLI"]
+    custom --> other["Your CLI"]
 ```
 
-接入步骤、workspace 座位和 `--text` 等细节见[使用指南](docs/guide.zh-CN.md#接入更多模型可选)。
+For setup steps, workspace seats, `--text` and other details, see the [usage guide](docs/guide.md#add-more-models-optional).
 
 </details>
 
 <details>
-<summary>用好它</summary>
+<summary>Getting the most out of it</summary>
 
-- 先定方案，再派能写清验收条件的小块；又小又急的活自己做。
-- 每单写清目标、上下文、范围、约束和验收命令；文本座位需要用 `--attach` 带上材料。
-- 产出当待审稿：看改动、核对出处、跑测试，并看「实际执行方」。
-- 会诊先写自己的判断，用 `--prior` 归档；大任务用 `aiw goal` 清单。
+- Plan first, then assign small pieces with clear checks. Do tiny, urgent tasks yourself.
+- Include the goal, context, scope, constraints and verification commands; supply text seats with material via `--attach`.
+- Treat results as drafts: inspect changes, check sources, run tests and read the actual-seat line.
+- Before a panel, write your judgment and archive it with `--prior`. Use `aiw goal` for large task lists.
 
-任务单模板、推荐配置和一天的用法见[最佳实践](docs/best-practices.zh-CN.md)。
+See [best practices](docs/best-practices.md) for task templates, a recommended configuration and a daily workflow.
 
 </details>
 
 <details>
-<summary>状态栏和看板：aiw-board</summary>
+<summary>Status line and dashboard: aiw-board</summary>
 
-[aiw-board](https://github.com/Jerryx333/aiw-board) 是独立的只读状态栏和看板，不派单、不写 aiw 状态；展示在途派单、实际执行方、会诊分组、刚完成的成败和今日单数。
+[aiw-board](https://github.com/Jerryx333/aiw-board) is an independent, read-only status line and dashboard; it does not assign tasks or write aiw state. It shows in-flight assignments, actual seats, panel groups, recent successes and failures, and today's count.
 
 ```bash
 git clone https://github.com/Jerryx333/aiw-board.git
@@ -209,12 +209,12 @@ cd aiw-board
 ./install.sh --apply-settings
 ```
 
-安装会备份并替换已有 ccstatusline 配置；`--apply-settings` 会修改 Claude Code settings（先备份），不想自动修改就去掉该参数。装好后用 `aiw board` 打开完整看板。
+Installation backs up and replaces any existing ccstatusline configuration; `--apply-settings` modifies Claude Code settings after backing them up. Omit that flag to leave settings unchanged. After installation, open the full dashboard with `aiw board`.
 
 </details>
 
-## 文档与贡献
+## Docs and contributing
 
-[使用指南](docs/guide.zh-CN.md)（安装细节、工作原理、定制） · [最佳实践](docs/best-practices.zh-CN.md) · [参考手册](docs/reference.zh-CN.md)（全部命令与细则） · [贡献指南](CONTRIBUTING.md)
+[Usage guide](docs/guide.md) (installation, how it works, customization) · [Best practices](docs/best-practices.md) · [Reference manual](docs/reference.zh-CN.md) (Chinese; all commands and rules) · [Contribution guide](CONTRIBUTING.md)
 
-改动走 PR，提交前运行 `python3 tests/test_harness.py` 和 `python3 tests/mutation_check.py`。许可证：[Apache-2.0](LICENSE)。
+Submit changes through a PR; run `python3 tests/test_harness.py` and `python3 tests/mutation_check.py` first. License: [Apache-2.0](LICENSE).

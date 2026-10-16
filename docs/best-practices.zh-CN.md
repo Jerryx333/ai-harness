@@ -1,6 +1,6 @@
 # aiw 最佳实践
 
-[返回 README](../README.md) | [English](best-practices.md)
+[返回 README](../README.zh-CN.md) | [English](best-practices.md)
 
 让主会话保留方案和验收，把边界清楚的执行任务交出去。这份指南面向使用者；完整参数见[参考手册](reference.zh-CN.md#命令)。
 
@@ -15,7 +15,7 @@
 
 先用 `rg -l` 或 `rg -n` 缩小范围。候选不超过 3 个文件且合计不到 20KB，直接读更省事；约 300 行或 20KB 以上的材料，可以先要带 `path:line` 的要点，再回原文核实要下结论的条目。这些是[现有分工规则](reference.zh-CN.md#派单细则)的判断门槛，不是性能保证。只依赖当前对话的总结由主会话写；凭据、账户和私人数据由主会话处理。
 
-[README 的一周本机记录](../README.md#常见疑问)中位数：改代码约 4 分钟，只读评审或找代码约 2–3 分钟，纯文本免费模型约 20 秒、Claude 约 2 分钟。样本只代表作者那一周；写要求、读结果和验收也有开销。又小又急的活自己做，派单后主会话可以继续做别的。
+[README 的一周本机记录](../README.zh-CN.md#常见疑问)中位数：改代码约 4 分钟，只读评审或找代码约 2–3 分钟，纯文本免费模型约 20 秒、Claude 约 2 分钟。样本只代表作者那一周；写要求、读结果和验收也有开销。又小又急的活自己做，派单后主会话可以继续做别的。
 
 角色候选与执行中的顶替是两步：先选首个可用座位，开跑后只按配置及失败类别决定是否顶替。超时要拆小，不换模型重跑；不合格的产出只返工一次。同一目录只跑一个写任务，并行写任务各用独立 git worktree。能力看 `aiw doctor`：Claude 只读座位不能运行命令，所需 diff 和测试输出由主会话先保存再附上。
 
@@ -39,7 +39,7 @@ cat > /tmp/aiw-doc-task.txt <<'TASK'
 目标：读者跑完第一单，知道正文、实际执行方和失败诊断在哪里。
 上下文：阅读 ai_worker.py 的 new_run_dir、main 和 dispatch；
 以当前源码为准，核对 stdout/stderr、output.md 和 stderr.txt 的用途。
-修改范围：仅 README.md 和 README.en.md 的「第一单」说明。
+修改范围：仅 README.zh-CN.md 和 README.md 的「第一单」说明。
 约束：双语逐节对应；不改代码和配置，不提交、不推送；不编造输出。
 验收：python3 tests/test_harness.py readme_bilingual_headings
 应退出 0；主会话另对照源码核实每条行为，并用 git diff 检查范围。
@@ -88,7 +88,7 @@ aiw goal verify docs/goals/demo.json --full
 范围外问题不顺手修，记入改进缓冲区：
 
 ```bash
-aiw note . "归档说明缺少示例" --expected "读者能定位结果" --evidence "文档相关段落" --location "README.md"
+aiw note . "归档说明缺少示例" --expected "读者能定位结果" --evidence "文档相关段落" --location "README.zh-CN.md"
 ```
 
 收到「[缓冲区]」提示，再开新会话运行 `aiw triage start`，集中判断根因。
@@ -132,7 +132,7 @@ aiw doctor
 
    ```bash
    mkdir -p .tmp-baseline
-   git diff -- README.md README.en.md > .tmp-baseline/doc-diff.txt
+   git diff -- README.zh-CN.md README.md > .tmp-baseline/doc-diff.txt
    python3 tests/test_harness.py readme_bilingual_headings > .tmp-baseline/doc-test.txt 2>&1
    printf '%s\n' '只读评审 README 第一单说明：对照 ai_worker.py 核对 stdout/stderr 和归档行为。逐条给出证据，不修改文件。测试结果和 diff 见附件。' > /tmp/aiw-doc-review.txt
    aiw review . 900 /tmp/aiw-doc-review.txt --ro --attach .tmp-baseline/doc-diff.txt --attach .tmp-baseline/doc-test.txt

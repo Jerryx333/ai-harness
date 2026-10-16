@@ -1,6 +1,6 @@
 # aiw best practices
 
-[Back to README](../README.en.md) | [中文](best-practices.zh-CN.md)
+[Back to README](../README.md) | [中文](best-practices.zh-CN.md)
 
 Keep planning and verification in the main session. Assign execution tasks with clear boundaries. This guide is for users; full arguments are in the [reference manual](reference.zh-CN.md#命令) (Chinese).
 
@@ -15,7 +15,7 @@ Keep planning and verification in the main session. Assign execution tasks with 
 
 Narrow the search with `rg -l` or `rg -n`. Read directly when there are at most 3 candidate files totaling less than 20KB. For material around 300 lines or 20KB and above, ask for points with `path:line`, then check the original before drawing conclusions. These are thresholds in the [existing assignment rules](reference.zh-CN.md#派单细则), not performance guarantees. Summaries relying only on the current conversation stay in the main session, as do credentials, accounts and private data.
 
-[README's one-week local medians](../README.en.md#questions-you-may-have): edits about 4 minutes; read-only reviews/searches about 2–3 minutes; text about 20 seconds with free models or 2 minutes with Claude. These describe only that week on the author's machine. Writing instructions, reading results and checking work take time too. Do tiny, urgent tasks yourself; keep working while larger assignments run.
+[README's one-week local medians](../README.md#questions-you-may-have): edits about 4 minutes; read-only reviews/searches about 2–3 minutes; text about 20 seconds with free models or 2 minutes with Claude. These describe only that week on the author's machine. Writing instructions, reading results and checking work take time too. Do tiny, urgent tasks yourself; keep working while larger assignments run.
 
 Role selection and execution fallback are separate: select the first available seat, then use configured fallback only for supported failure categories. Split timed-out tasks instead of retrying with another model; rework an inadequate response only once. Run one write job per directory; parallel writes need separate git worktrees. Check capabilities with `aiw doctor`: Claude read-only seats cannot run commands, so the main session must save and attach needed diffs/test results.
 
@@ -39,7 +39,7 @@ cat > /tmp/aiw-doc-task.txt <<'TASK'
 Goal: after the first job, readers know where responses, actual-seat records and diagnostics are.
 Context: read new_run_dir, main and dispatch in ai_worker.py.
 Check stdout/stderr and the purpose of output.md and stderr.txt against the current source.
-Scope: only the first-assignment explanation in README.md and README.en.md.
+Scope: only the first-assignment explanation in README.zh-CN.md and README.md.
 Constraints: corresponding bilingual sections; no code/config edits, commits or pushes; no invented output.
 Verification: python3 tests/test_harness.py readme_bilingual_headings
 Expect exit 0. The main session also checks every behavior against source and scope with git diff.
@@ -88,7 +88,7 @@ Fill in owner, executable verify, initial `passes: false`, and source/test `path
 Record out-of-scope issues instead of fixing them along the way:
 
 ```bash
-aiw note . "Archive explanation lacks an example" --expected "Readers can locate results" --evidence "Relevant documentation paragraph" --location "README.md"
+aiw note . "Archive explanation lacks an example" --expected "Readers can locate results" --evidence "Relevant documentation paragraph" --location "README.zh-CN.md"
 ```
 
 When the buffer hint (“[缓冲区]”) appears, start a new session and run `aiw triage start` to examine causes together.
@@ -132,7 +132,7 @@ For the small feature “explain archives after the first README assignment”:
 
    ```bash
    mkdir -p .tmp-baseline
-   git diff -- README.md README.en.md > .tmp-baseline/doc-diff.txt
+   git diff -- README.zh-CN.md README.md > .tmp-baseline/doc-diff.txt
    python3 tests/test_harness.py readme_bilingual_headings > .tmp-baseline/doc-test.txt 2>&1
    printf '%s\n' 'Review the first-assignment explanations against ai_worker.py: stdout/stderr and archives. Cite evidence for each finding. Do not edit files. Diff and test results are attached.' > /tmp/aiw-doc-review.txt
    aiw review . 900 /tmp/aiw-doc-review.txt --ro --attach .tmp-baseline/doc-diff.txt --attach .tmp-baseline/doc-test.txt

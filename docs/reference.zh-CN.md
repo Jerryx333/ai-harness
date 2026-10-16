@@ -22,7 +22,7 @@ claude 与 claude-write 均固定 `--model opus`，不跟随用户默认模型�
 panel 默认名单去掉主会话自身后过滤不可用座位，stderr 列原因；不足两家时不派单、rc=1，提示「会诊需要至少两家可用座位；单家安装可接入 agent-use 文本座位」。显式名单同样过滤不可用座位并列原因；显式单家仍展示结果、rc=1。map_default 默认为 draft，也可配置角色；`--seat` 仍可点名座位。
 
 
-新手请先看 [README](../README.md)，安装细节见[使用指南](guide.zh-CN.md)。
+新手请先看 [README](../README.zh-CN.md)，安装细节见[使用指南](guide.zh-CN.md)。
 
 Claude / Codex / pi / omp 主会话的多模型分工层，支持本地接入其他座位。**任意项目、任意机器同一套规矩。** 思路来自 luolei 的 [我的 AI 工作流](https://ai-workflow.zuoluo.tv)。
 

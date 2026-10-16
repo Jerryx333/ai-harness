@@ -1,12 +1,12 @@
-# 参与贡献
+# Contributing
 
-[返回 README](README.md) | [English](CONTRIBUTING.en.md)
+[Back to README](README.md) | [中文](CONTRIBUTING.zh-CN.md)
 
-欢迎补充可复现的问题、文档和离线测试。提交信息中文、英文都接受；许可证是 [Apache-2.0](LICENSE)。
+Reproducible reports, documentation and offline tests are welcome. Commit messages may be Chinese or English. License: [Apache-2.0](LICENSE).
 
-## 开发环境
+## Development setup
 
-需要 Python 3.11+ 和 Git；脚本只用 Python 标准库，测试使用假 CLI 和隔离 HOME，不需要真实模型账号。项目目前只测试过 macOS，Linux 未测试。
+You need Python 3.11+ and Git. Scripts use only the Python standard library; tests use fake CLIs and isolated HOME, without real model accounts. Only macOS has been tested; Linux is untested.
 
 ```bash
 git clone https://github.com/Jerryx333/aiw.git
@@ -15,7 +15,7 @@ python3 tests/test_harness.py readme_bilingual_headings
 bash bin/aiw help
 ```
 
-不运行 `install.sh` 就能试 checkout 里的改动，不会替换你已安装的命令、规则或钩子。用 `bash bin/aiw …` 或 `python3 <入口>.py …` 指向本 checkout；需独立状态与配置时：
+Try checkout changes without running `install.sh`, so your installed command, rules and hooks stay in place. Use `bash bin/aiw …` or `python3 <entry>.py …` to target this checkout. For isolated state/configuration:
 
 ```bash
 mkdir -p .tmp-baseline/dev-state
@@ -23,75 +23,75 @@ printf '%s\n' '{}' > .tmp-baseline/dev-seats.json
 AIW_CONFIG=.tmp-baseline/dev-seats.json AIW_STATE=.tmp-baseline/dev-state python3 ai_worker.py doctor
 ```
 
-这隔离运行状态和本地座位覆盖；doctor 仍检查本机安装。若测试路由，还应设置 `AIW_ROUTER_RULES` 指向测试覆盖文件，并检查项目 `.claude/router-rules.json`。真实派单会使用你已安装的 CLI 和登录状态。
+This isolates runtime state and the local seat override; doctor still checks machine installation. For routing, also point `AIW_ROUTER_RULES` to a test override and check project `.claude/router-rules.json`. Real assignments use your installed CLIs and authentication.
 
-## 代码地图
+## Code map
 
-根目录的每个 Python、Shell 和配置/规则文件：
+Every root Python, Shell and configuration/rule file:
 
-| 文件 | 职责 |
+| File | Responsibility |
 | --- | --- |
-| [ai_worker.py](ai_worker.py) | 派单执行、角色解析、沙箱、顶替、熔断、写锁、归档及 doctor 入口。 |
-| [seats_config.py](seats_config.py) | 加载公开与本地座位配置，合并、校验与行为哈希。 |
-| [doctor_config.py](doctor_config.py) | 只读安装/配置检查、provider 注册表检查和指纹。 |
-| [route.py](route.py) | 合并项目/本机/全局路由，输出派单建议或钩子上下文。 |
-| [panel.py](panel.py) | 并行收集独立只读意见，排除主会话、预检附件，不顶替。 |
-| [map.py](map.py) | 按文件并发派只读任务，保存有序批处理结果。 |
-| [goal.py](goal.py) | 任务清单初始化、下一条、验收、状态和无进展保险丝。 |
-| [findings.py](findings.py) | 解析与清洗观察记录，本机加锁追加、信号抽取和缓冲区提示。 |
-| [triage.py](triage.py) | 建立本机评审批次，校验并应用决定，或撤销评审批次。 |
-| [tokens.py](tokens.py) | 只读统计 Claude Code 转录及派单账本的用量、上下文与覆盖。 |
-| [weekly.py](weekly.py) | 从本机账本、路由及 findings 生成统计周报。 |
-| [track.py](track.py) | 运行并登记长任务，保存进度、输出和进程存活信息。 |
-| [slot.py](slot.py) | 全机测试名额、内存压力等待及后台 QoS。 |
-| [tui.py](tui.py) | `aiw tui`：在 tmux 里启动 Codex 主会话，底栏通过 aiw-board 显示本会话派单摘要。 |
-| [snapshot.py](snapshot.py) | 生成不含凭据的本机配置形状快照，检查漂移。 |
-| [handoff.py](handoff.py) | 生成交接模板与建议路径、校验交接内容并调用 Orca 开新会话。 |
-| [freecheck.py](freecheck.py) | 串行探测免费座位、记录停用并管理 macOS 定时检查。 |
-| [gc.py](gc.py) | 清理旧运行/会诊/批处理及 Codex 日期会话归档，支持预览。 |
-| [harness_ids.py](harness_ids.py) | 统一运行、记录与会诊 ID 的格式和识别。 |
-| [gitenv.py](gitenv.py) | 隔离调用方的 Git 定位环境变量，按工作目录访问仓库。 |
-| [env_compat.py](env_compat.py) | 读取环境变量并处理 Python、状态路径及 agent-use 默认值（`~/.local/share/agent-use`，新路径不存在时沿用已有的 `~/code/ai/agent-use`）；适配器默认在解析出的核心目录同级。 |
-| [install.sh](install.sh) | 幂等安装规则、钩子、命令软链及可选 agent-use 接入，备份已有文件。 |
-| [agent_use_setup.sh](agent_use_setup.sh) | 安装脚本与 sync 共用的生态仓库路径、Git 隔离及更新函数。 |
-| [seats.json](seats.json) | 公开座位、角色、顶替、会诊和运行策略默认值。 |
-| [seats.local.example.json](seats.local.example.json) | 本地座位覆盖示例，不是自动读取的配置。 |
-| [router-rules.json](router-rules.json) | 公开派单匹配规则，第一条命中即停。 |
-| [router-rules.local.example.json](router-rules.local.example.json) | 本机路由覆盖示例。 |
-| [.coderabbit.yaml](.coderabbit.yaml) | CodeRabbit 自动评审语言、分支条件和各路径评审规则。 |
-| [.gitignore](.gitignore) | 排除本机状态、快照、Python 缓存与测试临时产物。 |
-| [CLAUDE.md](CLAUDE.md) | Claude 主会话使用的公开分工规则。 |
-| [AGENTS.harness.md](AGENTS.harness.md) | 安装到 Codex 全局标记块的公开分工规则。 |
+| [ai_worker.py](ai_worker.py) | Assignment execution, roles, sandboxing, fallback, breakers, write locks, archives and doctor entry. |
+| [seats_config.py](seats_config.py) | Load, merge and validate public/local seat configuration; compute behavior hashes. |
+| [doctor_config.py](doctor_config.py) | Read-only installation/configuration checks, provider registry checks and fingerprints. |
+| [route.py](route.py) | Merge project/local/global routing; emit suggestions or hook context. |
+| [panel.py](panel.py) | Collect independent read-only opinions concurrently, exclude the main session, preflight attachments, no fallback. |
+| [map.py](map.py) | Dispatch read-only work per file concurrently; save ordered batch results. |
+| [goal.py](goal.py) | Initialize task lists, select next tasks, verify, report status and stop stalled work. |
+| [findings.py](findings.py) | Parse/sanitize observations; append locally under locks, extract signals and emit buffer hints. |
+| [triage.py](triage.py) | Build local review batches, validate/apply decisions or abort a batch. |
+| [tokens.py](tokens.py) | Read-only usage, context and coverage statistics from Claude Code transcripts and assignment ledger. |
+| [weekly.py](weekly.py) | Generate local statistics from the ledger, routing and findings. |
+| [track.py](track.py) | Run/register long tasks; save progress, output and process liveness. |
+| [slot.py](slot.py) | Machine-wide test slots, memory pressure waiting and background QoS. |
+| [tui.py](tui.py) | `aiw tui`: start a Codex main session in tmux whose status bar shows this session's assignments via aiw-board. |
+| [snapshot.py](snapshot.py) | Generate local configuration-shape snapshots without credentials to compare drift. |
+| [handoff.py](handoff.py) | Generate handoff templates/paths, validate handoffs and invoke Orca for a new session. |
+| [freecheck.py](freecheck.py) | Probe free seats serially, record disabling and manage scheduled macOS checks. |
+| [gc.py](gc.py) | Clean old run/panel/batch and dated Codex session archives; support dry-run. |
+| [harness_ids.py](harness_ids.py) | Shared run, record and panel ID formatting/recognition. |
+| [gitenv.py](gitenv.py) | Isolate caller Git location variables; resolve repositories by working directory. |
+| [env_compat.py](env_compat.py) | Read environment settings and normalize Python/state-path defaults; resolve agent-use to `~/.local/share/agent-use`, retaining an existing `~/code/ai/agent-use` when the new path is absent; adapters default to a sibling of the resolved core directory. |
+| [install.sh](install.sh) | Install rules, hooks, command symlink and optional agent-use setup idempotently; back up changed files. |
+| [agent_use_setup.sh](agent_use_setup.sh) | Shared ecosystem paths, isolated Git operations and update helpers for installation/sync. |
+| [seats.json](seats.json) | Public defaults for seats, roles, fallback, panels and runtime policies. |
+| [seats.local.example.json](seats.local.example.json) | Example local seat overrides; not automatically loaded. |
+| [router-rules.json](router-rules.json) | Public routing patterns; first match wins. |
+| [router-rules.local.example.json](router-rules.local.example.json) | Example machine-local routing overrides. |
+| [.coderabbit.yaml](.coderabbit.yaml) | CodeRabbit review language, branch conditions and path-specific rules. |
+| [.gitignore](.gitignore) | Exclude local state, snapshots, Python caches and temporary test outputs. |
+| [CLAUDE.md](CLAUDE.md) | Public operating rules for Claude main sessions. |
+| [AGENTS.harness.md](AGENTS.harness.md) | Public operating rules installed into the Codex global marked block. |
 
-命令分发入口是 `bin/aiw`；用例在 `tests/cases/`，公共测试辅助在 `tests/support.py`。
+`bin/aiw` dispatches commands; cases live in `tests/cases/` and shared helpers in `tests/support.py`.
 
-## 测试
+## Tests
 
-日常运行 `python3 tests/test_harness.py --changed`，只跑改动影响的用例模块（默认比较 `origin/main`，其次 `main`，包含本地改动）。合并前经 `aiw slot -- python3 tests/test_harness.py` 跑全量；harness 会复用名额。`--changed [BASE]` 不能与用例名混用，选择达到总用例数一半时也会拿名额；`--slow 秒` 默认提示超过 5 秒的用例。
+For daily work, run `python3 tests/test_harness.py --changed` to test affected case modules (compares against `origin/main`, then `main`, including local changes). Before merging, run the full suite through `aiw slot -- python3 tests/test_harness.py`; the harness reuses the slot. `--changed [BASE]` cannot be combined with case names; selections covering at least half the cases also reserve a slot. `--slow SECONDS` reports cases exceeding 5 seconds by default.
 
 ```bash
 python3 tests/test_harness.py
 python3 tests/mutation_check.py
 ```
 
-测试覆盖正常行为，变异检查确认破坏红线时测试真的能发现。并发、指定用例和变异选项见[参考手册「自测」](docs/reference.zh-CN.md#自测)。新增行为优先补最小离线用例，用临时目录、假 CLI 与隔离 HOME；不要访问真实账号或改弱断言。若受沙箱限制，记录命令和失败原因，不绕过或改测试迁就。
+Behavior tests cover normal operation; mutation checks confirm tests detect broken invariants. See [test options](docs/reference.zh-CN.md#自测) (Chinese) for concurrency, named cases and mutations. Prefer minimal offline cases with temporary directories, fake CLIs and isolated HOME. Do not access real accounts or weaken assertions. If a sandbox blocks a check, record the command and reason instead of bypassing it or changing tests.
 
-workspace 座位变更须用假 agent-use 入口验证 ro/rw 参数、文本默认行为、配置冲突及写单顶替；rw 测试在临时仓库验收 baseline、账本与文件变化。
+Workspace seat changes need fake agent-use tests for ro/rw arguments, text defaults, configuration conflicts and write fallbacks; verify baselines, ledger entries and file changes in a temporary repository for rw.
 
-## 文档约定
+## Documentation conventions
 
-README 中英逐节对应，二级标题数一致；指南、最佳实践与贡献指南同步维护。先讲读者能得到什么，再解释机制；命令可复制运行，行为按源码核实，数字附测法与出处，未知产品或版本标「未核实」。公开仓库不写凭据、私人座位、机器名、本机绝对路径或个人账号信息。只修改相关段落，不全文件重排；状态字段变化同步更新状态约定和相应测试。
+Keep README sections corresponding across languages with equal second-level heading counts. Update both languages of guides, best practices and contribution instructions. Explain reader outcomes before mechanisms; make commands copyable, verify behavior against source, give sources/methods for numbers and label unknown products or versions unverified. Public files must not contain credentials, private seats, machine names, local absolute paths or personal account information. Edit relevant paragraphs without reformatting whole files. State-field changes require updates to the state contract and tests.
 
-## PR 流程
+## PR process
 
-从 main 建分支，说明具体问题与最终行为，跑相关检查后走 PR，使用模板交代原因、验证和双语文档影响。面向 main 的非草稿 PR 由 CodeRabbit 自动评审，设置见 [.coderabbit.yaml](.coderabbit.yaml)；处理有证据的意见，未采纳的说明理由，再由维护者审阅。提交信息中文英文都可，描述实际改动即可。
+Branch from main, describe the concrete problem and resulting behavior, run relevant checks and submit a PR. Use the template to explain why, verification and bilingual documentation impact. CodeRabbit automatically reviews non-draft PRs targeting main; see [.coderabbit.yaml](.coderabbit.yaml). Address evidence-backed findings and explain declined suggestions before maintainer review. Chinese and English commit messages are both accepted; describe the actual change.
 
-## 贡献者参考
+## Contributor references
 
-- [findings.md](docs/findings.md)：本机观察缓冲区、信号与评审流程。
-- [state-contract.md](docs/state-contract.md)：状态字段、写入责任、原子写入和锁约定。
-- [invariants.md](docs/invariants.md)：不能破坏的行为及守护/变异测试对应关系。
+- [findings.md](docs/findings.md): local observation buffer, signals and review workflow.
+- [state-contract.md](docs/state-contract.md): state fields, writer responsibilities, atomic writes and locks.
+- [invariants.md](docs/invariants.md): required behaviors and corresponding regression/mutation checks.
 
-## 从哪里开始
+## Starting points
 
-先运行 README 标题用例，复现一个小问题；补充 doctor 环境警告解释、对齐双语命令示例，或为已确认边界补离线回归用例都适合新人。提 issue 时使用表单，附脱敏的 `aiw doctor --fingerprint`，不要贴凭据；安全问题按 [SECURITY.md](SECURITY.md) 私密报告。
+Run the README heading case and reproduce a small issue. Clarifying doctor environment warnings, aligning bilingual command examples or adding an offline regression for a confirmed boundary are useful first contributions. Use issue forms and attach a sanitized `aiw doctor --fingerprint`; never include credentials. Report security issues privately as described in [SECURITY.md](SECURITY.md).

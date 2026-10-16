@@ -445,7 +445,7 @@ def invariants_table():
 
 def readme_bilingual_headings():
     counts = [sum(line.startswith('## ') for line in (REPO / name).read_text().splitlines())
-              for name in ('README.md', 'README.en.md')]
+              for name in ('README.zh-CN.md', 'README.md')]
     check(counts[0] > 0 and counts[0] == counts[1], f'双语 README 二级标题数量不同或为空：{counts}')
 
 

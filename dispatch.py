@@ -5,9 +5,11 @@ from __future__ import annotations
 import datetime as dt
 import json
 import math
+import os
 from pathlib import Path
 import re
 import socket
+import stat
 import sys
 import tempfile
 import time
@@ -20,8 +22,16 @@ STATE = Path(getenv("AIW_STATE", HERE / "state"))
 
 def is_off(state_dir) -> tuple[bool, float | None]:
     """只读检查；无法读取、无效或到期均按开启处理。"""
+    fd = None
     try:
-        data = json.loads((Path(state_dir) / "dispatch.json").read_text(encoding="utf-8"))
+        fd = os.open(Path(state_dir) / "dispatch.json", os.O_RDONLY | os.O_NONBLOCK)
+        info = os.fstat(fd)
+        if not stat.S_ISREG(info.st_mode) or info.st_size > 4096:
+            return False, None
+        content = os.read(fd, 4097)
+        if len(content) > 4096:
+            return False, None
+        data = json.loads(content.decode("utf-8"))
         if not isinstance(data, dict) or data.get("off") is not True:
             return False, None
         until = data["until"]
@@ -33,6 +43,9 @@ def is_off(state_dir) -> tuple[bool, float | None]:
         return True, until
     except Exception:
         return False, None
+    finally:
+        if fd is not None:
+            os.close(fd)
 
 
 def until_text(until) -> str:

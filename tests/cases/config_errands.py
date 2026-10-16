@@ -34,7 +34,7 @@ def errand_registry_corrupt_rejected():
         registry.unlink()
         r = sh([sys.executable, '-c', probe], cwd=REPO, env=env)
         check(r.returncode == 0 and json.loads(r.stdout) == [], '缺失 errand 名单不兼容')
-        for name in ('route.py', 'ai_worker.py', 'findings.py', 'harness_ids.py', 'gitenv.py', 'env_compat.py', 'seats_config.py', 'seats.json'):
+        for name in ('route.py', 'dispatch.py', 'ai_worker.py', 'findings.py', 'harness_ids.py', 'gitenv.py', 'env_compat.py', 'seats_config.py', 'seats.json'):
             shutil.copy(REPO / name, t / name)
         (t / 'router-rules.json').write_text(json.dumps({'rules': [
             {'id': 'registry-test', 'seat': 'qoder', 'patterns': ['registry'], 'instruction': 'test'}]}))

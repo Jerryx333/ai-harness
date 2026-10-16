@@ -32,6 +32,7 @@ CASE_MODULES = (
     "worker_2",
     "worktree_gc",
     "route_panel_map",
+    "dispatch_switch",
     "install_doctor",
     "track_snapshot",
     "slot",

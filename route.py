@@ -30,6 +30,22 @@ from pathlib import Path
 
 import findings
 import dispatch
+
+HERE = Path(__file__).resolve().parent
+STATE = Path(getenv("AIW_STATE", HERE / "state"))
+LOG = STATE / "router-log.jsonl"
+
+
+def dispatch_off_text(until) -> str:
+    return f"[派单已关闭] 用户已用 aiw off 关闭派单（{dispatch.until_text(until)}），本会话所有工作由主会话自己完成，不调用 aiw write/review/draft/panel/goal、不运行对照实验；用户点名派单时照做。"
+
+
+def dispatch_off_hook() -> None:
+    off, until = dispatch.is_off(STATE)
+    if off:
+        print(json.dumps({"hookSpecificOutput": {"hookEventName": "UserPromptSubmit", "additionalContext": dispatch_off_text(until)}}, ensure_ascii=False))
+
+
 # Validate before importing worker (which also serves non-hook commands).
 from seats_config import ConfigError, load_seats, ROLE_NAMES, BUILTIN_COMMANDS
 try:
@@ -38,11 +54,9 @@ try:
 except (ConfigError, SystemExit) as error:
     hook = __name__ == '__main__' and '--hook' in sys.argv
     print(f"配置{'警告' if hook else '错误'}：{error}", file=sys.stderr)
+    if hook:
+        dispatch_off_hook()
     raise SystemExit(0 if hook else 1)
-
-HERE = Path(__file__).resolve().parent
-STATE = Path(getenv("AIW_STATE", HERE / "state"))
-LOG = STATE / "router-log.jsonl"
 
 
 def context_hint(payload: dict) -> tuple[int | None, str]:
@@ -299,6 +313,8 @@ def main() -> int:
         config = load_seats(HERE)
     except ConfigError as error:
         print(f"配置{'警告' if hook else '错误'}：{error}", file=sys.stderr)
+        if hook:
+            dispatch_off_hook()
         return 0 if hook else 1
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     cwd = Path.cwd()
@@ -361,7 +377,7 @@ def main() -> int:
     if hook:
         context = ["[派单] " + res["instruction"]] if res["instruction"] else []
         if dispatch_off:
-            context = [f"[派单已关闭] 用户已用 aiw off 关闭派单（{dispatch.until_text(dispatch_until)}），本会话所有工作由主会话自己完成，不调用 aiw write/review/draft/panel/goal、不运行对照实验；用户点名派单时照做。"]
+            context = [dispatch_off_text(dispatch_until)]
         hint = findings.hint_text() if not cross_session and not dispatch_off else ""
         if hint:
             context.append(hint)

@@ -1,4 +1,4 @@
-"""Global dispatch switch cases, registered by route_panel_map."""
+"""Global dispatch switch regression cases."""
 import datetime as dt
 import time
 from unittest.mock import patch
@@ -60,6 +60,27 @@ def dispatch_cli():
         check(dispatch.is_off(state) == (False, None), '读取失败应视为开启')
 
 
+def dispatch_state_files():
+    with tempfile.TemporaryDirectory() as td:
+        state = Path(td)
+        file = state / 'dispatch.json'
+        os.mkfifo(file)
+        # A subprocess timeout bounds regressions that block while opening the FIFO.
+        code = "import dispatch, sys; print(repr(dispatch.is_off(sys.argv[1])))"
+        started = time.monotonic()
+        result = subprocess.run([sys.executable, '-c', code, str(state)], cwd=REPO,
+                                capture_output=True, text=True, timeout=2)
+        check(result.returncode == 0 and result.stdout.strip() == '(False, None)' and
+              time.monotonic() - started < 2, repr(result))
+        file.unlink()
+        content = '{"off": true, "until": null}'
+        file.write_text(content.ljust(4096))
+        import dispatch
+        check(dispatch.is_off(state) == (True, None), '4096 字节普通文件应可读取')
+        file.write_text(content.ljust(4097))
+        check(dispatch.is_off(state) == (False, None), '超大文件应视为开启')
+
+
 def dispatch_midnight():
     from dispatch import next_midnight
     wib = ZoneInfo('Asia/Jakarta')
@@ -105,6 +126,22 @@ def dispatch_hook():
         closed = hook()
         check('[派单已关闭]' in closed and '直到 aiw on' in closed and
               '[派单] ' not in closed and '[缓冲区]' not in closed and '[上下文]' in closed, closed)
+        broken = root / 'broken.json'
+        broken.write_text('{bad')
+        code = """import route, sys
+from unittest.mock import patch
+sys.argv = ['route.py', '--hook']
+with patch.object(route, 'load_seats', side_effect=route.ConfigError('broken seats')):
+    sys.exit(route.main())
+"""
+        for command, config in (([str(REPO / 'route.py'), '--hook'], broken),
+                                (['-c', code], settings)):
+            result = subprocess.run([sys.executable, *command], input=json.dumps(payload),
+                                    env=dict(env, AIW_CONFIG=str(config)),
+                                    cwd=REPO, capture_output=True, text=True)
+            check(result.returncode == 0 and '配置警告' in result.stderr and
+                  json.loads(result.stdout)['hookSpecificOutput']['additionalContext'] ==
+                  json.loads(closed)['hookSpecificOutput']['additionalContext'].split('\n\n')[0], repr(result))
         log = json.loads((state / 'router-log.jsonl').read_text().splitlines()[-1])
         check(log['dispatch_off'] is True and log['rule'] == 'bulk', str(log))
         codex = hook(dict(payload, turn_id='turn'))
@@ -165,4 +202,4 @@ def dispatch_doctor():
               sorted(p.name for p in state.iterdir()) == ['dispatch.json'], 'doctor 改写了状态')
 
 
-CASES = {fn.__name__: fn for fn in (dispatch_cli, dispatch_midnight, dispatch_hook, dispatch_tui, dispatch_doctor)}
+CASES = {fn.__name__: fn for fn in (dispatch_cli, dispatch_state_files, dispatch_midnight, dispatch_hook, dispatch_tui, dispatch_doctor)}

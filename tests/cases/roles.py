@@ -1,5 +1,6 @@
 """Role selection and single CLI installation contracts."""
 from support import Path, REPO, check, json, os, sys, tempfile, worker_call, inprocess_sh as sh
+from support import write_legacy_local
 from unittest.mock import patch
 
 
@@ -310,3 +311,114 @@ CASES = {f.__name__: f for f in (role_resolve_matrix, role_write_skips_readonly,
     role_write_codex_main_refused, role_doctor_mapping, claude_write_argv, claude_model_opus,
     route_role_seats, panel_skips_unavailable, panel_single_family_hint, map_default_role, role_text_seat_write_hint, role_ro_argv_enforced, seat_disabled_everywhere,
     legacy_local_config_roles, panel_explicit_unavailable, role_preselect_readonly)}
+
+
+def main_agent_priority():
+    import ai_worker as w
+    base = {'CLAUDECODE': '1', 'PI_CODING_AGENT': 'true', 'OMPCODE': '1'}
+    for main in ('claude', 'codex', 'pi', 'omp'):
+        check(w.main_agent(dict(base, AIW_MAIN=' ' + main.upper() + ' ')) == main, main)
+    check(w.main_agent(dict(base, AIW_MAIN='unknown')) == 'omp', 'omp priority')
+    check(w.main_agent({'PI_CODING_AGENT': 'true', 'CLAUDECODE': '1'}) == 'pi', 'pi priority')
+    check(w.main_agent({'CLAUDECODE': '1'}) == 'claude', 'claude')
+    for env in ({}, {'AIW_MAIN': 'unknown'}, {'OMPCODE': 'true', 'PI_CODING_AGENT': '1', 'CLAUDECODE': 'true'}):
+        check(w.main_agent(env) is None, env)
+
+
+def main_exclude_config():
+    import seats_config as c
+    import contextlib
+    import io
+    import doctor_config as d
+    public = c.load_public()
+    check(c.validate(public) == [], c.validate(public))
+    for main in ('pi', 'omp'):
+        check(public['self_seats'][main] == [main], main)
+        check(public['roles'][main] == dict(write=[], review=[], draft=[]), main)
+        check(public['main_exclude'][main] == ['codex', 'codex-sol', 'claude', 'claude-write'], main)
+    for override, expected in (({'main_exclude': []}, 'main_exclude'),
+                               ({'main_exclude': {'pi': 'codex'}}, 'main_exclude.pi'),
+                               ({'main_exclude': {'omp': [None]}}, 'main_exclude.omp')):
+        check(any(expected in e for e in c.validate(c.merge(public, override))), override)
+    override = {'self_seats': {'pi': ['optional']}, 'main_exclude': {'pi': ['optional']}}
+    merged = c.merge(public, override)
+    check(not c.validate(merged) and merged['main_exclude']['pi'] == ['optional']
+          and merged['main_exclude']['omp'] == public['main_exclude']['omp'], merged)
+    check(c.effective_hash(public) != c.effective_hash(merged), 'hash excludes main_exclude')
+    with tempfile.TemporaryDirectory() as td:
+        t = Path(td); (t/'seats.json').write_text(json.dumps(public))
+        local = t/'local.json'; local.write_text(json.dumps(override))
+        out = io.StringIO()
+        with patch.dict(os.environ, AIW_CONFIG=str(local)), contextlib.redirect_stdout(out):
+            check(d.local_config(t) == 0, out.getvalue())
+        check('未知键路径' not in out.getvalue(), out.getvalue())
+
+
+def main_exclude_dispatch():
+    import ai_worker as w
+    import seats_config as c
+    with tempfile.TemporaryDirectory() as td:
+        t = Path(td); local = t/'local.json'
+        for main in ('pi', 'omp'):
+            overrides = {'roles': {main: {r: ['codex-sol', 'claude'] for r in ('write', 'review', 'draft')}},
+                         'fallback': {'qoder': ['codex-sol', 'workbuddy']}}
+            write_legacy_local(local, overrides)
+            cmd, env, _ = worker_call(t, AIW_CONFIG=str(local), AIW_MAIN=main, CLAUDECODE='1', AIW_STATE=str(t/main))
+            for seat in ('codex', 'codex-sol', 'claude', 'claude-write'):
+                cmd[2] = seat
+                r = sh(cmd + ['--no-findings'], env=env)
+                check(r.returncode == 64 and 'main_exclude' in r.stderr and main in r.stderr, r.stderr)
+            for role in ('write', 'review', 'draft'):
+                cmd[2] = role
+                r = sh(cmd + ['--no-findings'], env=env)
+                check(r.returncode == 2 and '无可用座位' in r.stderr and 'main_exclude' in r.stderr, r.stderr)
+            # Candidate filtering selects the next allowed seat for all three roles.
+            config = c.merge(w.SEATS, overrides)
+            for role, allowed in (('write', 'codex'), ('review', 'workbuddy'), ('draft', 'workbuddy')):
+                config['roles'][main][role] = ['claude-write', allowed]
+                config['main_exclude'][main] = ['claude-write']
+                with patch.dict(os.environ, env), patch.object(w, 'SEATS', config):
+                    check(w.resolve_role(role) == allowed, role)
+            cmd[2] = 'qoder'
+            env['FAKE_AU_QODER'] = 'quota'
+            r = sh(cmd + ['--no-findings'], env=env)
+            check(r.returncode == 0 and '顶替跳过 codex-sol' in r.stderr
+                  and '实际执行方：workbuddy' in r.stderr, r.stdout+r.stderr)
+            records = [json.loads(line) for line in (Path(env['AIW_STATE'])/'seat-ledger.jsonl').read_text().splitlines()]
+            check(not any(row.get('actual') == 'codex-sol' for row in records), records)
+            # An all-excluded fallback cannot execute a blocked seat.
+            overrides['fallback']['qoder'] = ['codex-sol', 'claude']
+            write_legacy_local(local, overrides)
+            r = sh(cmd + ['--no-findings'], env=env)
+            check(r.returncode != 0 and '顶替跳过 claude' in r.stderr, r.stderr)
+            r = sh([sys.executable, str(REPO/'ai_worker.py'), 'doctor'], env=env)
+            check(f'主会话 {main}' in r.stdout and '主会话排除（main_exclude）' in r.stdout
+                  and 'main_exclude 禁止' in r.stdout, r.stdout)
+        # Unknown identity and existing main sessions retain their default behavior.
+        for main in ('unknown', 'claude', 'codex'):
+            cmd[2] = 'codex-sol'
+            env.update(AIW_MAIN=main, FAKE_AU_QODER='ok', CLAUDECODE='', AIW_STATE=str(t / ('unchanged-' + main)))
+            r = sh(cmd + ['--no-findings'], env=env)
+            check(r.returncode == 0, main + ': ' + r.stderr)
+
+
+def main_exclude_panel():
+    with tempfile.TemporaryDirectory() as td:
+        t = Path(td); local = t/'local.json'
+        for main in ('pi', 'omp'):
+            write_legacy_local(local, {'panel_default': ['codex-sol', 'claude', 'qoder', 'workbuddy', 'opencode'],
+                'panel_free': ['codex-sol', 'qoder', 'workbuddy', 'opencode'],
+                'self_seats': {main: ['opencode']}})
+            for flags in ([], ['--free'], ['codex-sol', 'claude', 'qoder', 'workbuddy']):
+                state = t/(main + '-' + str(len(flags)))
+                env = dict(os.environ, AIW_CONFIG=str(local), AIW_STATE=str(state), AIW_MAIN=main)
+                r = sh([sys.executable, str(REPO/'panel.py'), str(t), '10', 'test', *flags], env=env)
+                check(r.returncode == 0, r.stdout+r.stderr)
+                summary = json.loads(next((state/'panels').glob('*/summary.json')).read_text())
+                check([row['seat'] for row in summary['seats']] == ['qoder', 'workbuddy'], summary)
+            r = sh([sys.executable, str(REPO/'panel.py'), str(t), '10', 'test', 'codex-sol', 'claude'], env=env)
+            check(r.returncode == 1 and '没有可用座位' in r.stderr, r.stderr)
+
+
+CASES.update({f.__name__: f for f in (main_agent_priority, main_exclude_config,
+                                   main_exclude_dispatch, main_exclude_panel)})

@@ -169,17 +169,18 @@ def link(path, expected, name):
         warn(name, f'实际指向 {str(actual)!r}（目标不存在或不是当前仓库）')
 
 
-def agents(home, repo):
-    text = (home / '.codex/AGENTS.md').read_text(encoding='utf-8')
+def agents(home, repo, main='Codex'):
+    rel = '.codex/AGENTS.md' if main == 'Codex' else f'.{main}/agent/AGENTS.md'
+    text = (home / rel).read_text(encoding='utf-8')
     content = (repo / 'AGENTS.harness.md').read_text(encoding='utf-8').strip()
     personal = home / '.config/aiw/AGENTS.personal.md'
     if personal.exists():
         content += "\n\n" + personal.read_text(encoding='utf-8').strip()
     block = f"{BEGIN}\n{content}\n{END}\n"
     if text.count(BEGIN) == text.count(END) == 1 and block in text:
-        print('  ✓ Codex AGENTS 标记块')
+        print(f'  ✓ {main} AGENTS 标记块')
     else:
-        warn('Codex AGENTS 标记块', '没有标记块或内容不一致')
+        warn(f'{main} AGENTS 标记块', '没有标记块或内容不一致')
 
 
 def trust(home, hp, mine):
@@ -292,6 +293,14 @@ def check_config(repo, include_local=True):
         mine = safe('Codex 派单钩子', lambda: hooks(hp, 'Codex 派单钩子'))
         safe('Codex 配置', lambda: trust(home, hp, mine or []), '检查 config.toml 格式与读取权限，并确认钩子信任')
         safe('Codex AGENTS 标记块', lambda: agents(home, repo))
+    for main in ('pi', 'omp'):
+        name = f'{main} AGENTS 标记块'
+        if getenv(f'AIW_NO_{main.upper()}') == '1':
+            print(f'  · 跳过 {main}（AIW_NO_{main.upper()}=1）')
+        elif (home / f'.{main}').is_dir() or shutil.which(main):
+            safe(name, lambda main=main: agents(home, repo, main))
+        else:
+            print(f'  · 未接入 {main}（未发现目录或命令）')
     safe('状态栏命令', lambda: statusline(home), BOARD_INSTALL)
     safe('aiw-board 转发', board, BOARD_INSTALL)
     repository(repo)
@@ -352,8 +361,8 @@ def local_config(repo):
         key = '.'.join(parts)
         new_seat = len(parts) >= 2 and parts[0] == 'seats' and parts[1] in new_seats
         known_optional = (len(parts) == 3 and parts[0] == "seats" and parts[2] in seat_fields) or parts in (("map_default",), ("errand",), ("errand", "home"))
-        if len(parts) == 2 and parts[0] in ('fallback', 'substitute_limit', 'self_seats'):
-            known_optional = parts[1] in known_seats or (parts[0] == 'self_seats' and parts[1] in ('claude', 'codex'))
+        if len(parts) == 2 and parts[0] in ('fallback', 'substitute_limit', 'self_seats', 'main_exclude'):
+            known_optional = parts[1] in known_seats or (parts[0] in ('self_seats', 'main_exclude') and parts[1] in ('claude', 'codex', 'pi', 'omp'))
         if base is missing and not new_seat and not known_optional and (not parts or not parts[-1].isdigit()):
             print(f'  ⚠ 未知键路径：{key}')
         if isinstance(value, dict):

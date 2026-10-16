@@ -94,7 +94,7 @@ def validate(merged) -> list[str]:
     for key in ('seats', 'fallback', 'self_seats', 'substitute_limit'):
         if not isinstance(merged.get(key), dict):
             error(key, '对象')
-    for key in ('notify', 'findings', 'errand'):
+    for key in ('notify', 'findings', 'errand', 'main_exclude'):
         if key in merged and not isinstance(merged[key], dict):
             error(key, '对象')
     seats = merged.get('seats')
@@ -170,13 +170,15 @@ def validate(merged) -> list[str]:
                     if name not in seats:
                         errors.append(f'引用悬空：{path} → {name}')
     refs = []
-    for key in ('fallback', 'self_seats'):
+    for key in ('fallback', 'self_seats', 'main_exclude'):
         values = merged.get(key)
         if isinstance(values, dict):
             for name, entries in values.items():
                 if key == 'fallback':
                     refs.append((key, name))
-                if strings(entries, f'{key}.{name}'):
+                valid = strings(entries, f'{key}.{name}')
+                # Identity filters may name optional seats absent on this machine.
+                if valid and key == 'fallback':
                     refs.extend((f'{key}.{name}', entry) for entry in entries)
     for key in ('panel_default', 'panel_free'):
         if strings(merged.get(key), key):
@@ -216,7 +218,7 @@ def load_seats(repo=None, *, tolerate_public=False):
 
 
 def effective_hash(merged):
-    keys = ('seats', 'fallback', 'panel_default', 'panel_free', 'self_seats', 'map_default',
+    keys = ('seats', 'fallback', 'panel_default', 'panel_free', 'self_seats', 'main_exclude', 'map_default',
             'substitute_limit', 'breaker', 'roles')
     data = {key: copy.deepcopy(merged[key]) for key in keys if key in merged}
     if isinstance(data.get('seats'), dict):

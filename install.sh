@@ -8,7 +8,8 @@
 #   2. ~/.claude/settings.json 加 UserPromptSubmit 派单钩子（其它设置保留）
 #   3. ~/.local/bin/aiw 软链到本仓库，必要时把 ~/.local/bin 加进 PATH
 #   4. 本机有 Codex（~/.codex 或 codex 命令）时：~/.codex/AGENTS.md 写入/刷新标记块，~/.codex/hooks.json 加派单钩子
-#      （跳过：AIW_NO_CODEX=1）
+#      pi / omp：目录或命令存在时写 ~/.pi/agent/AGENTS.md、~/.omp/agent/AGENTS.md，不装钩子
+#      （跳过：AIW_NO_CODEX=1 / AIW_NO_PI=1 / AIW_NO_OMP=1）
 #   5. 可选安装 agent-use + agent-use-adapters，保留已有注册表和座位
 #   6. 校验派单规则，跑一次 aiw doctor
 # 先预检所有要改的 JSON，坏了一处都不动；JSON/标记块用临时文件原子替换。
@@ -220,11 +221,10 @@ if new != old:
     p.write_text(new)
 PYEOF
 
-# 4. Codex（主会话也可以是 Codex）
-CODEX_DIR="${HOME}/.codex"
-if [ -z "${AIW_NO_CODEX:-}" ] && { [ -d "$CODEX_DIR" ] || command -v codex >/dev/null 2>&1; }; then
-  mkdir -p "$CODEX_DIR"
-  "$PY" - "$CODEX_DIR" "${H}/AGENTS.harness.md" "$STAMP" <<'PYEOF'
+# 4. Codex / pi / omp 全局上下文
+write_agents_block() {
+  mkdir -p "$1"
+  "$PY" - "$1" "${H}/AGENTS.harness.md" "$STAMP" <<'PYEOF'
 import json, shutil, sys
 from pathlib import Path
 def atomic_write(p, text):
@@ -234,7 +234,7 @@ def atomic_write(p, text):
 d, src, stamp = Path(sys.argv[1]), Path(sys.argv[2]), sys.argv[3]
 BEGIN, END = "<!-- aiw:begin（install.sh 生成，勿手改） -->", "<!-- aiw:end -->"
 content = src.read_text(encoding='utf-8').strip()
-personal = d.parent / '.config/aiw/AGENTS.personal.md'
+personal = Path.home() / '.config/aiw/AGENTS.personal.md'
 if personal.exists():
     content += "\n\n" + personal.read_text(encoding='utf-8').strip()
 elif personal.is_symlink():
@@ -254,6 +254,22 @@ else:
         shutil.copy2(md, md.with_name(md.name + ".bak-" + stamp))
     atomic_write(md, new)
     print(f"✓ {md} 写入 aiw 标记块" + ("（备份 AGENTS.md.bak-" + stamp + "）" if old else ""))
+PYEOF
+}
+
+# 4. Codex（主会话也可以是 Codex）
+CODEX_DIR="${HOME}/.codex"
+if [ -z "${AIW_NO_CODEX:-}" ] && { [ -d "$CODEX_DIR" ] || command -v codex >/dev/null 2>&1; }; then
+  mkdir -p "$CODEX_DIR"
+  write_agents_block "$CODEX_DIR"
+  "$PY" - "$CODEX_DIR" "$STAMP" <<'PYEOF'
+import json, shutil, sys
+from pathlib import Path
+d, stamp = Path(sys.argv[1]), sys.argv[2]
+def atomic_write(p, text):
+    tmp = p.with_name(p.name + ".tmp-aiw")
+    tmp.write_text(text, encoding="utf-8")
+    tmp.replace(p)
 hp = d / "hooks.json"
 data = {}
 if hp.exists():
@@ -291,6 +307,20 @@ PYEOF
 else
   echo "· 未发现 Codex，跳过 Codex 接入"
 fi
+
+for main in pi omp; do
+  case "$main" in
+    pi) disabled="${AIW_NO_PI:-}" ;;
+    omp) disabled="${AIW_NO_OMP:-}" ;;
+  esac
+  if [ "$disabled" = 1 ]; then
+    echo "· 跳过 $main 接入"
+  elif [ -d "${HOME}/.${main}" ] || command -v "$main" >/dev/null 2>&1; then
+    write_agents_block "${HOME}/.${main}/agent"
+  else
+    echo "· 未发现 ${main}，跳过接入"
+  fi
+done
 
 # 5. 校验派单规则（坏了只提示，不中断）
 "$PY" "${H}/route.py" --check || echo "↑ 派单规则有问题，钩子会跳过派单，修好后再跑 aiw route --check。"

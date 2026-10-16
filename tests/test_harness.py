@@ -89,7 +89,7 @@ def run_named(names, durations):
             with tempfile.TemporaryDirectory() as isolated:
                 saved_env = dict(os.environ)
                 try:
-                    for key in ("CODEX_THREAD_ID", "AIW_TUI_ID", "TMUX", "CLAUDE_CODE_SESSION_ID", "CODEX_HOME", "AIW_CODEX_SHARED_HOME", "XDG_CONFIG_HOME", "AGENT_USE_CONFIG", "AIW_CONFIG", "AIW_ROUTER_RULES", "AGENT_USE_ERRAND_HOME", "CODEX_BIN", "CLAUDE_BIN", "AIW_PROVIDER_FILE", "AIW_MAIN", "AIW_NESTED", "CLAUDECODE", "AIW_NO_CODEX", "AIW_PANEL_GRACE", "DISCORD_TOKEN", "AIW_DISCORD_USE_BIN", "AIW_DISCORD_CHANNEL", "AIW_ZEN_MODELS_URL", "AIW_LAUNCH_AGENTS_DIR"):
+                    for key in ("CODEX_THREAD_ID", "AIW_TUI_ID", "TMUX", "CLAUDE_CODE_SESSION_ID", "CODEX_HOME", "AIW_CODEX_SHARED_HOME", "XDG_CONFIG_HOME", "AGENT_USE_CONFIG", "AIW_CONFIG", "AIW_ROUTER_RULES", "AGENT_USE_ERRAND_HOME", "CODEX_BIN", "CLAUDE_BIN", "AIW_PROVIDER_FILE", "OMPCODE", "PI_CODING_AGENT", "AIW_NO_PI", "AIW_NO_OMP", "AIW_MAIN", "AIW_NESTED", "CLAUDECODE", "AIW_NO_CODEX", "AIW_PANEL_GRACE", "DISCORD_TOKEN", "AIW_DISCORD_USE_BIN", "AIW_DISCORD_CHANNEL", "AIW_ZEN_MODELS_URL", "AIW_LAUNCH_AGENTS_DIR"):
                         os.environ.pop(key, None)
                     root = Path(isolated)
                     os.environ.update(HOME=str(root), AIW_STATE=str(root / "state"),

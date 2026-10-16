@@ -10,7 +10,12 @@ Use `aiw write|review|draft <workdir> <timeout> <prompt>`. Run `aiw doctor` to s
 |---|---|---|---|
 | Claude | codex → claude-write | codex-sol → claude | codex-sol → claude |
 | Codex | Empty: edit files yourself | claude → codex-sol | codex-sol → claude |
+| pi / omp | Empty (configure locally) | Empty (configure locally) | Empty (configure locally) |
 | Unknown (default) | codex → claude-write | codex-sol → claude | codex-sol → claude |
+
+Main session detection: valid `AIW_MAIN=claude|codex|pi|omp` > `OMPCODE=1` > `PI_CODING_AGENT=true` > `CLAUDECODE=1`. Codex still needs `AIW_MAIN=codex`. `main_exclude` defaults to `["codex","codex-sol","claude","claude-write"]` for pi/omp. It skips role candidates, fallback seats and panel lists (including explicit lists); direct assignments are rejected with rc=64 and fully excluded role lists return rc=2 with reasons. Like self_seats, objects merge recursively and lists replace in full; optional seat names need not exist locally.
+
+The installer detects pi/omp by directory or command and writes `AGENTS.harness.md` plus optional `~/.config/aiw/AGENTS.personal.md` to `~/.pi/agent/AGENTS.md` / `~/.omp/agent/AGENTS.md`, preserving content outside the marker block. The omp global context path is unverified. No dispatch hooks are installed. Set `AIW_NO_PI=1` / `AIW_NO_OMP=1` to skip; doctor checks whether detected integrations have current blocks.
 
 Select the first existing seat whose binary is available (respecting CODEX_BIN/CLAUDE_BIN), which is not disabled and has no active auth/not_installed breaker. If none is available, return rc=2 with each candidate's reason and suggest an agent-use text seat. An empty Codex write list asks the main session to edit files itself. review/draft always run read-only, including replacements with write capability. Local roles objects merge recursively; lists replace in full. review/draft skip CLI candidates without read-only capability and report reasons; doctor also warns. Read-only CLI and agent_use seats (text/workspace) are eligible; role names cannot conflict with seats or built-in commands.
 

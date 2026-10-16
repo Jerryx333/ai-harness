@@ -1,6 +1,6 @@
-# 多模型分工（aiw，Codex 当主会话时）
+# 多模型分工（aiw，Codex / pi / omp 当主会话时）
 
-install.sh 将本文件写入 `~/.codex/AGENTS.md` 标记块。修改 AGENTS.harness.md 后重跑 `~/.claude/aiw/install.sh`，不要直接改标记块；项目自己的 AGENTS.md 可以覆盖这些规则。随后引入 `~/.config/aiw/AGENTS.personal.md`，冲突时以个人规则为准。命令参数、rc 含义、跑腿、/goal、免费座位保护等细节见 `~/.claude/aiw/docs/reference.zh-CN.md`，用到时再读。
+install.sh 将本文件写入 `~/.codex/AGENTS.md`、`~/.pi/agent/AGENTS.md`、`~/.omp/agent/AGENTS.md` 标记块。修改 AGENTS.harness.md 后重跑 `~/.claude/aiw/install.sh`，不要直接改标记块；项目自己的 AGENTS.md 可以覆盖这些规则。随后引入 `~/.config/aiw/AGENTS.personal.md`，冲突时以个人规则为准。命令参数、rc 含义、跑腿、/goal、免费座位保护等细节见 `~/.claude/aiw/docs/reference.zh-CN.md`，用到时再读。
 
 ## 角色
 
@@ -18,7 +18,7 @@ install.sh 将本文件写入 `~/.codex/AGENTS.md` 标记块。修改 AGENTS.har
 2. 改文件、批量改动和补测试自己做，不用 write 角色套自己。
 3. 第二意见或整仓评审用 `aiw review`。起草、改写、摘要、翻译和长材料提炼用 `aiw draft`。review/draft 解析到不能跑命令的座位时：评审需要测试结果或 diff 时，主会话先跑，把输出存成文件用 `--attach` 附上，不要在单里要求它运行命令。
 4. 长材料（约 300 行或 20KB 以上）先派 `aiw draft` 压成带 path:line 的要点，主会话只回原文核对要下结论的条目。
-5. 要多家意见用 `AIW_MAIN=codex aiw panel`：先用 `--prior` 写自己的判断，看完逐条标接受/驳回/暂缓，不按多数票。
+5. 要多家意见用 `aiw panel`（Codex 需带 `AIW_MAIN=codex`，pi/omp 自动识别）：先用 `--prior` 写自己的判断，看完逐条标接受/驳回/暂缓，不按多数票。
 6. 每单写清目标、上下文、修改范围、约束和可执行的验收条件；涉及规则或数据语义时附原文 path:line，未核实写「待核实」。
    全量或较重测试用 `aiw slot -- <命令>` 包装（排队、内存高时等待、降优先级、限线程），派单的 `--verify` 同样包装。
 7. 核对外包产物后用 `aiw rate <run> ok|fixed|rework|discard` 打分（run 取 stderr「全文」行里的路径），收尾前用 `aiw rate --pending` 补漏。

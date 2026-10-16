@@ -2,12 +2,14 @@
 
 [中文](README.md) | [English](README.en.md)
 
-For people who use Claude Code or Codex as their main tool and often hit usage limits or fill their context. Keep the main model focused on planning and checking results; hand off reading code, running commands and drafting summaries. You configure who gets the work: a cheaper model in the same family, other subscriptions you already have, or free models. Defaults are included, and one installed CLI is enough. No service to run and no dependencies beyond Python 3.11+.
+For people who use Claude Code, Codex, pi (pi-coding-agent), or omp (oh-my-pi) as their main tool and often hit usage limits or fill their context. Keep the main model focused on planning and checking results; hand off reading code, running commands and drafting summaries. You configure who gets the work: a cheaper model in the same family, other subscriptions you already have, or free models. Defaults are included, and one installed CLI is enough. No service to run and no dependencies beyond Python 3.11+.
 
 <p align="center"><img src="assets/hero.en.webp" alt="aiw: the main session plans, models share the work, the main session verifies" width="760"></p>
 <p align="center"><img src="assets/demo.gif" alt="First aiw assignment: see which role a request routes to, check role resolution, run a read-only review" width="760"><br><sub>A real run (terminal output is in Chinese); about one minute of waiting was cut. Regenerate with <code>vhs assets/demo.tape</code>.</sub></p>
 
 A **seat** is a model or CLI that can take an assignment. A **role** is write (edits), review (read-only review), or draft (drafts and summaries); it resolves to the first available seat in its configured order. The Codex main session has no write candidates and edits files itself.
+
+pi / omp main sessions are detected automatically. Installation writes rules to `~/.pi/agent/AGENTS.md` / `~/.omp/agent/AGENTS.md` (skip with `AIW_NO_PI=1` / `AIW_NO_OMP=1`), without dispatch hooks. The omp global context path is unverified. Their role lists default to empty and require local seats; `main_exclude` blocks the four GPT/Claude seats for roles, fallback, panel, and direct assignments.
 
 ## What problems does it solve?
 

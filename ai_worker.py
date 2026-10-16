@@ -99,13 +99,27 @@ FORMAT_PAT = re.compile(r"(validation_failed|JSONDecodeError)", re.I)
 
 
 def main_agent(env=None) -> str | None:
-    """当前主会话是谁：AIW_MAIN 显式指定 > Claude Code 的 CLAUDECODE=1。Codex 当主会话时由 AGENTS.md / 派单钩子要求带 AIW_MAIN=codex。"""
+    """主会话：AIW_MAIN（claude/codex/pi/omp）> OMPCODE=1 > PI_CODING_AGENT=true > CLAUDECODE=1。Codex 需显式带 AIW_MAIN=codex。"""
     env = os.environ if env is None else env
     m = env.get("AIW_MAIN", "").strip().lower()
-    if m in ("claude", "codex"):
+    if m in ("claude", "codex", "pi", "omp"):
         return m
+    if env.get("OMPCODE") == "1":
+        return "omp"
+    if env.get("PI_CODING_AGENT") == "true":
+        return "pi"
     if env.get("CLAUDECODE") == "1":
         return "claude"
+    return None
+
+
+def main_excluded():
+    return set(SEATS.get("main_exclude", {}).get(main_agent(), []))
+
+
+def main_exclude_reason(seat):
+    if seat in main_excluded():
+        return f"主会话 {main_agent()} 的 main_exclude 禁止派给座位 {seat}"
     return None
 
 
@@ -127,6 +141,9 @@ def text_only_seat(seat):
 
 
 def role_candidate_reason(role, seat):
+    excluded = main_exclude_reason(seat)
+    if excluded:
+        return excluded
     cfg = SEATS["seats"].get(seat, {})
     if role == "write" and (cfg.get("ro_only") or text_only_seat(seat)):
         return "只读或文本座位，不能写"
@@ -1958,6 +1975,7 @@ def _doctor() -> int:
             limitation = "；已知限制：dispatcher 默认/备选模型暂不过滤" if key.startswith("opencode:") else ""
             print(f"  ⛔ 模型 {key} 已停用 since {entry['since']} 证据 {entry['evidence']}{limitation}")
     bad = local_failures
+    print(f"主会话排除（main_exclude）：{', '.join(sorted(main_excluded())) or '无'}")
     print(f"角色映射（主会话 {main_agent() or 'default'}）：")
     for role in ('write', 'review', 'draft'):
         try:
@@ -2365,6 +2383,10 @@ def _dispatch(inflight: Path | None, attempt: dict, *, before_execute=None, stac
             flags.add('--ro')
         if role == 'draft':
             flags.add('--text')
+    excluded = main_exclude_reason(seat)
+    if excluded:
+        print(f"[ai-worker] {excluded}", file=sys.stderr)
+        return 64
     reason = SEATS["seats"].get(seat, {}).get("disabled_by_user")
     if reason:
         print_disabled(seat, {"disabled_by_user": reason})
@@ -2454,6 +2476,11 @@ def _dispatch(inflight: Path | None, attempt: dict, *, before_execute=None, stac
     # 公开默认顶替链为空，本地配置可覆盖。
     attachments_warned = os.environ.get("AIW_ATTACH_WARNING_SUPPRESS") == "1"
     chain = [seat] + ([] if "--no-fallback" in flags else SEATS["fallback"].get(seat, []))
+    excluded = main_excluded()
+    for candidate in chain:
+        if candidate in excluded:
+            print(f"[ai-worker] 顶替跳过 {candidate}: {main_exclude_reason(candidate)}", file=sys.stderr)
+    chain = [candidate for candidate in chain if candidate not in excluded]
     if before_execute is not None:
         inflight = before_execute()
     if verify:

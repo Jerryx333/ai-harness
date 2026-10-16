@@ -1109,7 +1109,7 @@ def install_hook_duplicates():
         before = [p.read_bytes() for p in files]
         repo = home / '.claude/aiw'
         result = install_phase(repo, 3, [files[0], 'test', 'settings'], env)
-        codex = install_phase(repo, 5, [home / '.codex', repo / 'AGENTS.harness.md', 'test'], env)
+        codex = install_phase(repo, 6, [home / '.codex', 'test'], env)
         check(codex.returncode == 0, codex.stderr)
         check(result.returncode == 0 and before == [p.read_bytes() for p in files], 'duplicate removal not idempotent')
         result = install_phase(repo, 3, [files[0], 'test', 'plugin'], env)
@@ -1194,3 +1194,57 @@ CASES = {case.__name__: case for case in (
     install_empty_python_state,
     install_launch_failure,
 )}
+
+
+def install_pi_omp_agents():
+    import doctor_config as d
+    with tempfile.TemporaryDirectory() as td:
+        home, env = fake_home(Path(td))
+        repo = home / '.claude/aiw'
+        personal = home / '.config/aiw/AGENTS.personal.md'
+        personal.parent.mkdir(parents=True, exist_ok=True)
+        personal.write_text('PERSONAL_RULE_TEST\n')
+        for main in ('pi', 'omp'):
+            folder = home / f'.{main}/agent'; folder.mkdir(parents=True)
+            (folder / 'AGENTS.md').write_text('outside\n')
+        def install():
+            r = sh(['bash', str(repo/'install.sh')], env=env)
+            check(r.returncode == 0, r.stdout+r.stderr)
+            return r
+        install()
+        before = {}
+        for main in ('pi', 'omp'):
+            md = home/f'.{main}/agent/AGENTS.md'
+            content = md.read_text(); before[main] = md.read_bytes()
+            check(content.startswith('outside\n') and content.count(d.BEGIN) == 1
+                  and 'PERSONAL_RULE_TEST' in content
+                  and (repo/'AGENTS.harness.md').read_text().strip() in content, content)
+            check(not (md.parent/'hooks.json').exists(), 'pi/omp hooks written')
+        install()
+        for main in before:
+            check((home/f'.{main}/agent/AGENTS.md').read_bytes() == before[main], 'not idempotent')
+        # The startup doctor checks both installed blocks, including stale content.
+        r = sh([sys.executable, str(repo/'ai_worker.py'), 'doctor'], env=env)
+        check(all(f'✓ {m} AGENTS 标记块' in r.stdout for m in before), r.stdout+r.stderr)
+        src = repo/'AGENTS.harness.md'; src.write_text(src.read_text()+'\nREFRESH_TEST\n')
+        env['AIW_NO_PI'] = '1'; env['AIW_NO_OMP'] = '1'
+        install()
+        check(all((home/f'.{m}/agent/AGENTS.md').read_bytes() == before[m] for m in before), 'skip failed')
+        env.pop('AIW_NO_PI'); env.pop('AIW_NO_OMP')
+        r = sh([sys.executable, str(repo/'ai_worker.py'), 'doctor'], env=env)
+        check(all(f'⚠ {m} AGENTS 标记块' in r.stdout for m in before), r.stdout)
+        install()
+        check(all('REFRESH_TEST' in (home/f'.{m}/agent/AGENTS.md').read_text() for m in before), 'refresh failed')
+        # Command-only discovery creates the agent directory too.
+        import shutil
+        bins = Path(td)/'main-bins'; bins.mkdir()
+        for main in before:
+            shutil.rmtree(home/f'.{main}')
+            binary = bins/main; binary.write_text('#!/bin/sh\nexit 0\n'); binary.chmod(0o755)
+        env['PATH'] = str(bins)+':'+env['PATH']
+        env['AIW_NO_PI'] = '1'
+        install()
+        check(not (home/'.pi').exists() and (home/'.omp/agent/AGENTS.md').is_file(), 'command detection / skip')
+
+
+CASES['install_pi_omp_agents'] = install_pi_omp_agents

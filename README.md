@@ -2,12 +2,14 @@
 
 [中文](README.md) | [English](README.en.md)
 
-给用 Claude Code 或 Codex 当主力、常被额度卡住或上下文撑爆的人。主模型专心规划和把关，读代码、跑命令、起草摘要这类体力活派出去。派给谁由你配：同一家更省的模型、你已有的其他订阅、免费模型都行。装好有默认配置，只装一家也能用。不用起服务，除 Python 3.11+ 外不装依赖。
+给用 Claude Code、Codex、pi（pi-coding-agent）或 omp（oh-my-pi）当主力、常被额度卡住或上下文撑爆的人。主模型专心规划和把关，读代码、跑命令、起草摘要这类体力活派出去。派给谁由你配：同一家更省的模型、你已有的其他订阅、免费模型都行。装好有默认配置，只装一家也能用。不用起服务，除 Python 3.11+ 外不装依赖。
 
 <p align="center"><img src="assets/hero.webp" alt="aiw：主会话定方案，模型分工，主会话验收" width="760"></p>
 <p align="center"><img src="assets/demo.gif" alt="aiw 第一单：判断该派给哪个角色、查看角色解析、派一单只读评审" width="760"><br><sub>真实运行录屏，等待执行方的约 1 分钟已剪掉；用 <code>vhs assets/demo.tape</code> 可重新生成。</sub></p>
 
 **座位**是一个可派单的模型或 CLI；**角色**是 write（改文件）、review（只读评审）、draft（起草和摘要），按配置顺序解析到第一个可用座位。Codex 主会话的 write 候选为空，改文件自己做。
+
+pi / omp 主会话会自动识别；安装时向 `~/.pi/agent/AGENTS.md` / `~/.omp/agent/AGENTS.md` 写派单规则（`AIW_NO_PI=1` / `AIW_NO_OMP=1` 跳过），不加派单钩子。omp 全局上下文路径未核实。公开默认三个角色候选为空，需本地配置座位；`main_exclude` 默认禁止派给四个 GPT/Claude 座位，覆盖角色、顶替、panel 和点名派单。
 
 ## 解决什么问题
 

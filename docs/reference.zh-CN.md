@@ -8,7 +8,10 @@
 |---|---|---|---|
 | Claude | codex → claude-write | codex-sol → claude | codex-sol → claude |
 | Codex | 空（改文件自己做） | claude → codex-sol | codex-sol → claude |
+| pi / omp | 空（本地配置） | 空（本地配置） | 空（本地配置） |
 | 未识别（default） | codex → claude-write | codex-sol → claude | codex-sol → claude |
+
+主会话识别优先级：有效 `AIW_MAIN=claude|codex|pi|omp` > `OMPCODE=1` > `PI_CODING_AGENT=true` > `CLAUDECODE=1`；pi/omp 优先于继承的 Claude 标志。Codex 仍需带 `AIW_MAIN=codex`。`main_exclude` 按主会话列出禁止派单座位，pi/omp 公开默认均为 `["codex","codex-sol","claude","claude-write"]`；本地合并与 self_seats 相同（对象递归合并、列表整体替换，可追加其它座位名）。角色候选、顶替链、panel（包括显式名单）跳过这些座位；点名派单拒绝并返回 rc=64，角色全被排除返回 rc=2 并列明原因。self_seats 和 main_exclude 允许尚未配置的可选座位名。doctor 显示当前排除名单及角色解析。
 
 按顺序取首个存在、bin 可找到（尊重 CODEX_BIN/CLAUDE_BIN）、未停用且没有当前 auth/not_installed 熔断的座位。全部不可用返回 rc=2，列出每个候选原因，提示接入 agent-use 文本座位；Codex 主会话 write 列表为空时提示「Codex 主会话改文件请自己做」。review/draft 强制只读，包括写能力的顶替座位。`roles` 本地覆盖对象递归合并、列表整体替换；review/draft 解析时跳过非只读 CLI 候选并说明「非只读座位」，doctor 同样警告；可使用只读 CLI 或 agent_use 文本座位，角色名不能与座位或内置命令冲突。
 
@@ -21,7 +24,7 @@ panel 默认名单去掉主会话自身后过滤不可用座位，stderr 列原�
 
 新手请先看 [README](../README.md)，安装细节见[使用指南](guide.zh-CN.md)。
 
-Claude / Codex 主会话的多模型分工层，支持本地接入其他座位。**任意项目、任意机器同一套规矩。** 思路来自 luolei 的 [我的 AI 工作流](https://ai-workflow.zuoluo.tv)。
+Claude / Codex / pi / omp 主会话的多模型分工层，支持本地接入其他座位。**任意项目、任意机器同一套规矩。** 思路来自 luolei 的 [我的 AI 工作流](https://ai-workflow.zuoluo.tv)。
 
 没有框架、没有服务：一份约定（`CLAUDE.md`）、一张派单表、一个外包脚本、一个任务清单脚本。
 
@@ -155,7 +158,7 @@ freecheck 跳过旧座位条目及已停用候选，对每个唯一 provider:mod
 
 改了 AGENTS.harness.md 或安装逻辑后，另一台机器 `aiw sync` 之后还要重跑 install.sh。
 
-Claude 主会话规则见 `CLAUDE.md`；Codex 主会话规则见 `AGENTS.harness.md`，由安装脚本同步到全局配置。Codex 主会话自行改文件，不再调用 `aiw write` 套自己。
+Claude 主会话规则见 `CLAUDE.md`；Codex / pi / omp 主会话规则见 `AGENTS.harness.md`，由安装脚本同步到全局配置。Codex 主会话自行改文件，不再调用 `aiw write` 套自己。
 
 ## 架构
 
@@ -355,6 +358,10 @@ worker 只接受 `--ro --text --worktree --net --no-fallback --no-findings --all
 源目录有 `auth.json` 时，执行方 home 中只建立指向源文件的软链，不复制凭据。启动时附加 `-c skills.include_instructions=false`，避免加载主会话技能列表；工作目录里的项目 `AGENTS.md` 仍会加载，`AIW_NESTED=1` 注入保持不变。执行方会话记录（rollout）现在落在 `state/codex-home/sessions/`（设 `AIW_STATE` 时跟随 STATE）。
 
 源配置缺失、解析失败、缺少 provider 表或生成失败时，stderr 提示原因并回退共享配置，不阻断派单。`AIW_CODEX_SHARED_HOME=1` 完全关闭此功能，沿用父进程配置和环境；claude、agent_use 座位及 preflight 不受影响。`aiw doctor` 共用生成逻辑检查执行方 home 是否可生成，但不落盘；显示路径与检查结果，失败时显示原因，不打印配置值。
+
+## 主会话用 pi / omp
+
+安装脚本发现 `~/.pi` / `~/.omp` 目录或 `pi` / `omp` 命令时，把 `AGENTS.harness.md` 与可选的 `~/.config/aiw/AGENTS.personal.md` 写入对应的 `~/.pi/agent/AGENTS.md` / `~/.omp/agent/AGENTS.md` 标记块，保留块外内容；不写 hooks.json。omp 全局上下文文件路径未核实。用 `AIW_NO_PI=1` / `AIW_NO_OMP=1` 跳过；`aiw doctor` 检查已检测到的接入及标记块是否最新。三种角色公开默认均为空，请在本地配置中填入允许的座位。
 
 ## 主会话用 Codex
 

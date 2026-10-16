@@ -283,7 +283,7 @@ def check_seats(rules: list[dict], config: dict) -> None:
             if r["seat"] == "panel" and "panel_default" not in text:
                 text = re.sub(r"\b[A-Z_][A-Z0-9_]*=[A-Za-z0-9_-]+", "", text)
                 listed = {s for s in known if re.search(r"(?<![A-Za-z0-9_-])" + re.escape(s) + r"(?![A-Za-z0-9_-])", text)}
-                expected = set(config["panel_default"]) - set(config["self_seats"][main])
+                expected = set(config["panel_default"]) - set(config.get("self_seats", {}).get(main, [])) - set(config.get("main_exclude", {}).get(main, []))
                 if listed != expected:
                     raise RuleError(f"规则 {r['id']} {field}: 多出 {sorted(listed - expected)}；缺少 {sorted(expected - listed)}")
 

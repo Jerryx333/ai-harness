@@ -9,7 +9,7 @@
     --full 不追加格式要求，stdout 不内联各家回答（全文在会诊目录的 <座位>.md）。
     --prior 主会话事先写好的判断，只归档并展示给主会话，不发给座位。
     默认座位见 seats.json 的 panel_default，去掉主会话自己
-    （Claude Code 里自动识别；Codex 里请带 AIW_MAIN=codex）。
+    （Claude Code / pi / omp 里自动识别；Codex 里请带 AIW_MAIN=codex）。
 
 每家的输出在 state/panels/<时间>/<座位>.md，实际执行方在 <座位>.provider。
 不顶替（--no-fallback）：会诊要的是不同模型家族的独立视角，一家挂了就记为缺席，
@@ -109,9 +109,16 @@ def main() -> int:
     if errands.intersection(seats if explicit else (SEATS["panel_free"] if free else SEATS.get("panel_default", []))):
         print("跑腿供应商不能进入 panel，请改用 aiw errand", file=sys.stderr)
         return 64
-    if not seats:
+    from ai_worker import main_excluded
+    excluded = main_excluded()
+    if explicit:
+        for seat in seats:
+            if seat in excluded:
+                print(f"主会话 {main_agent()} 的 main_exclude 跳过座位 {seat}", file=sys.stderr)
+        seats = [seat for seat in seats if seat not in excluded]
+    if not explicit:
         me = main_agent()
-        skip = set(SEATS.get("self_seats", {}).get(me, [])) if me else set()
+        skip = set(SEATS.get("self_seats", {}).get(me, [])) | excluded
         defaults = SEATS["panel_free"] if free else SEATS.get("panel_default", [])
         from ai_worker import seat_unavailable
         seats = []

@@ -32,9 +32,11 @@ panel 默认名单去掉主会话自身后过滤不可用座位，stderr 列原�
 - `~/.claude/CLAUDE.md`：添加公开规则引入行；个人规则存在时，紧接着引入。保留其他文字。
 - `~/.claude/settings.json`：添加或刷新 `UserPromptSubmit` 派单钩子。保留其他设置和钩子。
 - `~/.local/bin/aiw`：创建或替换指向本仓库的软链，**不备份**。
-- `~/.zshrc`：仅当 PATH 缺少 `~/.local/bin` 且文件没有安装标记时，追加带标记的 PATH 设置。
+- `~/.zshrc`：不改。`~/.local/bin` 不在 PATH 时只打印提示。
 - 若存在 `~/.codex` 或 PATH 中有 `codex`：更新 `~/.codex/AGENTS.md` 的 aiw 标记块，以及 `~/.codex/hooks.json` 的钩子。保留块外文字。设 `AIW_NO_CODEX=1` 可跳过。
 - 创建仓库的 `state/` 目录，给入口脚本加执行权限，检查路由并运行 doctor。检查可能只警告，不使安装失败。
+
+`--minimal` 只创建 `~/.claude/aiw` 和 `~/.local/bin/aiw` 软链并写 `state/minimal` 标记，不改上述任何文件、不预检 JSON；`aiw doctor` 据标记跳过规则和钩子检查。不带参数重跑即接入并清除标记。
 
 已有文件改动前备份为 `.bak-年月日-时分秒`，新建或未变的不备份。先检查 JSON；重复安装不重复追加。`--claude-hook=plugin` 会移除 settings 中的派单钩子，交给另行管理的插件；它不安装插件。
 
@@ -144,13 +146,13 @@ aiw 帮 Claude Code 或 Codex 主会话把活分给不同模型：改代码用 w
 ~/.claude/aiw/uninstall.sh
 ```
 
-脚本删除 aiw 的规则引入、派单钩子、AGENTS 标记块及安装器添加的 PATH 设置，仅删除指向本仓库的软链。改动前备份为 `.bak-*`；JSON 不合法时退出且不改任何文件，可重复运行。仓库和 `state/`、`~/.config/aiw/`、agent-use / agent-use-adapters 及插件钩子均保留；如装过 aiw 插件，请在 Claude Code 里停用。
+脚本删除 aiw 的规则引入、派单钩子、AGENTS 标记块及旧版安装器添加的 PATH 设置，仅删除指向本仓库的软链。改动前备份为 `.bak-*`；JSON 不合法时退出且不改任何文件，可重复运行。仓库和 `state/`、`~/.config/aiw/`、agent-use / agent-use-adapters 及插件钩子均保留；如装过 aiw 插件，请在 Claude Code 里停用。
 
 也可手动撤销以下改动，保留其他设置：
 
 - 从 `~/.claude/CLAUDE.md` 删除 aiw 引入行及其个人规则引入行。
 - 从 `~/.claude/settings.json` 和已接入时的 `~/.codex/hooks.json` 中，仅删除命令含 `aiw/route.py` 的钩子，保持 JSON 合法；从 `~/.codex/AGENTS.md` 以及存在时的 `~/.pi/agent/AGENTS.md`、`~/.omp/agent/AGENTS.md` 删除 `aiw:begin` 到 `aiw:end` 的整个标记块。
-- 删除 `~/.local/bin/aiw` 软链；若安装时添加过，从 `~/.zshrc` 删除 `# aiw: on PATH` 及其 PATH 设置。
+- 删除 `~/.local/bin/aiw` 软链；旧版安装器可能在 `~/.zshrc` 加过 `# aiw: on PATH` 及其 PATH 设置，有则删除。
 - 停用另行安装的插件钩子。不再需要时才删除仓库（含本地 `state/`）和本地 aiw 配置。也可用 `.bak-*` 恢复代替手改，但须确认不会丢掉后续修改；命令软链没有备份。
 
 ## 进阶细节

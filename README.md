@@ -12,8 +12,8 @@
 
 - **省主会话 token**：过程不进主会话，只收结果。作者的配对对照里主会话少花约三分之一；日常长会话中改 3 个文件以上的需求，约为自己改的四分之一。
 - **你什么都不用管**：照常聊天。派不派、派给谁、怎么验收，主会话自己定；想换模型、加座位，也跟主会话说一句，它会改本地配置并用 `aiw doctor` 检查。
-- **入侵少**：只在本机装了的 CLI 里加几行，改前都备份；不想用了执行 `~/.claude/aiw/uninstall.sh`。
-- **轻量**：不起服务、不常驻，派单时才运行，只要 Python 3.11+。
+- **入侵少**：只在本机装了的 CLI 里加几行，改前都备份，不改 shell 配置；想先试命令可用 `--minimal` 只装命令。不想用了执行 `~/.claude/aiw/uninstall.sh`。
+- **轻量**：不起服务、不常驻，派单时才运行，只要 Python 3.11+。常驻规则约 1300 字；钩子只在命中派单规则的消息上加一两行提示，其余轮次不注入。
 
 <details>
 <summary>安装具体改了哪些地方</summary>
@@ -24,7 +24,7 @@
 | Codex | `~/.codex/AGENTS.md` 加一段规则，`hooks.json` 加一个提示钩子 |
 | pi / omp | `~/.pi/agent/AGENTS.md` / `~/.omp/agent/AGENTS.md` 加一段规则，不加钩子 |
 
-另外建 `~/.local/bin/aiw` 软链。Codex、pi、omp 只在本机装了时才改。卸载脚本可先加 `--dry-run` 预览，细节见[安装做了什么](docs/guide.zh-CN.md#安装做了什么)和[卸载](docs/guide.zh-CN.md#卸载)。
+另外建 `~/.local/bin/aiw` 软链，不改 shell 配置（`~/.local/bin` 不在 PATH 时只提示）。Codex、pi、omp 只在本机装了时才改。`--minimal` 只建软链，不改以上任何文件。卸载脚本可先加 `--dry-run` 预览，细节见[安装做了什么](docs/guide.zh-CN.md#安装做了什么)和[卸载](docs/guide.zh-CN.md#卸载)。
 
 </details>
 
@@ -89,6 +89,13 @@ aiw review "$HOME/.claude/aiw" 900 /tmp/aiw-review.txt --ro
 </details>
 
 <details>
+<summary>常驻规则和钩子会不会把上下文搞重？</summary>
+
+不会。常驻规则（`~/.claude/aiw/CLAUDE.md`，或 Codex 的 AGENTS 标记块）约 1300 字，细节都放在参考手册里，主会话用到时再读。钩子每轮只做一次本地正则判定（约 70 毫秒）：命中派单规则时注入一两行提示（约 100–300 字），没命中时什么都不注入；`aiw off` 关闭派单后，提示每个会话只出现一次。派出去的过程不进主会话，只收结果。
+
+</details>
+
+<details>
 <summary>派一单要等多久？</summary>
 
 按作者本机一周的记录（中位数）：改代码约 4 分钟（Codex 要读代码、改文件、跑测试）；只读评审、找代码约 2–3 分钟；只写文字时免费模型约 20 秒，Claude 约 2 分钟。派出去后主会话可以接着做别的；又小又急的活，自己做更快。
@@ -130,7 +137,7 @@ Codex、Claude 按你自己的账号计费。接入的免费模型可以标成�
 
 Linux 尚未测试，已测试 macOS。
 
-规则太强势：用个人规则覆盖，或从 `~/.claude/CLAUDE.md` 删除 `@~/.claude/aiw/CLAUDE.md`。若也不想收到派单提示，按[卸载小节](docs/guide.zh-CN.md#卸载)移除 aiw 钩子。
+规则太强势：用个人规则覆盖，或从 `~/.claude/CLAUDE.md` 删除 `@~/.claude/aiw/CLAUDE.md`，或重装为 `install.sh --minimal` 只留 `aiw` 命令。若也不想收到派单提示，按[卸载小节](docs/guide.zh-CN.md#卸载)移除 aiw 钩子。
 
 </details>
 

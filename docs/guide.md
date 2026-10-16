@@ -35,9 +35,11 @@ The installer makes these changes:
 - `~/.claude/CLAUDE.md`: adds the aiw import, then existing personal rules; keeps other text.
 - `~/.claude/settings.json`: adds/refreshes the `UserPromptSubmit` hook; keeps other settings/hooks.
 - `~/.local/bin/aiw`: creates or replaces a symlink to this checkout, **without a backup**.
-- `~/.zshrc`: adds the marked PATH block only if `~/.local/bin` is missing from PATH and the marker is absent.
+- `~/.zshrc`: not touched. If `~/.local/bin` is not on PATH, it only prints a hint.
 - If `~/.codex` exists or `codex` is on PATH: updates the aiw block in `~/.codex/AGENTS.md` and the hook in `~/.codex/hooks.json`. Keeps text outside the block. Set `AIW_NO_CODEX=1` to skip this.
 - Creates `state/`, makes entry scripts executable, checks routing and runs doctor; warnings may not fail installation.
+
+`--minimal` creates only `~/.claude/aiw` and the `~/.local/bin/aiw` symlink and writes a `state/minimal` marker; it changes none of the files above and skips the JSON preflight. `aiw doctor` reads the marker and skips the rule and hook checks. Rerun without the flag to connect everything and clear the marker.
 
 Changed existing files get `.bak-YYYYMMDD-HHMMSS` backups; new/unchanged files do not. JSON is checked before edits. Reinstalling avoids duplicates. `--claude-hook=plugin` removes the settings hook; manage plugin hooks separately. It does not install a plugin.
 
@@ -149,13 +151,13 @@ Run the uninstall script (add `--dry-run` to preview):
 ~/.claude/aiw/uninstall.sh
 ```
 
-It removes aiw imports, assignment hooks, AGENTS blocks and the PATH entry added by the installer, and deletes only symlinks pointing to this checkout. Changes get `.bak-*` backups; invalid JSON stops all changes. It is safe to run again. The checkout, `state/`, `~/.config/aiw/`, agent-use / agent-use-adapters and plugin hooks are preserved. If you installed the aiw plugin, disable it in Claude Code.
+It removes aiw imports, assignment hooks, AGENTS blocks and the PATH entry an older installer may have added, and deletes only symlinks pointing to this checkout. Changes get `.bak-*` backups; invalid JSON stops all changes. It is safe to run again. The checkout, `state/`, `~/.config/aiw/`, agent-use / agent-use-adapters and plugin hooks are preserved. If you installed the aiw plugin, disable it in Claude Code.
 
 You can also undo these changes manually; keep unrelated settings:
 
 - Remove the aiw import and its personal-rule import from `~/.claude/CLAUDE.md`.
 - Remove only hooks whose command contains `aiw/route.py` from `~/.claude/settings.json` and, if installed, `~/.codex/hooks.json`; keep valid JSON. Remove the `aiw:begin` through `aiw:end` block from `~/.codex/AGENTS.md`, `~/.pi/agent/AGENTS.md`, and `~/.omp/agent/AGENTS.md` when present.
-- Remove the `~/.local/bin/aiw` symlink and the `# aiw: on PATH` block from `~/.zshrc` if the installer added it.
+- Remove the `~/.local/bin/aiw` symlink and the `# aiw: on PATH` block from `~/.zshrc` if an older installer added it.
 - Stop any separately installed plugin hook. Delete the checkout (including local `state/`) and local aiw settings only when no longer needed. Restore `.bak-*` files only if no later changes would be lost; the symlink has no backup.
 
 ## Advanced details

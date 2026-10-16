@@ -12,8 +12,8 @@ Works with Claude Code, Codex, pi and omp as the main session.
 
 - **Fewer main-session tokens**: the work happens elsewhere; only results come back. In the author's paired comparison the main session spent about a third less; in everyday long sessions, tasks touching 3+ files cost about a quarter of doing them directly.
 - **Nothing for you to manage**: chat as usual. The main session decides whether to dispatch, to whom and how to verify. To switch models or add seats, just tell the main session; it edits the local configuration and checks it with `aiw doctor`.
-- **Minimal footprint**: a few lines in the CLIs you have installed, backed up first; to remove it, run `~/.claude/aiw/uninstall.sh`.
-- **Lightweight**: no service, nothing resident; it runs only when work is dispatched. Needs only Python 3.11+.
+- **Minimal footprint**: a few lines in the CLIs you have installed, backed up first, and it never edits your shell configuration; `--minimal` installs just the command. To remove it, run `~/.claude/aiw/uninstall.sh`.
+- **Lightweight**: no service, nothing resident; it runs only when work is dispatched. Needs only Python 3.11+. The resident rules are about 1,300 characters; the hook adds a one- or two-line hint only on messages that match an assignment rule and nothing otherwise.
 
 <details>
 <summary>Exactly what installation changes</summary>
@@ -24,7 +24,7 @@ Works with Claude Code, Codex, pi and omp as the main session.
 | Codex | A rules block in `~/.codex/AGENTS.md`, one hint hook in `hooks.json` |
 | pi / omp | A rules block in `~/.pi/agent/AGENTS.md` / `~/.omp/agent/AGENTS.md`, no hook |
 
-It also creates the `~/.local/bin/aiw` symlink. Codex, pi and omp are touched only if installed. Preview the uninstaller with `--dry-run`; see [what the installer changes](docs/guide.md#what-the-installer-changes) and [Uninstall](docs/guide.md#uninstall).
+It also creates the `~/.local/bin/aiw` symlink and never edits your shell configuration (it only prints a hint if `~/.local/bin` is not on PATH). Codex, pi and omp are touched only if installed. `--minimal` creates just the symlink and leaves every file above alone. Preview the uninstaller with `--dry-run`; see [what the installer changes](docs/guide.md#what-the-installer-changes) and [Uninstall](docs/guide.md#uninstall).
 
 </details>
 
@@ -89,6 +89,13 @@ To see your actual usage, use `aiw tokens` (local Claude Code main-session usage
 </details>
 
 <details>
+<summary>Do the resident rules and the hook bloat the context?</summary>
+
+No. The resident rules (`~/.claude/aiw/CLAUDE.md`, or the block in Codex's AGENTS.md) are about 1,300 characters; details live in the reference and are read only when needed. The hook runs one local regex check per turn (about 70 ms) and injects a one- or two-line hint (100–300 characters) only when a message matches an assignment rule; otherwise it injects nothing. After `aiw off`, the notice appears once per session. The dispatched work never enters the main session; only results come back.
+
+</details>
+
+<details>
 <summary>How long does an assignment take?</summary>
 
 Medians from one week on the author's machine: code changes about 4 minutes (Codex reads code, edits files and runs tests); read-only reviews and code search about 2–3 minutes; text only about 20 seconds with free models, about 2 minutes with Claude. The main conversation can keep working meanwhile. For small, urgent work, doing it yourself is faster.
@@ -130,7 +137,7 @@ Seats pin Opus and never automatically select Fable. On Pro, Fable is billed by 
 
 Linux is untested; only macOS has been tested.
 
-If the rules feel too forceful, override them with personal rules, or remove `@~/.claude/aiw/CLAUDE.md` from `~/.claude/CLAUDE.md`. To stop assignment suggestions too, remove the aiw hooks as described in [Uninstall](docs/guide.md#uninstall).
+If the rules feel too forceful, override them with personal rules, remove `@~/.claude/aiw/CLAUDE.md` from `~/.claude/CLAUDE.md`, or reinstall with `install.sh --minimal` to keep only the `aiw` command. To stop assignment suggestions too, remove the aiw hooks as described in [Uninstall](docs/guide.md#uninstall).
 
 </details>
 

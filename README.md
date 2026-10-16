@@ -11,18 +11,16 @@
 
 | | |
 | --- | --- |
-| 依赖 | 只要 Python 3.11+，不装任何包 |
 | 进程 | 不起服务、不常驻，派单时才运行 |
-| 配置 | 只装 Claude Code 或 Codex 一家，不用配置就能用 |
-| 对你环境的改动 | `~/.claude/CLAUDE.md` 加一行引用、`settings.json` 加一个提示钩子（装了 Codex 时再加一处），改前都先备份 |
+| 对你环境的改动 | Claude Code：`~/.claude/CLAUDE.md` 加一行引用，`settings.json` 加一个提示钩子<br>Codex：`~/.codex/AGENTS.md` 加一段规则，`hooks.json` 加一个提示钩子<br>pi / omp：`~/.pi/agent/AGENTS.md` / `~/.omp/agent/AGENTS.md` 加一段规则，不加钩子<br>Codex、pi、omp 只在本机装了时才改，改前都先备份 |
 | 日常命令 | 4 个：`aiw doctor`、`aiw review`、`aiw write`、`aiw draft` |
-| 不想用了 | 手动删掉那行引用、钩子和命令软链，清单见[卸载](docs/guide.zh-CN.md#卸载) |
+| 不想用了 | 手动撤销上面这些改动并删掉命令软链，清单见[卸载](docs/guide.zh-CN.md#卸载) |
 
 不改习惯：照常用 Claude Code 或 Codex，遇到适合派出去的活它会提示，派不派由你定。
 
 ## 3 步上手
 
-需要 macOS（目前只在 macOS 测试过）和已登录的 Claude Code 或 Codex CLI（至少一个）。
+需要 macOS（目前只在 macOS 测试过）、Python 3.11+，以及已登录的 Claude Code 或 Codex CLI（至少一个）。
 
 ```bash
 # 1. 安装（克隆到这个固定位置）

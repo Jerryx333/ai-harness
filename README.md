@@ -34,10 +34,12 @@
 
 ```bash
 git clone https://github.com/Jerryx333/aiw.git ~/.claude/aiw && ~/.claude/aiw/install.sh
-aiw doctor   # PATH 有变化时先新开终端
+aiw doctor   # 提示 ~/.local/bin 不在 PATH 时，按提示加上再新开终端
 ```
 
 装好后照常用，不用记任何命令。
+
+只想先试命令、不动任何配置：`~/.claude/aiw/install.sh --minimal` 只装 `aiw` 命令，不改 CLAUDE.md、settings.json、Codex 配置和 shell 配置；之后想接规则和钩子，不带参数重跑即可。安装脚本从不改 shell 配置。
 
 <details>
 <summary>想先手动试一单</summary>

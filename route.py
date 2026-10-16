@@ -26,6 +26,7 @@ import socket
 import stat
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 import findings
@@ -37,7 +38,32 @@ LOG = STATE / "router-log.jsonl"
 
 
 def dispatch_off_text(until) -> str:
-    return f"[派单已关闭] 用户已用 aiw off 关闭派单（{dispatch.until_text(until)}），本会话所有工作由主会话自己完成，不调用 aiw write/review/draft/panel/goal、不运行对照实验；用户点名派单时照做。"
+    return f"[派单已关闭] 用户已用 aiw off 关闭派单（{dispatch.until_text(until)}），本会话所有工作由主会话自己完成，不调用 aiw write/review/draft/panel/goal；用户点名派单时照做。"
+
+
+def off_notice_due(session) -> bool:
+    """关闭提示每个会话只注入一次（命中派单规则的消息除外）；无会话编号或记录损坏时照常注入。"""
+    if not isinstance(session, str) or not session:
+        return True
+    path = STATE / "off-notified.json"
+    now = time.time()
+    try:
+        seen = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(seen, dict):
+            seen = {}
+    except (OSError, ValueError):
+        seen = {}
+    seen = {k: v for k, v in seen.items() if isinstance(v, (int, float)) and now - v < 2 * 86400}
+    due = session not in seen
+    seen[session] = now
+    try:
+        STATE.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_name(f"{path.name}.tmp-{os.getpid()}")
+        tmp.write_text(json.dumps(seen), encoding="utf-8")
+        tmp.replace(path)
+    except OSError:
+        pass
+    return due
 
 
 def dispatch_off_hook() -> None:
@@ -309,6 +335,7 @@ def main() -> int:
     ctx, context_text = None, ""
     cross_session = False
     dispatch_off, dispatch_until = False, None
+    session_id = None
     try:
         config = load_seats(HERE)
     except ConfigError as error:
@@ -342,6 +369,7 @@ def main() -> int:
         if "turn_id" in payload and payload.get("session_id"):
             write_tui_session(STATE, payload["session_id"], payload.get("transcript_path"))
         msg = payload.get("prompt", "")
+        session_id = payload.get("session_id")
         cwd = Path(payload.get("cwd") or cwd)
         # Codex 的钩子输入带 turn_id（Codex 扩展字段）；Claude Code 没有
         main_ = main_ or ("codex" if "turn_id" in payload else "claude")
@@ -377,7 +405,9 @@ def main() -> int:
     if hook:
         context = ["[派单] " + res["instruction"]] if res["instruction"] else []
         if dispatch_off:
-            context = [dispatch_off_text(dispatch_until)]
+            # 关闭期间只在会话第一条和本来会派单的消息上提醒，其余轮次不占上下文。
+            due = off_notice_due(session_id)  # 先登记会话，命中规则的消息也算提示过
+            context = [dispatch_off_text(dispatch_until)] if res["instruction"] or due else []
         hint = findings.hint_text() if not cross_session and not dispatch_off else ""
         if hint:
             context.append(hint)

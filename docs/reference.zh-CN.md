@@ -39,6 +39,8 @@ git clone https://github.com/Jerryx333/aiw.git ~/.claude/aiw
 aiw doctor
 ```
 
+`--minimal` 只装 `aiw` 命令（`~/.local/bin/aiw` 软链和 `~/.claude/aiw`），不改 CLAUDE.md、settings.json、Codex / pi / omp 配置，也不预检这些文件；`aiw doctor` 会标明最小安装并跳过规则和钩子检查。不带 `--minimal` 重跑即接入并清除标记（`state/minimal`）。安装脚本不改 shell 配置：`~/.local/bin` 不在 PATH 时只提示。
+
 通过插件管理 aiw 派单钩子的机器用 `~/.claude/aiw/install.sh --claude-hook=plugin`，由插件管理派单钩子，并清理 settings.json 中的重复钩子。卸载插件后，不带参数重跑即恢复（默认 `--claude-hook=settings`）。
 
 `--with-agent-use` 可与 `--claude-hook=settings|plugin` 任意组合。核心路径用 `AGENT_USE_HOME`（默认 `~/.local/share/agent-use`，新路径不存在时沿用已有的 `~/code/ai/agent-use`），适配器路径用 `AIW_ADAPTERS_HOME`（默认解析出的核心目录同级的 `agent-use-adapters`）；仓库地址可用 `AIW_AGENT_USE_REPO` / `AIW_ADAPTERS_REPO` 覆盖。只补充 `AIW_CONFIG` 或 `~/.config/aiw/seats.local.json` 中缺失的 `opencode` 座位和 fallback；坏 JSON 不改，注册表冲突保留原文件并提示自行合并。不选参数且核心缺失时会给出安装建议。
@@ -256,7 +258,7 @@ agent_use 座位通过本地配置接入 [agent-use](https://github.com/Jerryx33
 
 ### 派单开关：off / on / status
 
-`aiw off` 关闭派单至本地时区次日 00:00；`aiw off 30m|2h|3d` 指定时长，`aiw off forever` 关闭直到 `aiw on`。`aiw status` 查看状态，off/on 后也会打印状态。状态保存在 `$AIW_STATE/dispatch.json`（默认仓库 `state/dispatch.json`），过期或损坏视为开启。关闭时钩子暂停派单和缓冲区提示，保留上下文提示；直接调用 `aiw write/review/draft/panel/goal` 仍可执行。
+`aiw off` 关闭派单至本地时区次日 00:00；`aiw off 30m|2h|3d` 指定时长，`aiw off forever` 关闭直到 `aiw on`。`aiw status` 查看状态，off/on 后也会打印状态。状态保存在 `$AIW_STATE/dispatch.json`（默认仓库 `state/dispatch.json`），过期或损坏视为开启。关闭时钩子暂停派单和缓冲区提示，保留上下文提示；「[派单已关闭]」提示只在会话第一条消息和命中派单规则的消息上注入（已提示的会话记在 `$AIW_STATE/off-notified.json`，两天后过期），其余轮次不占上下文。直接调用 `aiw write/review/draft/panel/goal` 仍可执行。
 
 ```
 aiw <seat> <workdir> <timeout_s> <prompt_file> [--ro] [--text] [--worktree] [--net] [--no-fallback] [--attach 文件 ...]

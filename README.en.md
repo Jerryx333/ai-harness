@@ -34,10 +34,12 @@ You need macOS (the only tested OS) and logged-in Claude Code or Codex CLI (at l
 
 ```bash
 git clone https://github.com/Jerryx333/aiw.git ~/.claude/aiw && ~/.claude/aiw/install.sh
-aiw doctor   # open a new terminal first if PATH changed
+aiw doctor   # if it says ~/.local/bin is not on PATH, add it and open a new terminal
 ```
 
 Then keep working as usual; there are no commands to learn.
+
+To try the command without touching any configuration: `~/.claude/aiw/install.sh --minimal` installs only the `aiw` command and leaves CLAUDE.md, settings.json, Codex configuration and your shell configuration alone; rerun without the flag later to connect the rules and hooks. The installer never edits your shell configuration.
 
 <details>
 <summary>Try one assignment by hand</summary>

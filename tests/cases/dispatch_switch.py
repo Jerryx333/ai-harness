@@ -148,6 +148,13 @@ with patch.object(route, 'load_seats', side_effect=route.ConfigError('broken sea
         check('[派单已关闭]' in codex and
               (state / 'tui/dispatch-test').read_text().splitlines()[0] == 'dispatch-session', codex)
         check(hook(override={'AIW_NESTED': '1'}) == '', '嵌套逻辑发生变化')
+        # 关闭提示每个会话只注入一次：同会话没命中规则的消息不再提示，新会话或命中规则时仍提示。
+        quiet = hook(dict(payload, prompt='今天天气如何'))
+        check('[派单已关闭]' not in quiet and '[上下文]' in quiet, quiet)
+        fresh = hook(dict(payload, prompt='今天天气如何', session_id='another-session'))
+        check('[派单已关闭]' in fresh, fresh)
+        check('[派单已关闭]' in hook(), '命中规则时未提示关闭')
+        check('对照实验' not in fresh, '关闭提示不应带私人规则')
         direct = subprocess.run([sys.executable, str(REPO / 'route.py'), payload['prompt']],
                                 env=env, cwd=root, capture_output=True, text=True)
         check(direct.returncode == 0 and json.loads(direct.stdout)['rule'] == 'bulk', repr(direct))

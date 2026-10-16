@@ -28,8 +28,7 @@ RECORDS_LOCK_SECONDS = 10
 _SEQUENCE = itertools.count(1)
 _CONFIG_WARNED = set()
 SUFFIX = """---
-【aiw 观察记录】末尾附块，如实写，无则写无。
-修改边界：范围内可修须写 fixed（改动/应有行为）；范围外、规则/模板/工具只记不修；安全问题正文报告。
+【aiw 观察记录】末尾附块，如实写，无则写无；范围内可修的写 fixed（改动/应有行为），范围外、规则/模板/工具只记不修，安全问题正文报告。
 <<<AIW-FINDINGS
 guess: 猜测
 deviation: 偏离

@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
 # 安装 / 更新 aiw 到本机。幂等：重复跑不会重复追加，改动前先备份。
 #   git clone <仓库> ~/.claude/aiw && ~/.claude/aiw/install.sh
+#   --minimal：只装 aiw 命令（~/.local/bin/aiw 和 ~/.claude/aiw），不改 CLAUDE.md、settings.json、Codex/pi/omp 配置；
+#              之后不带 --minimal 重跑即可接入规则和钩子。
 #   --claude-hook=settings|plugin：默认 settings；plugin 删除 settings 中的派单钩子，交给插件管理。
 #   --with-agent-use：同时安装 / 更新公开核心、现成适配器并注册 provider（座位需自行在本地配置添加）。
 # 做六件事：
 #   1. ~/.claude/CLAUDE.md 引入 @~/.claude/aiw/CLAUDE.md（已有内容保留）
 #   2. ~/.claude/settings.json 加 UserPromptSubmit 派单钩子（其它设置保留）
-#   3. ~/.local/bin/aiw 软链到本仓库，必要时把 ~/.local/bin 加进 PATH
+#   3. ~/.local/bin/aiw 软链到本仓库；~/.local/bin 不在 PATH 时只提示，不改 shell 配置
 #   4. 本机有 Codex（~/.codex 或 codex 命令）时：~/.codex/AGENTS.md 写入/刷新标记块，~/.codex/hooks.json 加派单钩子
 #      pi / omp：目录或命令存在时写 ~/.pi/agent/AGENTS.md、~/.omp/agent/AGENTS.md，不装钩子
 #      （跳过：AIW_NO_CODEX=1 / AIW_NO_PI=1 / AIW_NO_OMP=1）
@@ -19,11 +21,13 @@ set -euo pipefail
 
 CLAUDE_HOOK=settings
 WITH_AGENT_USE=0
+MINIMAL=0
 for arg in "$@"; do
   case "$arg" in
     --claude-hook=settings|--claude-hook=plugin) CLAUDE_HOOK="${arg#*=}" ;;
     --with-agent-use) WITH_AGENT_USE=1 ;;
-    *) echo "用法：$0 [--claude-hook=settings|plugin] [--with-agent-use]" >&2; exit 64 ;;
+    --minimal) MINIMAL=1 ;;
+    *) echo "用法：$0 [--minimal] [--claude-hook=settings|plugin] [--with-agent-use]" >&2; exit 64 ;;
   esac
 done
 
@@ -53,12 +57,14 @@ if os.path.lexists(path) and os.path.realpath(path) != os.path.realpath(repo):
     sys.exit(f"~/.claude/aiw 指向另一份 checkout：{os.path.realpath(path)}，请先处理")
 PYEOF
 
-# 0. 预检：要改的 JSON 先全部解析一遍，任何一个坏了就一处都不动
+# 0. 预检：要改的 JSON 先全部解析一遍，任何一个坏了就一处都不动（最小安装不改这些文件，跳过）
 CHECK_FILES=("${CLAUDE_DIR}/settings.json")
-if [ -z "${AIW_NO_CODEX:-}" ] && { [ -d "${HOME}/.codex" ] || command -v codex >/dev/null 2>&1; }; then
+if [ "$MINIMAL" = 1 ]; then
+  CHECK_FILES=()
+elif [ -z "${AIW_NO_CODEX:-}" ] && { [ -d "${HOME}/.codex" ] || command -v codex >/dev/null 2>&1; }; then
   CHECK_FILES+=("${HOME}/.codex/hooks.json")
 fi
-"$PY" - "${CHECK_FILES[@]}" <<'PYEOF'
+"$PY" - ${CHECK_FILES[@]+"${CHECK_FILES[@]}"} <<'PYEOF'
 import json, sys
 from pathlib import Path
 bad = []
@@ -89,7 +95,19 @@ mkdir -p "${CLAUDE_DIR}" "${H}/state"
 if [ ! -e "${CLAUDE_DIR}/aiw" ] && [ ! -L "${CLAUDE_DIR}/aiw" ]; then
   ln -s "$H" "${CLAUDE_DIR}/aiw"
 fi
+# 最小安装标记只用 bash 重定向和 Python 处理，不依赖 rm / touch（测试环境 PATH 受限）。
+if [ "$MINIMAL" = 1 ]; then
+  : > "${H}/state/minimal"
+  echo "· 最小安装：不改 CLAUDE.md、settings.json 和 Codex / pi / omp 配置"
+else
+  "$PY" -c 'import os, sys
+try:
+    os.remove(sys.argv[1])
+except FileNotFoundError:
+    pass' "${H}/state/minimal"
+fi
 
+if [ "$MINIMAL" = 0 ]; then
 # 1. CLAUDE.md
 "$PY" - "$CLAUDE_DIR/CLAUDE.md" "$HOME/.config/aiw/CLAUDE.personal.md" "$STAMP" <<'PYEOF'
 import shutil, sys
@@ -201,26 +219,17 @@ if json.dumps(data, ensure_ascii=False, sort_keys=True) != before:
 else:
     print(f"✓ {p} 已有派单钩子")
 PYEOF
+fi
 
 # 3. aiw 命令
 chmod +x "${H}/bin/aiw" "${H}/install.sh"
 mkdir -p "${HOME}/.local/bin"
 ln -sfn "${H}/bin/aiw" "${HOME}/.local/bin/aiw"
 echo "✓ ~/.local/bin/aiw → ${H}/bin/aiw"
-"$PY" - "$HOME/.zshrc" "$STAMP" "$PATH" <<'PYEOF'
-import os, shutil, sys
-from pathlib import Path
-p, stamp = Path(sys.argv[1]), sys.argv[2]
-old = p.read_text() if p.exists() else ''
-mark = '# aiw: on PATH'
-new = old
-if mark not in new.splitlines() and str(Path.home() / '.local/bin') not in sys.argv[3].split(':'):
-    new += '\n' + mark + '\nexport PATH="$HOME/.local/bin:$PATH"\n'
-if new != old:
-    if p.exists():
-        shutil.copy2(p, p.with_name(p.name + '.bak-' + stamp))
-    p.write_text(new)
-PYEOF
+case ":${PATH}:" in
+  *":${HOME}/.local/bin:"*) ;;
+  *) echo "· ~/.local/bin 不在 PATH：把 export PATH=\"\$HOME/.local/bin:\$PATH\" 加进 shell 配置（如 ~/.zshrc）后新开终端；本脚本不改 shell 配置" ;;
+esac
 
 # 4. Codex / pi / omp 全局上下文
 write_agents_block() {
@@ -260,7 +269,9 @@ PYEOF
 
 # 4. Codex（主会话也可以是 Codex）
 CODEX_DIR="${HOME}/.codex"
-if [ -z "${AIW_NO_CODEX:-}" ] && { [ -d "$CODEX_DIR" ] || command -v codex >/dev/null 2>&1; }; then
+if [ "$MINIMAL" = 1 ]; then
+  :
+elif [ -z "${AIW_NO_CODEX:-}" ] && { [ -d "$CODEX_DIR" ] || command -v codex >/dev/null 2>&1; }; then
   mkdir -p "$CODEX_DIR"
   write_agents_block "$CODEX_DIR"
   "$PY" - "$CODEX_DIR" "$STAMP" <<'PYEOF'
@@ -314,7 +325,9 @@ for main in pi omp; do
     pi) disabled="${AIW_NO_PI:-}" ;;
     omp) disabled="${AIW_NO_OMP:-}" ;;
   esac
-  if [ "$disabled" = 1 ]; then
+  if [ "$MINIMAL" = 1 ]; then
+    :
+  elif [ "$disabled" = 1 ]; then
     echo "· 跳过 $main 接入"
   elif [ -d "${HOME}/.${main}" ] || command -v "$main" >/dev/null 2>&1; then
     write_agents_block "${HOME}/.${main}/agent"
@@ -341,7 +354,11 @@ fi
 echo
 "${H}/bin/aiw" doctor || echo "↑ 有座位没装好或未在 PATH，装好后再跑 aiw doctor。"
 echo
-echo "完成。下一步：按需完成各 CLI 的官方登录（如 codex login），然后 aiw doctor"
+if [ "$MINIMAL" = 1 ]; then
+  echo "最小安装完成：只装了 aiw 命令，没有改 CLAUDE.md、settings.json、Codex / pi / omp 配置和 shell 配置。要接派单规则和钩子，重跑 install.sh（不带 --minimal）。"
+else
+  echo "完成。下一步：按需完成各 CLI 的官方登录（如 codex login），然后 aiw doctor"
+fi
 if [ "$WITH_AGENT_USE" = 0 ] && [ ! -f "$AU/scripts/run_agent.py" ]; then
   echo '· 想把更多模型接进来，可重跑 install.sh --with-agent-use（会克隆 agent-use 和 agent-use-adapters）。'
 fi

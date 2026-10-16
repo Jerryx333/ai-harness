@@ -271,9 +271,13 @@ def repository(repo):
 def check_config(repo, include_local=True):
     home = Path(os.environ['HOME'])
     print('\n配置检查')
-    safe('Claude 派单钩子', lambda: hooks(home / '.claude/settings.json', 'Claude 派单钩子', plugins=plugin_hook(home)))
-    safe('CLAUDE.md 引入', lambda: import_line(home))
-    safe('Claude 个人规则引入', lambda: personal_import(home))
+    minimal = (repo / 'state/minimal').exists()
+    if minimal:
+        print('  · 最小安装：未接 Claude 规则、派单钩子和 Codex / pi / omp 标记块（要接入重跑 install.sh，不带 --minimal）')
+    else:
+        safe('Claude 派单钩子', lambda: hooks(home / '.claude/settings.json', 'Claude 派单钩子', plugins=plugin_hook(home)))
+        safe('CLAUDE.md 引入', lambda: import_line(home))
+        safe('Claude 个人规则引入', lambda: personal_import(home))
     installation = home / '.claude/aiw'
     if installation.exists() or installation.is_symlink():
         if installation.resolve() == repo.resolve():
@@ -285,7 +289,9 @@ def check_config(repo, include_local=True):
     for rel, target, name in (('.local/bin/aiw', repo / 'bin/aiw', '安装链接 aiw'),):
         safe(name, lambda: link(home / rel, target, name))
     hp = home / '.codex/hooks.json'
-    if getenv('AIW_NO_CODEX'):
+    if minimal:
+        pass
+    elif getenv('AIW_NO_CODEX'):
         print('  · 跳过 Codex（AIW_NO_CODEX 已设置；钩子、信任、功能及 AGENTS 均跳过）')
     elif not hp.exists():
         print('  · 未接入 Codex（hooks.json 不存在；钩子、信任、功能及 AGENTS 均跳过）')
@@ -295,6 +301,8 @@ def check_config(repo, include_local=True):
         safe('Codex AGENTS 标记块', lambda: agents(home, repo))
     for main in ('pi', 'omp'):
         name = f'{main} AGENTS 标记块'
+        if minimal:
+            continue
         if getenv(f'AIW_NO_{main.upper()}') == '1':
             print(f'  · 跳过 {main}（AIW_NO_{main.upper()}=1）')
         elif (home / f'.{main}').is_dir() or shutil.which(main):

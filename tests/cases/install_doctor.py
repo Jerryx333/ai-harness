@@ -390,6 +390,7 @@ def install_fresh():
         home, env = fake_home(Path(t))
         p = sh(["bash", str(home / ".claude/aiw/install.sh")], env=env)
         check(p.returncode == 0, f"安装失败: {p.stdout}{p.stderr}")
+        install_out = p.stdout
         md = (home / ".claude/CLAUDE.md").read_text()
         check("@~/.claude/aiw/CLAUDE.md" in md, "CLAUDE.md 未引入")
         st = json.loads((home / ".claude/settings.json").read_text())
@@ -400,8 +401,41 @@ def install_fresh():
         # 通过软链调用（真实使用方式）
         p = sh([str(aiw), "route", "帮我批量重命名所有文件"], env=env, cwd=home)
         check(p.returncode == 0 and '"bulk"' in p.stdout, f"通过软链调用 aiw route 失败: {p.stdout}{p.stderr}")
-        check("aiw: on PATH" in (home / ".zshrc").read_text(), "PATH 未写入 .zshrc")
+        # 不改 shell 配置：PATH 缺 ~/.local/bin 时只提示
+        check(not (home / ".zshrc").exists(), ".zshrc 不应被创建或修改")
+        check("不在 PATH" in install_out and "不改 shell 配置" in install_out, f"缺少 PATH 提示: {install_out}")
 
+
+def install_minimal():
+    with tempfile.TemporaryDirectory() as t:
+        home, env = fake_home(Path(t))
+        (home / ".claude/CLAUDE.md").write_text("# mine\n")
+        (home / ".claude/settings.json").write_text('{"model": "opus"}\n')
+        (home / ".codex").mkdir()
+        (home / ".codex/AGENTS.md").write_text("# codex mine\n")
+        inst = str(home / ".claude/aiw/install.sh")
+        p = sh(["bash", inst, "--minimal"], env=env)
+        check(p.returncode == 0 and "最小安装完成" in p.stdout and "不在 PATH" in p.stdout, p.stdout + p.stderr)
+        check((home / ".claude/CLAUDE.md").read_text() == "# mine\n", "最小安装改了 CLAUDE.md")
+        check((home / ".claude/settings.json").read_text() == '{"model": "opus"}\n', "最小安装改了 settings.json")
+        check((home / ".codex/AGENTS.md").read_text() == "# codex mine\n" and not (home / ".codex/hooks.json").exists(), "最小安装改了 Codex 配置")
+        check(not (home / ".zshrc").exists() and not list((home / ".claude").glob("*.bak-*")), "最小安装不应改 shell 配置或留备份")
+        aiw = home / ".local/bin/aiw"
+        check(aiw.is_symlink() and os.access(aiw, os.X_OK), "aiw 软链缺失")
+        check((home / ".claude/aiw/state/minimal").exists(), "缺少最小安装标记")
+        p = sh([str(aiw), "doctor"], env=env, cwd=home)
+        check("最小安装" in p.stdout and "CLAUDE.md 引入" not in p.stdout and "Codex 派单钩子" not in p.stdout, p.stdout + p.stderr)
+        # 坏 JSON 不影响最小安装：它不碰这些文件
+        (home / ".claude/settings.json").write_text("{bad")
+        p = sh(["bash", inst, "--minimal"], env=env)
+        check(p.returncode == 0 and (home / ".claude/settings.json").read_text() == "{bad", "最小安装不应预检或改动 settings.json")
+        (home / ".claude/settings.json").write_text('{"model": "opus"}\n')
+        # 不带 --minimal 重跑即接入，标记清除
+        p = sh(["bash", inst], env=env)
+        check(p.returncode == 0 and not (home / ".claude/aiw/state/minimal").exists(), p.stdout + p.stderr)
+        check("@~/.claude/aiw/CLAUDE.md" in (home / ".claude/CLAUDE.md").read_text() and (home / ".codex/hooks.json").exists(), "完整安装未接入")
+        p = sh([str(aiw), "doctor"], env=env, cwd=home)
+        check("最小安装" not in p.stdout and "CLAUDE.md 引入" in p.stdout, p.stdout + p.stderr)
 
 
 def install_existing():
@@ -429,7 +463,7 @@ def install_existing():
         check(st["hooks"]["Stop"][0]["hooks"][0]["command"] == "say done", "其它钩子被改")
         baks = list((home / ".claude").glob("*.bak-*"))
         check(len(baks) >= 2, f"应生成 CLAUDE.md 与 settings.json 备份: {baks}")
-        check((home / ".zshrc").read_text().count("aiw: on PATH") == 1, "PATH 重复追加")
+        check(not (home / ".zshrc").exists(), ".zshrc 不应被创建或修改")
         # Codex 接入：原 AGENTS.md 保留、标记块只有一份；hooks.json 原有钩子保留、派单钩子只加一次
         ag = (home / ".codex/AGENTS.md").read_text()
         check(ag.startswith("# 我的 Codex 约定") and ag.count("aiw:begin") == 1 and "AIW_MAIN=codex" in ag, f"AGENTS.md 合并不对:\n{ag[:400]}")
@@ -474,7 +508,7 @@ def install_personal_rules():
             if installed:
                 results = [
                     install_phase(repo, 2, [md, cp, "test"], env),
-                    install_phase(repo, 5, [home / ".codex", repo / "AGENTS.harness.md", "test"], env),
+                    install_phase(repo, 4, [home / ".codex", repo / "AGENTS.harness.md", "test"], env),
                 ]
                 check(all(r.returncode == 0 for r in results), str(results))
                 return "".join(r.stdout for r in results)
@@ -1064,7 +1098,7 @@ def install_hook_duplicates():
         before = [p.read_bytes() for p in files]
         repo = home / '.claude/aiw'
         result = install_phase(repo, 3, [files[0], 'test', 'settings'], env)
-        codex = install_phase(repo, 6, [home / '.codex', 'test'], env)
+        codex = install_phase(repo, 5, [home / '.codex', 'test'], env)
         check(codex.returncode == 0, codex.stderr)
         check(result.returncode == 0 and before == [p.read_bytes() for p in files], 'duplicate removal not idempotent')
         result = install_phase(repo, 3, [files[0], 'test', 'plugin'], env)
@@ -1129,6 +1163,7 @@ CASES = {case.__name__: case for case in (
     doctor,
     doctor_config,
     install_fresh,
+    install_minimal,
     install_existing,
     install_personal_rules,
     install_claude_hook_mode,
@@ -1228,6 +1263,8 @@ def uninstall_roundtrip():
             (folder / 'AGENTS.md').write_text('user agents\n')
         result = sh(['bash', str(repo / 'install.sh')], env=env)
         check(result.returncode == 0, result.stdout + result.stderr)
+        # 旧版 install.sh 会写 .zshrc；模拟旧安装，确认卸载仍清理。
+        (home / '.zshrc').write_text('# aiw: on PATH\nexport PATH="$HOME/.local/bin:$PATH"\n')
         # install.sh normalizes newlines; verify uninstall preserves the current bytes.
         md.write_bytes(md.read_bytes().replace(b'user rules\n', b'user rules\r\n'))
         state = checkout / 'state/keep'

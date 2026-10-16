@@ -11,18 +11,16 @@ For people who use Claude Code, Codex, pi or omp as their main tool and keep hit
 
 | | |
 | --- | --- |
-| Dependencies | Python 3.11+ only; no packages to install |
 | Processes | No service, nothing resident; runs only when you assign work |
-| Configuration | Works with just Claude Code or Codex installed, no configuration needed |
-| Changes to your setup | One import line in `~/.claude/CLAUDE.md` and one hint hook in `settings.json` (one more of each for Codex if installed), backed up first |
+| Changes to your setup | Claude Code: one import line in `~/.claude/CLAUDE.md`, one hint hook in `settings.json`<br>Codex: a rules block in `~/.codex/AGENTS.md`, one hint hook in `hooks.json`<br>pi / omp: a rules block in `~/.pi/agent/AGENTS.md` / `~/.omp/agent/AGENTS.md`, no hook<br>Codex, pi and omp are touched only if installed; everything is backed up first |
 | Everyday commands | 4: `aiw doctor`, `aiw review`, `aiw write`, `aiw draft` |
-| Stop using it | Remove the import line, the hooks and the command symlink by hand; see [Uninstall](docs/guide.md#uninstall) |
+| Stop using it | Undo the changes above and remove the command symlink by hand; see [Uninstall](docs/guide.md#uninstall) |
 
 Keep your workflow: use Claude Code or Codex as usual. When work is suitable to hand off, it suggests who should take it; you decide.
 
 ## Three steps
 
-You need macOS (the only tested OS) and logged-in Claude Code or Codex CLI (at least one).
+You need macOS (the only tested OS), Python 3.11+, and logged-in Claude Code or Codex CLI (at least one).
 
 ```bash
 # 1. Install (clone to this exact location)

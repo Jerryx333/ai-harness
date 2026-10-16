@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="880" height="452" viewBox="0 0 880 452" role="img" aria-label="aiw 会话示例：主会话收到派单提示，写任务单派给 aiw，验收后提交">
+  <style>
+    text { font-family: "SF Mono", Menlo, Consolas, "PingFang SC", "Microsoft YaHei", monospace; font-size: 14.5px; fill: #d4d4d8; }
+    .dim { fill: #8b8b96; }
+    .you { fill: #f4f4f5; }
+    .hint { fill: #e5c07b; }
+    .bullet { fill: #d97757; }
+    .tool { fill: #7dd3fc; }
+    .ok { fill: #86efac; }
+    .title { font-size: 13px; fill: #9a9aa5; }
+    .tag { font-size: 12px; fill: #1c1c22; font-weight: 600; }
+  </style>
+  <rect width="880" height="452" rx="12" fill="#1c1c22"/>
+  <rect width="880" height="38" rx="12" fill="#26262e"/>
+  <rect y="26" width="880" height="12" fill="#26262e"/>
+  <circle cx="22" cy="19" r="6" fill="#ff5f57"/><circle cx="42" cy="19" r="6" fill="#febc2e"/><circle cx="62" cy="19" r="6" fill="#28c840"/>
+  <text x="440" y="24" text-anchor="middle" class="title">Claude Code · aiw</text>
+
+  <text x="28" y="78" class="you">&gt; 加一个卸载脚本，撤销安装时做的所有改动，并补测试</text>
+  <text x="44" y="104" class="dim">⎿</text><text x="66" y="104" class="hint">[派单] 本条判定为【批量机械改动】：能一句话写清验收就交给 aiw write，主会话不要逐个文件改 …</text>
+
+  <text x="28" y="146" class="bullet">●</text><text x="48" y="146">先读 install.sh，弄清安装改了哪些地方，写成任务单：</text>
+  <text x="48" y="168" class="dim">范围 uninstall.sh + 测试 · 幂等 · 支持 --dry-run · 验收：全量测试通过</text>
+
+  <text x="28" y="208" class="bullet">●</text><text x="48" y="208" class="tool">aiw write . 1200 task.md --verify "python3 tests/test_harness.py"</text>
+  <text x="44" y="232" class="dim">⎿</text><text x="66" y="232" class="dim">后台运行 · 读代码、改文件、跑测试都在别处，主会话继续干别的</text>
+  <text x="44" y="256" class="dim">⎿</text><text x="66" y="256" class="ok">✓ 验收 1/1 通过</text><text x="200" y="256" class="dim">· 实际执行方 codex · 改动 9 个文件</text>
+
+  <text x="28" y="298" class="bullet">●</text><text x="48" y="298">核对 diff：删软链时会多留一个 .bak 软链，改掉并更新测试。</text>
+  <text x="48" y="320">测试通过，已提交。</text>
+
+  <line x1="28" y1="352" x2="852" y2="352" stroke="#33333d"/>
+  <rect x="28" y="372" width="78" height="22" rx="11" fill="#e5c07b"/><text x="67" y="387" text-anchor="middle" class="tag">自动提示</text>
+  <text x="116" y="388" class="dim">钩子判断这件活该派给谁</text>
+  <rect x="330" y="372" width="78" height="22" rx="11" fill="#7dd3fc"/><text x="369" y="387" text-anchor="middle" class="tag">主会话派</text>
+  <text x="418" y="388" class="dim">派不派、怎么验收它自己定</text>
+  <rect x="640" y="372" width="64" height="22" rx="11" fill="#86efac"/><text x="672" y="387" text-anchor="middle" class="tag">只收结果</text>
+  <text x="714" y="388" class="dim">过程不进上下文</text>
+  <text x="28" y="428" class="dim" style="font-size:12px">按一次真实会话整理（aiw 新增卸载脚本），文字有删减。</text>
+</svg>

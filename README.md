@@ -2,86 +2,69 @@
 
 [中文](README.md) | [English](README.en.md)
 
-**主模型只管定方案和验收，读代码、跑命令、起草摘要这类体力活派给别的模型。**
-给用 Claude Code、Codex、pi 或 omp 当主力、常被额度卡住或上下文撑爆的人。
+**让主会话少花 token：读代码、改文件、跑测试派出去，主会话只写单和验收。**
 
-<p align="center"><img src="assets/hero.webp" alt="aiw：主会话定方案，模型分工，主会话验收" width="760"></p>
+支持 Claude Code、Codex、pi、omp 当主会话。
 
-## 有多轻
+<p align="center"><img src="assets/session.svg" alt="会话示例：你照常提需求，钩子提示该派给谁，主会话写单派出去，验收后提交" width="820"></p>
 
-| | |
+## 为什么选它
+
+- **省主会话 token**：过程不进主会话，只收结果。作者的配对对照里主会话少花约三分之一；日常长会话中改 3 个文件以上的需求，约为自己改的四分之一。
+- **你什么都不用管**：照常聊天。派不派、派给谁、怎么验收，主会话自己定；想换模型、加座位，也跟主会话说一句，它会改本地配置并用 `aiw doctor` 检查。
+- **入侵少**：只在本机装了的 CLI 里加几行，改前都备份；不想用了执行 `~/.claude/aiw/uninstall.sh`。
+- **轻量**：不起服务、不常驻，派单时才运行，只要 Python 3.11+。
+
+<details>
+<summary>安装具体改了哪些地方</summary>
+
+| 主会话 | 改动 |
 | --- | --- |
-| 进程 | 不起服务、不常驻，派单时才运行 |
-| 对你环境的改动 | Claude Code：`~/.claude/CLAUDE.md` 加一行引用，`settings.json` 加一个提示钩子<br>Codex：`~/.codex/AGENTS.md` 加一段规则，`hooks.json` 加一个提示钩子<br>pi / omp：`~/.pi/agent/AGENTS.md` / `~/.omp/agent/AGENTS.md` 加一段规则，不加钩子<br>Codex、pi、omp 只在本机装了时才改，改前都先备份 |
-| 日常命令 | 4 个：`aiw doctor`、`aiw review`、`aiw write`、`aiw draft` |
-| 不想用了 | 执行 `~/.claude/aiw/uninstall.sh` 即可（可先 `--dry-run` 预览），见[卸载](docs/guide.zh-CN.md#卸载) |
+| Claude Code | `~/.claude/CLAUDE.md` 加一行引用，`settings.json` 加一个提示钩子 |
+| Codex | `~/.codex/AGENTS.md` 加一段规则，`hooks.json` 加一个提示钩子 |
+| pi / omp | `~/.pi/agent/AGENTS.md` / `~/.omp/agent/AGENTS.md` 加一段规则，不加钩子 |
 
-不改习惯：照常用 Claude Code 或 Codex，遇到适合派出去的活它会提示，派不派由你定。
+另外建 `~/.local/bin/aiw` 软链。Codex、pi、omp 只在本机装了时才改。卸载脚本可先加 `--dry-run` 预览，细节见[安装做了什么](docs/guide.zh-CN.md#安装做了什么)和[卸载](docs/guide.zh-CN.md#卸载)。
 
-## 3 步上手
+</details>
 
-需要 macOS（目前只在 macOS 测试过）、Python 3.11+，以及已登录的 Claude Code 或 Codex CLI（至少一个）。
+## 安装
+
+需要 macOS（目前只在 macOS 测试过）和已登录的 Claude Code 或 Codex CLI（至少一个）。
 
 ```bash
-# 1. 安装（克隆到这个固定位置）
 git clone https://github.com/Jerryx333/aiw.git ~/.claude/aiw && ~/.claude/aiw/install.sh
+aiw doctor   # PATH 有变化时先新开终端
+```
 
-# 2. 检查（PATH 有变化时先新开终端）
-aiw doctor
+装好后照常用，不用记任何命令。
 
-# 3. 第一单：只读看一遍本仓库
+<details>
+<summary>想先手动试一单</summary>
+
+```bash
 printf '%s\n' '阅读本仓库，说明入口，并引用文件位置。不要修改文件。' > /tmp/aiw-review.txt
 aiw review "$HOME/.claude/aiw" 900 /tmp/aiw-review.txt --ro
 ```
 
-结果直接打印在终端，`[ai-worker] 实际执行方：…` 是真正干活的座位，`[ai-worker] 全文：…` 是存档位置。
-
-<p align="center"><img src="assets/demo.gif" alt="aiw 第一单：判断该派给哪个角色、查看角色解析、派一单只读评审" width="760"><br><sub>真实运行录屏，等待执行方的约 1 分钟已剪掉。</sub></p>
-
-<details>
-<summary>安装改了什么、跑完看什么、出错怎么办</summary>
-
-- 安装会改哪些文件、怎么备份，见[使用指南](docs/guide.zh-CN.md#安装做了什么)。登录用各 CLI 的官方方式：`codex login`；或运行 `claude` 输入 `/login`。Codex 下次启动可能要求信任新钩子；doctor 的配置警告不改变退出码。
-- 每单的任务原文（`task.txt`）、完整结果（`output.md`）和错误输出（`stderr.txt`）存在 aiw 仓库的 `state/runs/<时间>-<座位>-…/` 里。某家不可用被顶替时，「实际执行方」会和你点的不同。
-- 失败时最后一行改为「排查」目录，先看其中的 `stderr.txt`。
-- 之后在主会话里输入「列出边界情况」这类请求，主会话会同时收到一条提示（公开默认配置下的实际输出）：
-
-  ```text
-  [派单] 本条判定为【小段文本草稿】：只出文本草稿，交给 `aiw draft <workdir> 600 <prompt文件> --ro [--attach 文件]`，公开默认不顶替；产物待主会话核对。
-  ```
-
-</details>
-
-## 日常就这几个
-
-`.` 是项目目录，`task.txt` 写任务要求，超时单位为秒。
-
-| 命令 | 做什么 |
-| --- | --- |
-| `aiw write . 1200 task.txt` | 改代码（Codex 主会话改文件自己做，用不到它） |
-| `aiw review . 900 task.txt` | 只读评审、在仓库里找代码 |
-| `aiw draft . 600 task.txt` | 起草、改写、摘要 |
-| `aiw doctor` | 看三个角色各落到哪个模型、安装是否正常 |
-
-**角色**（write / review / draft）按顺序解析到第一个可用的**座位**（一个可派单的模型或 CLI）。默认配置见[角色与单家安装](docs/guide.zh-CN.md#角色与单家安装)，pi / omp 主会话的说明也在那里。
-
-## 为什么用
-
-- **主模型额度不够用**：读大文件、翻日志、跑测试很耗额度，派给同一家更省的模型或别的订阅、免费模型。
-- **上下文撑爆**：读过的文件和命令输出留在别处，主会话只收结果。
-- **多一道交叉评审**：改代码和评审可以由不同模型做。
-
-<details>
-<summary>装上之后具体有什么不同</summary>
-
-- **按你手里的东西配。** 主会话用哪个 CLI 都行；改代码、评审、起草三类活各派给谁，在一个本地配置文件里排好候选顺序，第一个不可用就用下一个；任何能在终端里跑的模型或 CLI 都能接进来（经 agent-use），不用改代码。见[自定义](docs/guide.zh-CN.md#自定义)。
-- 主会话用强模型，体力活派给同一家更省的模型：比如 Codex 主会话用 GPT-6 Astra、派单用 GPT-6.1 Sol，或 Claude 主会话用 Fable、派单用 Opus 5.5（[Codex 定价](https://developers.openai.com/codex/pricing)：每百万 token，GPT-6 Astra 输入 250 / 输出 1,250 credits，GPT-6.1 Sol 输入 50 / 输出 250 credits）。这是举例，默认配置可改。同一账号下所有模型共用额度，派单不会多出额度。Claude Pro/Max 还有 5 小时限额和周限额，claude.ai 与 Claude Code 共用。
-- `aiw panel` 收集多家独立意见。
-- 某家不可用时自动换下一家；执行中的顶替链默认为空，换谁、按什么顺序在[本地配置](docs/guide.zh-CN.md#自定义)里定。
+结果直接打印在终端：`[ai-worker] 实际执行方：…` 是真正干活的座位，`[ai-worker] 全文：…` 是存档位置。每单的任务原文、完整结果和错误输出都在 aiw 仓库的 `state/runs/` 里；失败时最后一行改为「排查」目录，先看其中的 `stderr.txt`。Codex 下次启动可能要求信任新钩子。
 
 </details>
 
 ## 常见疑问
+
+<details>
+<summary>能派给哪些模型？要我自己配吗？</summary>
+
+不用自己配。只装一家也有默认分工；想调整就跟主会话说，它改本地配置文件（`~/.config/aiw/seats.local.json`）并跑 `aiw doctor` 检查。可以做到：
+
+- 主会话用强模型，体力活派给同一家更省的模型：比如 Codex 主会话用 GPT-6 Astra、派单用 GPT-6.1 Sol，或 Claude 主会话用 Fable、派单用 Opus 5.5（[Codex 定价](https://developers.openai.com/codex/pricing)：每百万 token，GPT-6 Astra 输入 250 / 输出 1,250 credits，GPT-6.1 Sol 输入 50 / 输出 250 credits）。同一账号下所有模型共用额度，派单不会多出额度。
+- 改代码、评审、起草三类活各排一个候选顺序，第一个不可用就用下一个；任何能在终端里跑的模型都能经 agent-use 接进来。
+- 改代码和评审交给不同模型，多一道交叉评审；`aiw panel` 收集多家独立意见。
+
+配置项见[自定义](docs/guide.zh-CN.md#自定义)和[角色与单家安装](docs/guide.zh-CN.md#角色与单家安装)。
+
+</details>
 
 <details>
 <summary>质量会不会降？</summary>
@@ -152,10 +135,14 @@ Linux 尚未测试，已测试 macOS。
 ## 进阶（可以不看）
 
 <details>
-<summary>更多命令：会诊、批量、清单、评分、更新、清理</summary>
+<summary>手动派单与全部命令（主会话在用，你不用记）</summary>
 
 | 命令 | 用途与示例 |
 | --- | --- |
+| `aiw write . 1200 task.txt` | 改代码（Codex 主会话改文件自己做） |
+| `aiw review . 900 task.txt` | 只读评审、在仓库里找代码 |
+| `aiw draft . 600 task.txt` | 起草、改写、摘要 |
+| `aiw doctor` | 看各角色落到哪个模型、安装是否正常 |
 | `aiw <座位> . 900 task.txt` | 点名某个座位派单；常用开关 `--ro` 只读、`--worktree` 在独立 worktree 里派写单、`--net` 给 Codex 写单开放网络，细则见[参考手册](docs/reference.zh-CN.md#命令) |
 | `aiw panel` | 收集多家独立意见：`aiw panel . 600 task.txt --prior prior.md`，用 `--prior` 附上自己的判断，逐条接受、驳回或暂缓，不按多数票 |
 | `aiw map` | 逐文件执行同一要求：`aiw map . 600 task.txt src/a.py src/b.py` |

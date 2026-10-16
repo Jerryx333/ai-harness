@@ -18,8 +18,8 @@
         "复盘",
         "(怎么|如何)(优化|重构|设计)"
       ],
-      "instruction": "小任务简述方案即可，大任务才建立清单（每条带 owner、可执行 verify 和 passes:false）并记录人工阻塞。高风险方案实施前独立复核，大任务完成后独立评审；边界明确的执行任务按座位能力派单，主会话保留方案责任。 两家都装时 review 会落到另一家模型；只装一家时是同一家另开上下文，不等于跨家族复核。",
-      "instruction_codex": "小任务简述方案即可，大任务才建立清单（每条带 owner、可执行 verify 和 passes:false）并记录人工阻塞。高风险或关键架构方案实施前、大任务（使用 /goal 或改动超过 3 个文件）完成后，必须用 `aiw review <workdir> 900 <prompt文件> --ro` 做独立评审，不能自己评自己；改文件由你自己做，不用 aiw write 套自己。 两家都装时 review 会落到另一家模型；只装一家时是同一家另开上下文，不等于跨家族复核。"
+      "instruction": "小任务简述方案即可，大任务才建立清单（每条带 owner、可执行 verify 和 passes:false）并记录人工阻塞。高风险方案实施前独立复核，大任务完成后独立评审；边界明确的执行任务按座位能力派单，主会话保留方案责任。",
+      "instruction_codex": "小任务简述方案即可，大任务才建立清单（每条带 owner、可执行 verify 和 passes:false）并记录人工阻塞。高风险或关键架构方案实施前、大任务（使用 /goal 或改动超过 3 个文件）完成后，必须用 `aiw review <workdir> 900 <prompt文件> --ro` 做独立评审，不能自己评自己；改文件由你自己做，不用 aiw write 套自己。"
     },
     {
       "id": "panel",
@@ -38,8 +38,8 @@
         "(安全|漏洞|审计)(审查|检查|review)",
         "^(?!.*(日志|log|账本|ledger)).*(看看|看下|看一下|检查一下|过一下).*(对不对|有没有问题|有什么问题|行不行|靠不靠谱)"
       ],
-      "instruction": "本条判定为【第二意见/评审】：要读仓库才能判断的，用 `aiw review <workdir> 900 <prompt文件> --ro`；只评审一段方案/文本的难题，用 `aiw review <workdir> 600 <prompt文件> --ro`（prompt 里内联内容）。结论里分清模型意见和有出处的事实，模型一致不算证据。 两家都装时 review 会落到另一家模型；只装一家时是同一家另开上下文，不等于跨家族复核。",
-      "instruction_codex": "本条判定为【第二意见/评审】（你是 Codex 主会话）：要读仓库才能判断的，用 `aiw review <workdir> 900 <prompt文件> --ro`（只读）；只评审一段方案/文本的，用 `aiw review <workdir> 600 <prompt文件> --ro --attach 文件`。模型一致不算证据。 两家都装时 review 会落到另一家模型；只装一家时是同一家另开上下文，不等于跨家族复核。"
+      "instruction": "本条判定为【第二意见/评审】：要读仓库才能判断的，用 `aiw review <workdir> 900 <prompt文件> --ro`；只评审一段方案/文本的难题，用 `aiw review <workdir> 600 <prompt文件> --ro`（prompt 里内联内容）。结论里分清模型意见和有出处的事实，模型一致不算证据。",
+      "instruction_codex": "本条判定为【第二意见/评审】（你是 Codex 主会话）：要读仓库才能判断的，用 `aiw review <workdir> 900 <prompt文件> --ro`（只读）；只评审一段方案/文本的，用 `aiw review <workdir> 600 <prompt文件> --ro --attach 文件`。模型一致不算证据。"
     },
     {
       "id": "draft",

@@ -147,6 +147,7 @@ Linux 尚未测试，已测试 macOS。
 | `aiw panel` | 收集多家独立意见：`aiw panel . 600 task.txt --prior prior.md`，用 `--prior` 附上自己的判断，逐条接受、驳回或暂缓，不按多数票 |
 | `aiw map` | 逐文件执行同一要求：`aiw map . 600 task.txt src/a.py src/b.py` |
 | `aiw goal init / verify` | 建清单 `aiw goal init docs/goals/demo.json`，修改任务、验证命令和路径后运行 `aiw goal verify docs/goals/demo.json --full` |
+| `aiw off [30m/2h/3d/forever]` / `aiw on` / `aiw status` | 关闭派单提示（默认至本地次日零点）、恢复、查看状态；仍可点名派单 |
 | `aiw rate` | 给派单评分：`aiw rate <run> ok\|fixed\|rework\|discard [--note 文本]`；待评分单见 `aiw rate --pending` |
 | `aiw note` | 保存观察：`aiw note . "检查失败" --expected "检查通过" --evidence "测试输出"` |
 | `aiw sync` | 快进更新 aiw 及已安装的 agent-use、agent-use-adapters；更新规则/钩子需重跑安装 |

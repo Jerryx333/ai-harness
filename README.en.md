@@ -147,6 +147,7 @@ If the rules feel too forceful, override them with personal rules, or remove `@~
 | `aiw panel` | Collect independent opinions: `aiw panel . 600 task.txt --prior prior.md`; pass your own judgment with `--prior`, then accept, reject or defer each opinion, without majority voting |
 | `aiw map` | Apply one instruction per file: `aiw map . 600 task.txt src/a.py src/b.py` |
 | `aiw goal init / verify` | Create a checklist with `aiw goal init docs/goals/demo.json`; edit tasks, verification commands and paths, then run `aiw goal verify docs/goals/demo.json --full` |
+| `aiw off [30m/2h/3d/forever]` / `aiw on` / `aiw status` | Pause dispatch hints (until the next local midnight by default), resume, or check status; explicit assignments still work |
 | `aiw rate` | Rate an assignment: `aiw rate <run> ok\|fixed\|rework\|discard [--note text]`; find unrated runs with `aiw rate --pending` |
 | `aiw note` | Save an observation: `aiw note . "Check failed" --expected "Check passes" --evidence "test output"` |
 | `aiw sync` | Fast-forward aiw and installed agent-use/agent-use-adapters; rerun the installer to refresh rules/hooks |

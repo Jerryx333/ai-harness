@@ -9,7 +9,7 @@ For people who use Claude Code, Codex, pi (pi-coding-agent), or omp (oh-my-pi) a
 
 A **seat** is a model or CLI that can take an assignment. A **role** is write (edits), review (read-only review), or draft (drafts and summaries); it resolves to the first available seat in its configured order. The Codex main session has no write candidates and edits files itself.
 
-pi / omp main sessions are detected automatically. Installation writes rules to `~/.pi/agent/AGENTS.md` / `~/.omp/agent/AGENTS.md` (skip with `AIW_NO_PI=1` / `AIW_NO_OMP=1`), without dispatch hooks. The omp global context path is unverified. Their role lists default to empty and require local seats; `main_exclude` blocks the four GPT/Claude seats for roles, fallback, panel, and direct assignments.
+pi / omp main sessions are detected automatically. Installation writes rules to `~/.pi/agent/AGENTS.md` / `~/.omp/agent/AGENTS.md` (skip with `AIW_NO_PI=1` / `AIW_NO_OMP=1`), without dispatch hooks. Their role lists default to empty and require local seats; `main_exclude` blocks the four GPT/Claude seats for roles, fallback, panel, and direct assignments.
 
 ## What problems does it solve?
 

@@ -9,7 +9,7 @@
 
 **座位**是一个可派单的模型或 CLI；**角色**是 write（改文件）、review（只读评审）、draft（起草和摘要），按配置顺序解析到第一个可用座位。Codex 主会话的 write 候选为空，改文件自己做。
 
-pi / omp 主会话会自动识别；安装时向 `~/.pi/agent/AGENTS.md` / `~/.omp/agent/AGENTS.md` 写派单规则（`AIW_NO_PI=1` / `AIW_NO_OMP=1` 跳过），不加派单钩子。omp 全局上下文路径未核实。公开默认三个角色候选为空，需本地配置座位；`main_exclude` 默认禁止派给四个 GPT/Claude 座位，覆盖角色、顶替、panel 和点名派单。
+pi / omp 主会话会自动识别；安装时向 `~/.pi/agent/AGENTS.md` / `~/.omp/agent/AGENTS.md` 写派单规则（`AIW_NO_PI=1` / `AIW_NO_OMP=1` 跳过），不加派单钩子。公开默认三个角色候选为空，需本地配置座位；`main_exclude` 默认禁止派给四个 GPT/Claude 座位，覆盖角色、顶替、panel 和点名派单。
 
 ## 解决什么问题
 

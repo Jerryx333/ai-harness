@@ -361,7 +361,7 @@ worker 只接受 `--ro --text --worktree --net --no-fallback --no-findings --all
 
 ## 主会话用 pi / omp
 
-安装脚本发现 `~/.pi` / `~/.omp` 目录或 `pi` / `omp` 命令时，把 `AGENTS.harness.md` 与可选的 `~/.config/aiw/AGENTS.personal.md` 写入对应的 `~/.pi/agent/AGENTS.md` / `~/.omp/agent/AGENTS.md` 标记块，保留块外内容；不写 hooks.json。omp 全局上下文文件路径未核实。用 `AIW_NO_PI=1` / `AIW_NO_OMP=1` 跳过；`aiw doctor` 检查已检测到的接入及标记块是否最新。三种角色公开默认均为空，请在本地配置中填入允许的座位。
+安装脚本发现 `~/.pi` / `~/.omp` 目录或 `pi` / `omp` 命令时，把 `AGENTS.harness.md` 与可选的 `~/.config/aiw/AGENTS.personal.md` 写入对应的 `~/.pi/agent/AGENTS.md` / `~/.omp/agent/AGENTS.md` 标记块，保留块外内容；不写 hooks.json。用 `AIW_NO_PI=1` / `AIW_NO_OMP=1` 跳过；`aiw doctor` 检查已检测到的接入及标记块是否最新。三种角色公开默认均为空，请在本地配置中填入允许的座位。
 
 ## 主会话用 Codex
 

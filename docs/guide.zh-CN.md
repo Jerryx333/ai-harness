@@ -122,7 +122,7 @@ aiw 帮 Claude Code 或 Codex 主会话把活分给不同模型：改代码用 w
 无卸载选项。手动撤销以下改动，保留其他设置：
 
 - 从 `~/.claude/CLAUDE.md` 删除 aiw 引入行及其个人规则引入行。
-- 从 `~/.claude/settings.json` 和已接入时的 `~/.codex/hooks.json` 中，仅删除命令含 `aiw/route.py` 的钩子，保持 JSON 合法；从 `~/.codex/AGENTS.md` 删除 `aiw:begin` 到 `aiw:end` 的整个标记块。
+- 从 `~/.claude/settings.json` 和已接入时的 `~/.codex/hooks.json` 中，仅删除命令含 `aiw/route.py` 的钩子，保持 JSON 合法；从 `~/.codex/AGENTS.md` 以及存在时的 `~/.pi/agent/AGENTS.md`、`~/.omp/agent/AGENTS.md` 删除 `aiw:begin` 到 `aiw:end` 的整个标记块。
 - 删除 `~/.local/bin/aiw` 软链；若安装时添加过，从 `~/.zshrc` 删除 `# aiw: on PATH` 及其 PATH 设置。
 - 停用另行安装的插件钩子。不再需要时才删除仓库（含本地 `state/`）和本地 aiw 配置。也可用 `.bak-*` 恢复代替手改，但须确认不会丢掉后续修改；命令软链没有备份。
 

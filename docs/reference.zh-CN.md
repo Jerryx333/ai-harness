@@ -284,7 +284,7 @@ aiw slot --status
 
 启动子命令时，仅为未设置的 `OMP_NUM_THREADS`、`OPENBLAS_NUM_THREADS`、`MKL_NUM_THREADS`、`VECLIB_MAXIMUM_THREADS`、`NUMEXPR_NUM_THREADS`、`POLARS_MAX_THREADS`、`RAYON_NUM_THREADS` 设置 `AIW_SLOT_THREADS` 的值（默认 `1`），已有设置（包括空值）不覆盖。`AIW_SLOT_THREADS=0` 表示不设置任何线程变量；非法值（非非负整数）返回 64。
 
-`tests/test_harness.py` 不带用例名（包括 `-j 1`）时直接复用 slot 的名额与等待逻辑，并为自身应用相同的 QoS 选择（默认 nice +10）及线程变量设置；定向用例不排队。slot 与全量 harness 都设置 `AIW_SLOT_HELD=1`，子进程继承后跳过重复抢名额。harness 在每个用例临时目录设置独立 `AIW_SLOT_DIR`，避免影响真实名额。派单的 `--verify` 也用 `aiw slot -- <命令>` 包装。
+`tests/test_harness.py` 不带用例名（包括 `-j 1`）时直接复用 slot 的名额与等待逻辑，并为自身应用相同的 QoS 选择（默认 nice +10）及线程变量设置；定向用例不排队。slot 与全量 harness 都设置 `AIW_SLOT_HELD=1`，子进程继承后跳过重复抢名额。harness 在每个用例临时目录设置独立 `AIW_SLOT_DIR`，避免影响真实名额。派单的 `--verify` 也用 `aiw slot -- <命令>` 包装。`--verify` 已通过的命令，主会话不再重跑。
 
 `aiw sync` 先照旧对 aiw 执行 `git pull --ff-only`，失败时保留其退出码；成功后对已存在的 agent-use 和 agent-use-adapters Git 仓库分别快进更新，后两者失败只警告。目录覆盖变量与安装相同。
 
@@ -339,7 +339,7 @@ worker 只接受 `--ro --text --worktree --net --no-fallback --no-findings --all
 
 验收在实际工作目录运行；带 `--worktree` 时为任务 worktree 中对应子目录，在 worktree 汇报和无改动清理之前运行。验收产生的未跟踪文件计为改动，因此会保留 worktree。stdout 在执行方正文之后追加精简「aiw 验收（主会话环境执行）」结果块：逐条 rc、耗时、最多 120 字符的命令，失败输出最后 40 行（单条最多 1500 字符），通过数与全文路径；完整命令、rc、耗时及输出归档到成功尝试的 `<run_dir>/verify.txt`。成功尝试账本行增加 `verify: {"total": N, "passed": M, "secs": 秒}`；跳过时记录 `{"total": N, "passed": null, "skipped": true}`。未带 `--verify` 时账本不增加字段，旧行为不变。
 
-`--net` 默认不开，只对 `adapter="codex"` 座位的写单有效，在 prompt 前添加 `-c sandbox_workspace_write.network_access=true`，开放网络和本地端口；与 `--ro`（含只读座位）同用或用于非 codex 座位返回 64 并说明。
+`--net` 默认不开，只对 `adapter="codex"` 座位的写单有效，在 prompt 前添加 `-c sandbox_workspace_write.network_access=true`，开放网络和本地端口；与 `--ro`（含只读座位）同用或用于非 codex 座位返回 64 并说明。 claude-write 默认无网络；其他写座位能否联网由各自沙箱决定。Codex 写座位的测试要起本地服务或联网时加 `--net`。
 
 `adapter="codex"` 写单在 linked worktree 中自动添加 `-c sandbox_workspace_write.writable_roots=[...]`（TOML 字符串数组）。通过 `git rev-parse --git-dir` 与 `--git-common-dir` 探测，要求 git-dir 的 realpath 位于 `<common-dir>/worktrees/` 下，且 git-dir 和 objects 本身不是软链；只包含 worktree 私有 git-dir 和 `<common-dir>/objects` 的 realpath，供 `git add` 写索引及对象；不开放整个共享 `.git`，hooks/config/refs 保持不可写。普通仓库、Git 探测失败或只读单不添加。`git commit` 及其它改 refs 的操作会被沙箱拒绝，执行方不要尝试，改动留在暂存区，由主会话提交。
 

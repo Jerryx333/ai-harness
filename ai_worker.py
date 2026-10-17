@@ -1164,6 +1164,9 @@ AGENT_USE_REASON = {
     "invalid_parameters": "format",
     "invalid_request": "format",
     "native_capability_missing": "fatal",
+    # 来源：agent-use-private docs/DISPATCHER.md 的 pi/omp 私有适配器 reason。
+    "pi_exit_nonzero": "transient",
+    "invalid_task": "format", "invalid_options": "format", "invalid_timeout": "format",
 }
 
 

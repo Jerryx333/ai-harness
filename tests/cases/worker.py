@@ -508,6 +508,7 @@ def adapter_reason_vocabulary():
     import ai_worker as w
     expected = {
         "transient": (
+            "pi_exit_nonzero",
             "tool_call_output",
             "qoder_contract_invalid",
             "qoder_exit_nonzero",
@@ -549,6 +550,9 @@ def adapter_reason_vocabulary():
             "process_inventory_failed",
         ),
         "format": (
+            "invalid_task",
+            "invalid_options",
+            "invalid_timeout",
             "empty_task",
             "existing_run_mismatch",
             "invalid_effort",
